@@ -63,16 +63,17 @@ def detect_local_changes(manifest):
 #########################################################
 # Do actual file sync
 #########################################################
-def sync_files(new_files, changed_files, deleated_files):
+def sync_files(manifest, new_files, changed_files, deleated_files):
     # Get previous server manifest
     remote_manifest = read_remote_manifest()
 
     #send list to server, which will return changes
     result = do_request("find_changed", {
-        "prev_manifest" : json.dumps(remote_manifest),
-        "new_files"     : json.dumps(new_files),
-        "changed_files" : json.dumps(changed_files),
-        "deleted_files" : json.dumps(deleated_files)});
+        "client_manifest" : json.dumps(manifest),
+        "prev_manifest"   : json.dumps(remote_manifest),
+        "new_files"       : json.dumps(new_files),
+        "changed_files"   : json.dumps(changed_files),
+        "deleted_files"   : json.dumps(deleated_files)});
 
     result = json.loads(result)
 
@@ -132,19 +133,25 @@ def sync_files(new_files, changed_files, deleated_files):
                 errors.append(responce['last_path'])
             
 
-
-        """
         # Get files
         for file in result['pull_files']:
             result = do_request("pull_file", {
                 'path' : file})
 
-            path = sauce + file
+            path = DATA_DIR + file
+
+            try:
+                os.makedirs(os.path.dirname(path))
+            except:
+                pass # dir already exists
             
             file_put_contents(path, result)
 
+            manifest = read_manifest()
+            manifest['files'].append(get_single_file_info(path, file))
+            write_manifest(manifest)
+
             print 'Create file: ' + path 
-        """
 
     # write manifest
     manifest = read_manifest()
@@ -167,7 +174,7 @@ display_list('Changed: ', changed_files, 'yellow')
 display_list('Deleted: ', deleated_files, 'red')
 
 
-sync_files(new_files, changed_files, deleated_files)
+sync_files(manifest, new_files, changed_files, deleated_files)
 
 
 

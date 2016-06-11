@@ -38,10 +38,11 @@ def get_manifest():
 @app.route('/find_changed', methods=['POST'])
 def find_changed():
 # Validate passed data
-    error_not_in_dict(request.form, 'prev_manifest',     'new files list missing')
-    error_not_in_dict(request.form, 'new_files',     'new files list missing')
-    error_not_in_dict(request.form, 'changed_files', 'new files list missing')
-    error_not_in_dict(request.form, 'deleted_files', 'deleted files list missing')
+    error_not_in_dict(request.form, 'client_manifest', 'client manifest missing')
+    error_not_in_dict(request.form, 'prev_manifest',   'previous manifest missing')
+    error_not_in_dict(request.form, 'new_files',       'new files list missing')
+    error_not_in_dict(request.form, 'changed_files',   'new files list missing')
+    error_not_in_dict(request.form, 'deleted_files',   'deleted files list missing')
 
     manifest      = read_server_manifest()
 
@@ -74,6 +75,9 @@ def find_changed():
 
     prev_manifest_dict = make_dict(prev_manifest['files'])
 
+    client_manifest = json.loads(request.form['client_manifest'])
+    client_manifest_dict = make_dict(client_manifest['files'])
+
     server_new_files = []
     server_modified_files = []
     server_deleated_files = []
@@ -81,9 +85,15 @@ def find_changed():
         if itm['path'] in prev_manifest_dict:
             d_itm = prev_manifest_dict.pop(itm['path'])
             if itm['last_mod'] == d_itm['last_mod']:
-                pass # file has not changed
+                if itm['path'] in client_manifest_dict:
+                    pass # file has not changed and already exists on client
+                else:
+                    server_new_files.append(itm['path'])# File does not exist on client
+                
             else:
                 server_modified_files.append(itm) # file has changed
+        else:
+            print 'unknown file: ' + itm['path']
 
 #TODO need to test if detecting files which are new/modified on the server is working
 
@@ -97,6 +107,8 @@ def find_changed():
     pull_files     = [] # list of files which client needs to pull from the server
     conflict_files = [] # list of files which have been edited on both ends
 
+    for itm in server_new_files:
+        pull_files.append(itm)
 
 # handle new files from client, check if any new files conflict with existing ones.
 # If there is a conflict notify the client.
