@@ -6,7 +6,11 @@ __builtin__.DATA_DIR             = './'
 __builtin__.MANIFEST_FILE        = '.manifest_xzf.json'
 __builtin__.REMOTE_MANIFEST_FILE = '.remote_manifest_xzf.json'
 __builtin__.IGNORE_FILTER_FILE   = '.pysync_ignore'
+__builtin__.PULL_IGNORE_FILE     = '.pysync_pull_ignore'
 
+
+# need to implement a 'local delete' command, delete files
+# locally, remove from manifest and add to pull ignore
 
 #########################################################
 # Imports
@@ -133,12 +137,32 @@ def sync_files(manifest, new_files, changed_files, deleated_files):
                 errors.append(responce['last_path'])
             
 
+
+        try:
+            pull_ignore = file_get_contents(DATA_DIR + PULL_IGNORE_FILE)
+            pull_ignore = pull_ignore.splitlines()
+
+            filtered_pull_files = []
+            for f in result['pull_files']:
+                matched = False
+                for i in pull_ignore:
+                    if fnmatch.fnmatch(f, i):
+                        matched = True
+
+                if matched == False:
+                    filtered_pull_files.append(f)
+
+            result['pull_files'] = filtered_pull_files
+        except:
+            print 'Warning, pull ignore file does not exist'
+                    
         # Get files
         for file in result['pull_files']:
+            path = DATA_DIR + file
+            print 'Pulling file: ' + path
+
             result = do_request("pull_file", {
                 'path' : file})
-
-            path = DATA_DIR + file
 
             try:
                 os.makedirs(os.path.dirname(path))
@@ -151,7 +175,7 @@ def sync_files(manifest, new_files, changed_files, deleated_files):
             manifest['files'].append(get_single_file_info(path, file))
             write_manifest(manifest)
 
-            print 'Create file: ' + path 
+            print 'Done' 
 
     # write manifest
     manifest = read_manifest()

@@ -109,6 +109,7 @@ def apply_ignore_filters(f_list):
     try:
         filters.append('/' + MANIFEST_FILE)
         filters.append('/' + REMOTE_MANIFEST_FILE)
+        filters.append('/' + PULL_IGNORE_FILE)
     except:
         pass # on the server remote manifest does not exist
 
