@@ -52,13 +52,17 @@ def find_changed():
     filter_manifest = []
     for itm in manifest['files']:
         if itm['path'] in remote_deleated_dict:
-            os.remove(DATA_DIR + itm['path']) # file has been deleted from remote, remove it locally
+            try:
+                os.remove(DATA_DIR + itm['path']) # file has been deleted from remote, remove it locally
+            except OSError:
+                pass # file does not exist locally anyway
         else:
             filter_manifest.append(itm)
 
     manifest['files'] = filter_manifest
 
-# TODO filter previous manifest
+    write_manifest(manifest)
+
 
 
 # Compare current and previous manifests for changes, looking
@@ -123,10 +127,9 @@ def find_changed():
         else:
             push_files.append(itm['path'])
 
-    manifest['files'] = get_file_list(DATA_DIR)
-    write_manifest(manifest)
 
     return json.dumps({
+        'status'          : 'ok',
         'remote_manifest' : manifest,
         'push_files'      : push_files,
         'pull_files'      : pull_files,
@@ -139,7 +142,10 @@ def find_changed():
 #########################################################
 @app.route('/push_file', methods=['POST'])
 def push_file():
+    #try:
     validate_request(request)
+
+    # need to make sure remote path is clean
 
     path = DATA_DIR + request.form['path']
 
@@ -147,14 +153,25 @@ def push_file():
         os.makedirs(os.path.dirname(path))
 
     file = request.files['file']
+    file.save(path)
 
-    if file:
-        file.save(path)
+    # update manifest adding newly uploaded file
+    manifest = read_manifest()
+    last_change = get_single_file_info(DATA_DIR + request.form['path'], request.form['path'])
+    manifest['files'].append(last_change)
+    write_manifest(manifest)
 
-        # need to set file change time
-        return path
+    return json.dumps({
+        'status'          : 'ok',
+        'last_change'     : last_change
+    })
 
-    return 'fail'
+"""
+    except:
+        return json.dumps({
+            'status'          : 'fail',
+        })
+"""
 
 
 #########################################################

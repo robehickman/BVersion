@@ -20,6 +20,15 @@ def force_unicode(text):
 
 
 ############################################################################################
+# Gets last change time for a single file
+############################################################################################
+def get_single_file_info(f_path, int_path):
+
+    return { 'path'     : force_unicode(int_path),
+             'created'  : os.path.getctime(f_path),
+             'last_mod' : os.path.getmtime(f_path)}
+
+############################################################################################
 # Obtains a list of all files in a file system.
 ############################################################################################
 def get_file_list(path):
@@ -29,15 +38,11 @@ def get_file_list(path):
         files = os.listdir(path) 
 
         for file in files:
-            fpath = path + file
-            if os.path.isdir(fpath):
-                recur_dir(fpath + '/', newpath + file + '/')
-            elif os.path.isfile(fpath):
-                f_list.append({
-                    'path'     : force_unicode(newpath + file),
-                    'created'  : os.path.getctime(fpath),
-                    'last_mod' : os.path.getmtime(fpath)
-                })
+            f_path = path + file
+            if os.path.isdir(f_path):
+                recur_dir(f_path + '/', newpath + file + '/')
+            elif os.path.isfile(f_path):
+                f_list.append(get_single_file_info(f_path, newpath + file))
 
     recur_dir(path)
 
@@ -101,11 +106,11 @@ def apply_ignore_filters(f_list):
     except NameError:
         print 'Warning: configuration var IGNORE_FILTER_FILE is not defined'
     
-
-    filters.append('/' + MANIFEST_FILE)
-    filters.append('/' + REMOTE_MANIFEST_FILE)
-
-    print filters
+    try:
+        filters.append('/' + MANIFEST_FILE)
+        filters.append('/' + REMOTE_MANIFEST_FILE)
+    except:
+        pass # on the server remote manifest does not exist
 
     for f in filters:
         f_list = filter_f_list(f_list, f)

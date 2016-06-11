@@ -76,33 +76,85 @@ def sync_files(new_files, changed_files, deleated_files):
 
     result = json.loads(result)
 
-    if result['push_files'] == [] and result['pull_files'] == []:
-        print 'Nothing to do'
+    if(result['status'] == 'ok'):
+    # update manifests to account for files deleted on the remote
+        remote_manifest = result['remote_manifest']
+        write_remote_manifest(remote_manifest)
 
-    # Push files
-    for file in result['push_files']:
-        req_result = do_request("push_file", {
-            "file": open(DATA_DIR + file, "rb"), 'path' : file})
-        # do better display of this
-        print req_result
 
-    # Get files
-    for file in result['pull_files']:
-        result = do_request("pull_file", {
-            'path' : file})
+        if deleated_files != []:
+            deleted_dict = make_dict(deleated_files)
+            manifest = read_manifest()
+            filter_manifest = []
+            for f in manifest['files']:
+                if f['path'] in deleted_dict:
+                    pass # file is deleted, remove it from the manifest
+                else:
+                    filter_manifest.append(f)
+            manifest['files'] = filter_manifest
+            write_manifest(manifest) 
 
-        path = sauce + file
         
-        file_put_contents(path, result)
 
-        print 'Create file: ' + path 
+    #see if there is anything that needs pulling or pushing
+        errors = []
+
+        if result['push_files'] == [] and result['pull_files'] == []:
+            print 'Nothing to do'
+
+        # Push files
+        for file in result['push_files']:
+
+            print 'Sending: ' + file
+
+            req_result = do_request("push_file", {
+                "file": open(DATA_DIR + file, "rb"), 'path' : file})
+
+            responce = json.loads(req_result)
+            if responce['status'] == 'ok':
+                last_change = responce['last_change']
+
+                print 'Uploaded: ' + last_change['path']
+
+                # update local and remote manifest after every upload to not re-upload files
+                # if the system fails mid-sync
+
+
+                manifest = read_manifest()
+                manifest['files'].append(get_single_file_info(
+                    DATA_DIR + last_change['path'], last_change['path']))
+                write_manifest(manifest)
+
+                remote_manifest = read_remote_manifest()
+                remote_manifest['files'].append(last_change)
+                write_remote_manifest(remote_manifest)
+            else:
+                errors.append(responce['last_path'])
+            
+
+
+        """
+        # Get files
+        for file in result['pull_files']:
+            result = do_request("pull_file", {
+                'path' : file})
+
+            path = sauce + file
+            
+            file_put_contents(path, result)
+
+            print 'Create file: ' + path 
+        """
 
     # write manifest
+    manifest = read_manifest()
     f_list = get_file_list(DATA_DIR)
     manifest['files'] = f_list
     write_manifest(manifest)
 
     write_remote_manifest(result['remote_manifest'])
+
+    return errors
 
 #########################################################
 #########################################################
