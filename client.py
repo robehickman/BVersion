@@ -5,6 +5,7 @@ __builtin__.SERVER_URL           = 'http://localhost:5000/'
 __builtin__.DATA_DIR             = './'
 __builtin__.MANIFEST_FILE        = '.manifest_xzf.json'
 __builtin__.REMOTE_MANIFEST_FILE = '.remote_manifest_xzf.json'
+__builtin__.IGNORE_FILTER_FILE   = '.pysync_ignore'
 
 
 #########################################################
@@ -32,9 +33,6 @@ def detect_local_changes(manifest):
     # create a list of all files including there modification times
 
     f_list = get_file_list(DATA_DIR)
-    f_list = filter_f_list(f_list, '*' + MANIFEST_FILE)
-    f_list = filter_f_list(f_list, '*' + REMOTE_MANIFEST_FILE)
-
 
     f_list_dict = make_dict(f_list)
 
@@ -101,8 +99,6 @@ def sync_files(new_files, changed_files, deleated_files):
 
     # write manifest
     f_list = get_file_list(DATA_DIR)
-    f_list = filter_f_list(f_list, '*' + MANIFEST_FILE)
-    f_list = filter_f_list(f_list, '*' + REMOTE_MANIFEST_FILE)
     manifest['files'] = f_list
     write_manifest(manifest)
 

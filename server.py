@@ -1,7 +1,7 @@
 # Server configuration
 import __builtin__
 
-__builtin__.DATA_DIR       = './uploads/'
+__builtin__.DATA_DIR       = '/srv/backup/'
 __builtin__.MANIFEST_FILE  = '.manifest_xzf.json'
 
 #########################################################

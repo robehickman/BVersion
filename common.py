@@ -8,6 +8,16 @@ from poster.encode import multipart_encode
 from poster.streaminghttp import register_openers
 import urllib2
 
+############################################################################################
+# Makes sure a string is utf-8
+############################################################################################
+def force_unicode(text):
+    try:
+        text = unicode(text, 'utf-8')
+        return text
+    except TypeError:
+        return text
+
 
 ############################################################################################
 # Obtains a list of all files in a file system.
@@ -24,12 +34,15 @@ def get_file_list(path):
                 recur_dir(fpath + '/', newpath + file + '/')
             elif os.path.isfile(fpath):
                 f_list.append({
-                    'path'     : newpath + file,
+                    'path'     : force_unicode(newpath + file),
                     'created'  : os.path.getctime(fpath),
                     'last_mod' : os.path.getmtime(fpath)
                 })
 
     recur_dir(path)
+
+    f_list = apply_ignore_filters(f_list)
+
     return f_list
 
 ############################################################################################
@@ -69,6 +82,37 @@ def filter_f_list(f_list, filters):
         else:
             f_list_filter.append(itm)
     return f_list_filter;
+
+############################################################################################
+# Loads file ignore filters from IGNORE_FILTER_FILE and applies them to file list passed
+############################################################################################
+def apply_ignore_filters(f_list):
+    filters = []
+
+    try:
+        IGNORE_FILTER_FILE
+
+        try:
+            f_file = file_get_contents(DATA_DIR + IGNORE_FILTER_FILE)
+            lines = f_file.splitlines()
+            filters = filters + lines
+        except:
+            print 'Warning: filters file does not exist'
+    except NameError:
+        print 'Warning: configuration var IGNORE_FILTER_FILE is not defined'
+    
+
+    filters.append('/' + MANIFEST_FILE)
+    filters.append('/' + REMOTE_MANIFEST_FILE)
+
+    print filters
+
+    for f in filters:
+        f_list = filter_f_list(f_list, f)
+
+    return f_list
+    
+
 
 ############################################################################################
 # Read client manifest file.
