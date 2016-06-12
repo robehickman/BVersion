@@ -161,7 +161,7 @@ def sync_files(manifest, new_files, changed_files, deleated_files):
             path = DATA_DIR + file
             print 'Pulling file: ' + path
 
-            result = do_request("pull_file", {
+            req_result = do_request("pull_file", {
                 'path' : file})
 
             try:
@@ -169,7 +169,7 @@ def sync_files(manifest, new_files, changed_files, deleated_files):
             except:
                 pass # dir already exists
             
-            file_put_contents(path, result)
+            file_put_contents(path, req_result)
 
             manifest = read_manifest()
             manifest['files'].append(get_single_file_info(path, file))
