@@ -35,6 +35,49 @@ def get_manifest():
 #########################################################
 # Find what files have changed on a client
 #########################################################
+"""
+-- Client push
+
+For each file:
+
+- File does not exist on the server
+-- Tell client to push the file
+
+- File does exist on the server
+-- Has file been modified on the server or client?
+--- File has not been modified on the server
+---- Tell client to push the file
+--- File has been modified on the server
+---- Notify client of the conflict and do nothing
+--- File is in client 'pull ignore', so already exists on server, but a same-name file was created  
+---- ?
+- Client requesting file delete
+-- ?
+
+
+-- Client pull
+
+For each file:
+
+- File does not exist on the client
+-- Is it matched by a rule in client ignore?
+--- File does match
+---- Do nothing
+--- File does not match
+---- Save the file
+
+- File does exist on the client
+-- File has not been modified since prior pull
+--- Update file on the client
+-- File has been modified since prior pull
+--- Notify client of the collision
+
+- File has been deleted on the server
+-- ?
+
+
+"""
+
 @app.route('/find_changed', methods=['POST'])
 def find_changed():
 # Validate passed data
