@@ -137,7 +137,7 @@ class storage():
                     if os.path.isfile(dst):  
                         shutil.move(dst, src)
 
-                    if os.path.isfile(dst):  
+                    if os.path.isfile(tmp):  
                         shutil.move(tmp, dst)
 
 
@@ -237,15 +237,20 @@ class storage():
         else:
             raise OSError(errno.ENOENT, 'No such file or directory', path)
 
+
+############################################################################################
+# Unit tests for above
+############################################################################################
 def remove_dont_care(path):
     try: os.remove(path)
     except: pass
 
 def empty_dir(path):
-    shutil.rmtree(path)
-    os.mkdirs(path)
+    try: shutil.rmtree(path)
+    except: pass
+    os.makedirs(path)
 
-def test_storage_put_rb():
+def test_storage_put_rollback():
     empty_dir(DATA_DIR)
 
     s = storage()
@@ -253,17 +258,17 @@ def test_storage_put_rb():
     s.file_put_contents(DATA_DIR + 'hello', 'test content')
     s.rollback()
 
+    if(os.path.isfile(p.join(DATA_DIR, 'hello'))):
+        raise Exception('error, file "hello" still exists, put rollback failed')  
 
-    if(os.path.isfile(DATA_DIR + 'hello')):
-        raise Exception('error, file still exists, put rollback failed')  
+    if(not os.path.isfile(p.join(DATA_DIR, BACKUP_DIR, '1_hello'))):
+        raise Exception('error, backup file "1_hello" does not exist, put rollback failed')  
 
     empty_dir(DATA_DIR)
 
 
-def test_storage_move_rb():
-    remove_dont_care(DATA_DIR + 'hello')
-    remove_dont_care(DATA_DIR + JOURNAL_FILE)
-    remove_dont_care(DATA_DIR + JOURNAL_STEP_FILE)
+def test_storage_move_rollback():
+    empty_dir(DATA_DIR)
 
     s = storage()
     s.begin()
@@ -274,12 +279,35 @@ def test_storage_move_rb():
     s.rollback()
 
     if(os.path.isfile(DATA_DIR + 'hello2')):
-        raise Exception('error, file still exists, move rollback failed')  
+        raise Exception('error, file "hello2" still exists, move rollback failed')  
 
-    remove_dont_care(DATA_DIR + 'hello')
+    empty_dir(DATA_DIR)
 
 
-def test_storage_delete_rb():
+def test_storage_move_overwrite_rollback():
+    empty_dir(DATA_DIR)
+
+    s = storage()
+    s.begin()
+    s.file_put_contents(DATA_DIR + 'hello', 'test content')
+    s.file_put_contents(DATA_DIR + 'hello2', 'test content 2')
+    s.commit()
+    s.begin()
+    s.move_file(DATA_DIR + 'hello', DATA_DIR + 'hello2')
+    s.rollback()
+
+    if(not os.path.isfile(DATA_DIR + 'hello')):
+        raise Exception('error, file "hello" does not exist, move overwrite rollback failed')  
+
+    if(not os.path.isfile(DATA_DIR + 'hello2')):
+        raise Exception('error, file "hello2" does not exist, move overwrite rollback failed')  
+
+    empty_dir(DATA_DIR)
+
+
+def test_storage_delete_rollback():
+    empty_dir(DATA_DIR)
+
     s = storage()
     s.begin()
     s.file_put_contents(DATA_DIR + 'hello', 'test content')
@@ -289,16 +317,52 @@ def test_storage_delete_rb():
     s.rollback()
 
     if(not os.path.isfile(DATA_DIR + 'hello')):
-        raise Exception('error, file does not exist, delete rollback failed')  
+        raise Exception('error, file "hello" does not exist, delete rollback failed')  
 
-test_storage_put_rb()
-test_storage_move_rb()
-#test_storage_delete_rb()
+    empty_dir(DATA_DIR)
 
 
-#s.move_file(DATA_DIR + 'hello', DATA_DIR + 'hello2')
-#s.file_put_contents(DATA_DIR + 'hello3', 'test content')
-#s.delete_file(DATA_DIR + 'hello3')
+def test_storage_multiple_rollback():
+    empty_dir(DATA_DIR)
+
+    s = storage()
+    s.begin()
+    s.file_put_contents(DATA_DIR + 'hello', 'test content')
+    s.commit()
+    s.begin()
+    s.file_put_contents(DATA_DIR + 'hello2', 'test content 2')
+    s.file_put_contents(DATA_DIR + 'hello3', 'test content 3')
+    s.move_file(DATA_DIR + 'hello', DATA_DIR + 'goodbye')
+    s.move_file(DATA_DIR + 'hello2', DATA_DIR + 'hello3')
+    s.delete_file(DATA_DIR + 'hello3')
+    s.file_put_contents(DATA_DIR + 'hello3', 'something else')
+    s.rollback()
+
+
+    if(not os.path.isfile(DATA_DIR + 'hello')):
+        raise Exception('error, file "hello" does not exist, multiple rollback failed')  
+
+    if(os.path.isfile(DATA_DIR + 'hello3')):
+        raise Exception('error, file "hello3" still exists, multiple rollback failed')  
+
+    if(os.path.isfile(DATA_DIR + 'goodbye')):
+        raise Exception('error, file "goodbye" still exists, multiple rollback failed')  
+
+    if(not os.path.isfile(p.join(DATA_DIR, BACKUP_DIR, '1_hello3'))):
+        raise Exception('error, backup file "1_hello3" does not exist, multiple rollback failed')  
+
+    if(not os.path.isfile(p.join(DATA_DIR, BACKUP_DIR, '2_hello3'))):
+        raise Exception('error, backup file "2_hello3" does not exist, multiple rollback failed')  
+
+    if(not os.path.isfile(p.join(DATA_DIR, BACKUP_DIR, '3_hello2'))):
+        raise Exception('error, backup file "3_hello2" does not exist, multiple rollback failed')  
+    #empty_dir(DATA_DIR)
+
+test_storage_put_rollback()
+test_storage_move_rollback()
+test_storage_move_overwrite_rollback()
+test_storage_delete_rollback()
+test_storage_multiple_rollback()
 
 
 
