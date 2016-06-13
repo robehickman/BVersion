@@ -356,7 +356,8 @@ def test_storage_multiple_rollback():
 
     if(not os.path.isfile(p.join(DATA_DIR, BACKUP_DIR, '3_hello2'))):
         raise Exception('error, backup file "3_hello2" does not exist, multiple rollback failed')  
-    #empty_dir(DATA_DIR)
+
+    empty_dir(DATA_DIR)
 
 test_storage_put_rollback()
 test_storage_move_rollback()
@@ -366,8 +367,16 @@ test_storage_multiple_rollback()
 
 
 
+############################################################################################
+# Non-versioning data store
+############################################################################################
+class plain_storage(storage):
+    pass
 
 
+############################################################################################
+# Versioning data store
+############################################################################################
 class versioned_storage(storage):
     stepped = False
 ############################################################################################
@@ -466,16 +475,4 @@ class versioned_storage(storage):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+store = versioned_storage()

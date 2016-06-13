@@ -1,1 +1,41 @@
 NOTICE, this is pre-alpha software and currently includes NO authentication. DO NOT use this on a computer exposed to the public internet.
+
+
+I am developing this tool due to an inability to find anything which will do what I want and which works without issues. The design goal is simple, a client-server based tool to synchronise n copies of a directory tree. This tree contains a lot of large binary files, mostly photographic raw files and is hundreds of gigabytes in total.
+
+Due to slow upstream bandwidth the system must be hosted in my LAN, so 'cloud' solutions are no use. I am also skeptical of the privacy of them, and the prevalence of data mining/marketing.
+
+As I often don't want the entire data set on every machine, The tool must be able to support partial checkouts. It must be resilient to data corruption, have a simple command-line UI and provide clear error messages when something goes wrong. The system user should be notified of errors, due to disk read issues, network errors or collisions. However any errors should only stall syncing of the file(s) affected. Every other file should continue to be synchronised unaffected.
+
+Data Versioning is useful to protect against human error and the increasing threat of file encrypting malware. However storing multiple versions on the client is unworkable due to the size of my data set. Consequently versions should be stored on the server only. There should be no way to delete past versions on the server over the sync protocol.
+
+The system should maintain as little overhead as possible on the client.
+
+Data formats on the client ans server should be as simple as possible. Consequently this uses the file system, JSON and other text files exclusively. 
+
+
+Following is a list of tools I have tried up to this point, every one fails in some regard:
+
+- Rsync:
+Awesome for what it was designed for and I use it extensively for other things. However it's only able to do one-way syncing and can't detect conflicts. 
+
+- Unison:
+Similar to rsync but able to do two way syncing and conflict detection. Akward to use for syncing more than two end points, Change detection sometimes failed and wanted to re-sync the entire file tree which can take several hours.
+
+- Subversion:
+By far the best of anything I've used. Handles large binary files without issue. However it always stores two copies of every file on the client in order to do delta compression. As my data set is already large I always had to be concious of this when adding files. Eventually gave up on it for this reason.
+
+- Git, Mercurial, Bazzar:
+Can not support partial checkouts, having entire history locally is too much overhead. Git in particular does not work that well with large binary files and can use an awful lot of memory. These tools work fine for managing source, or other textual content and I do use git extensively for other things.
+
+- Sync thing:
+Tries to be clever using broadcast auto detection rather than simply letting you input an IP. Could not find other client on my network and the UI offered no obvious manual override.
+
+- Owncloud:
+Web UI is completely unnecessary for my needs. Repeatedly stopped syncing when adding my file tree for the first time. Provided no useful error messages as to why. 
+
+- Seafile:
+Web UI is completely unnecessary for my needs. Looked promising to begin with, accepted my files without issue at first. However like Owncloud the client started to randomly desynchronise with the server and required me to manually re-add it. Once again provided no useful error messages.
+
+- Git-annex:
+A large file manager built on top of git and following its distributed model. It is very complicated. The android client while pulling files down stopped entirely after running into a FAT-incompatible file name and provided no obvious way to continue. All or nothing failure is unacceptable to me. Like the two above the web UI gives little indication of what it is doing, getting error messages required looking at the command line.  
