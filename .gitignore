@@ -5,3 +5,4 @@
 *.swn
 
 vers_test/*
+tests/vers_test/*
