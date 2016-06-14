@@ -11,8 +11,7 @@ import os.path as p
 import os, shutil, json, errno
 import pdb
 
-
-
+from storage import *
 
 
 ############################################################################################
@@ -32,10 +31,22 @@ class rel_storage(storage):
         return self.file_get_contents(self.mkfs_path(rpath))
 
 ############################################################################################
+# Relative file get contents
+############################################################################################
+    def r_move(self, src, dst):
+        return self.move_file(self.mkfs_path(src), self.mkfs_path(dst))
+
+############################################################################################
 # Relative list dir
 ############################################################################################
     def r_listdir(self, rpath):
         return os.listdir(self.mkfs_path(rpath))
+
+############################################################################################
+# Relative is file
+############################################################################################
+    def r_isfile(self, rpath):
+        return os.path.isfile(self.mkfs_path(rpath))
 
 ############################################################################################
 # Relative make multiple dirs
@@ -45,27 +56,37 @@ class rel_storage(storage):
 
 
 
+
+
+
+
 ############################################################################################
 # Versioning data store
 ############################################################################################
 class versioned_storage(rel_storage):
     stepped   = False
-    vrs_path  = ''
+    vrs_dir  = ''
     head_file = ''
+
+############################################################################################
+# Get the number of the head revision
+############################################################################################
+    def get_head(self):
+        return int(self.r_get(self.head_file))
 
 ############################################################################################
 # Setup and validate file system structure
 ############################################################################################
-    def __init__(self):
-        storage.__init__(self)
+    def __init__(self, data_dir, j_file, j_step_file, tmp_dir, backup_dir):
+        storage.__init__(self, data_dir, j_file, j_step_file, tmp_dir, backup_dir)
 
-        self.vrs_path  = "versions"
+        self.vrs_dir  = "versions"
         self.head_file = "head"
 
     # find all existing versions
         versions = None
         try: 
-            versions = self.r_listdir(self.vrs_path)
+            versions = self.r_listdir(self.vrs_dir)
             versions = [int(ver) for ver in versions] 
         except ValueError:
             raise Exception('Error: non integer directory name in versions.') 
@@ -75,7 +96,7 @@ class versioned_storage(rel_storage):
     # record in the head file.
         actual_head = None
         if versions == None:
-            self.r_makedirs(p.join(self.vrs_path, '1'))
+            self.r_makedirs(p.join(self.vrs_dir, '1'))
 
             self.begin()
             self.r_put(self.head_file, '1')
@@ -89,7 +110,7 @@ class versioned_storage(rel_storage):
             actual_head = max(versions)
 
             try:
-                head = int(self.r_get(self.head_file))
+                head = self.get_head()
                 if head != actual_head:
                     self.begin()
                     self.r_put(self.head_file, str(actual_head))
@@ -105,98 +126,151 @@ class versioned_storage(rel_storage):
 ############################################################################################
     def step_version(self):
         self.begin()
-        try:
-            head = int(self.file_get_contents(self.head_file))
 
-            cur_rv = (p.join(self.vrs_dir, head))
-            new_rv = (p.join(self.vrs_dir, head + 1))
+        try:
+            head = self.get_head()
+
+            cur_rv = (p.join(self.vrs_dir, str(head)))
+            new_rv = (p.join(self.vrs_dir, str(head + 1)))
 
             # move current head forward one step, then make an empty prior revision
             self.r_move(cur_rv, new_rv)
-            self.r_mkdir(cur_rv)
+            self.r_makedirs(cur_rv)
 
             self.r_put(p.join(cur_rv, MANIFEST_FILE), '')
 
-            self.r_put(self.head_file, head)
+            head += 1
+            self.r_put(self.head_file, str(head))
             self.commit()
+
         except:
-            raise
             self.rollback()
+            raise
+
+############################################################################################
+# If a file exists in the current revision, move it to the parent revision. Step version
+# if doing so would overwrite a file in the parent.
+############################################################################################
+    def step_if_exists(rpath):
+        # does target file exist in current rv?
+        exists = False
+        if self.r_isfile(p.join(self.vrs_dir, str(head), rpath)):
+            exists = True
+            # Does the file exist in the parent rv?
+            if self.r_isfile(p.join(self.vrs_dir, str(head - 1), rpath)):
+                # if yes, step revision
+                self.step_version()
+
+        # reload head in case we stepped version
+        head = self.get_head()
+
+        # If there is a current file, move it back to prior RV
+        if exists == True:
+            self.r_move(p.join(self.vrs_dir, str(head), rpath), p.join(self.vrs_dir, str(head - 1), rpath))
+
+        return exists
+
 
 ############################################################################################
 # Add a file to the FS
 ############################################################################################
-    def new_file(self, tmp_path, sys_path):
-        head_file = p.join(DATA_DIR, "head")
-        head = int(file_get_contents(head_file))
+    def fs_put(self, rpath, data):
+        self.begin()
+        
+        try:
+            head = self.get_head()
 
-        # does file exist in current rv?
-            # if yes
-                # Does the file exist in the parent rv?
-                    # if yes, step revision
-                    # if no, move current file back to prior RV
-            #if no add the file to the current revision
+            # does file exist in current rv? If it does move it to prior rv
+            self.step_if_exists()
 
-    # add new file to current revision
-        cur_rv = (p.join(DATA_DIR, head))
-        shutil.move(tmp_path, p.join(cur_rv, sys_path))
+            # reload head in case we stepped version
+            head = self.get_head()
 
-        manifest = json.loads(file_get_contents(p.join(cur_rv, MANIFEST_FILE)))
-        manifest['files'].append(get_file_info(p.join(cur_rv, sys_path)))
-        file_put_contents(p.join(cur_rv, MANIFEST_FILE), json.dumps(manifest))
+            # Add the file to the current revision
+            self.r_put(p.join(self.vrs_dir, str(head), rpath), data)
 
+            # Deal with the manifests...
+
+            #manifest = json.loads(file_get_contents(p.join(cur_rv, MANIFEST_FILE)))
+            #manifest['files'].append(get_file_info(p.join(cur_rv, sys_path)))
+            #file_put_contents(p.join(cur_rv, MANIFEST_FILE), json.dumps(manifest))
+
+        except:
+            self.rollback()
+            raise
+
+        self.commit()
 
 ############################################################################################
-# Update a file in the FS
+# Get a files contents from the FS
 ############################################################################################
-    def update_file(self, tmp_path, sys_path):
-        if(stepped == False):
-            return
+    def fs_get(self, rpath):
+        return self.r.get(rpath)
 
-        head_file = p.join(DATA_DIR, "head")
-        head = int(file_get_contents(head_file))
+############################################################################################
+# Move a file in the FS
+############################################################################################
+    def fs_move(self, r_src, r_dst):
+        self.begin()
+        
+        try:
+            head = self.get_head()
 
-        cur_rv = (p.join(DATA_DIR, head))
-        old_rv = (p.join(DATA_DIR, head - 1))
+            # does target file exist in current rv? If it does move it to prior rv
+            self.step_if_exists(r_dst)
 
+            # reload head in case we stepped version
+            head = self.get_head()
 
-    # Copy old file to prior revision
-        shutil.move(p.join(cur_rv, sys_path), p.join(old_rv, sys_path))
+            cur_vrs = p.join(self.vrs_dir, str(head))
 
-        manifest = json.loads(file_get_contents(p.join(old_rv, MANIFEST_FILE)))
-        manifest['files'].append(get_file_info(p.join(old_rv, sys_path)))
-        file_put_contents(p.join(old_rv, MANIFEST_FILE), json.dumps(manifest))
+            # Move the file
+            self.r_move(p.join(cur_vrs, r_src), p.join(cur_vrs, r_dst))
 
+            # Deal with the manifests...
 
-    # Replace current revision file with prior file
-        shutil.move(tmp_path, p.join(cur_rv, sys_path))
+            #manifest = json.loads(file_get_contents(p.join(cur_rv, MANIFEST_FILE)))
+            #manifest['files'].append(get_file_info(p.join(cur_rv, sys_path)))
+            #file_put_contents(p.join(cur_rv, MANIFEST_FILE), json.dumps(manifest))
 
-        manifest = json.loads(file_get_contents(p.join(cur_rv, MANIFEST_FILE)))
-        manifest['files'].append(get_file_info(p.join(cur_rv, sys_path)))
-        file_put_contents(p.join(cur_rv, MANIFEST_FILE), json.dumps(manifest))
+        except:
+            self.rollback()
+            raise
+
+        self.commit()
 
 
 ############################################################################################
 # Remove file from current revision
 ############################################################################################
     def delete_file(self, sys_path):
-        if(stepped == False):
-            return
+        self.begin()
 
-        head_file = p.join(DATA_DIR, "head")
-        head = int(file_get_contents(head_file))
+        try:
+            head = self.get_head()
 
-        cur_rv = (p.join(DATA_DIR, head))
-        old_rv = (p.join(DATA_DIR, head - 1))
+            # does target file exist in current rv? If it does move it to prior rv
+            self.step_if_exists(r_dst)
 
-    #Move file from current revision to previous revision.
-        shutil.move(tmp_path, p.join(cur_rv, sys_path))
+            # reload head in case we stepped version
+            head = self.get_head()
 
-        manifest = json.loads(file_get_contents(p.join(cur_rv, MANIFEST_FILE)))
-        manifest['files'].remove(get_file_info(p.join(cur_rv, sys_path)))
-        file_put_contents(p.join(cur_rv, MANIFEST_FILE), json.dumps(manifest))
+            cur_vrs = p.join(self.vrs_dir, str(head))
+
+            # Delete the file
+            self.r_delete(p.join(cur_vrs, r_src), p.join(cur_vrs, r_dst))
 
 
+            # Deal with the manifests...
 
-store = versioned_storage()
-store.step_version()
+            #manifest = json.loads(file_get_contents(p.join(cur_rv, MANIFEST_FILE)))
+            #manifest['files'].append(get_file_info(p.join(cur_rv, sys_path)))
+            #file_put_contents(p.join(cur_rv, MANIFEST_FILE), json.dumps(manifest))
+
+
+        except:
+            self.rollback()
+            raise
+
+        self.commit()
+

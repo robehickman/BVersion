@@ -1,9 +1,4 @@
-DATA_DIR           = './vers_test/'
-TMP_DIR            = '.tmp/'
-BACKUP_DIR         = 'back/'
-MANIFEST_FILE      = '.manifest_xzf.json'
-JOURNAL_FILE       = '.journal.json'
-JOURNAL_STEP_FILE  = '.journal_step'
+from test_common import *
 
 import os,sys,inspect
 currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
@@ -12,17 +7,6 @@ sys.path.insert(0,parentdir)
 
 from storage import *
 
-############################################################################################
-# Helpers
-############################################################################################
-def remove_dont_care(path):
-    try: os.remove(path)
-    except: pass
-
-def empty_dir(path):
-    try: shutil.rmtree(path)
-    except: pass
-    os.makedirs(path)
 
 ############################################################################################
 # Unit tests for storage class
@@ -141,10 +125,6 @@ def test_storage_multiple_rollback():
     empty_dir(DATA_DIR)
 
     print "Multiple rollback pass"
-
-
-try: os.mkdir(DATA_DIR)
-except: pass
 
 
 test_storage_put_rollback()
