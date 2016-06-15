@@ -57,8 +57,8 @@ def test_versioned_storage_put():
     if not os.path.isfile(p.join(DATA_DIR, 'versions', '1', MANIFEST_FILE)):
         raise Exception('error, manifest file not found')  
 
-    if not manifest = json.loads(file_get_contents(p.join(DATA_DIR, 'versions', '1', MANIFEST_FILE))):
-        raise Exception('error, could not decode manifest')  
+    try: manifest = json.loads(file_get_contents(p.join(DATA_DIR, 'versions', '1', MANIFEST_FILE)))
+    except: raise Exception('error, could not decode manifest')  
 
     if '/test.txt' not in manifest['files']:
         raise Exception('error, file addition not recorded in json manifest.')  
@@ -81,8 +81,8 @@ def test_versioned_storage_put_overwrite():
     if not os.path.isfile(p.join(DATA_DIR, 'versions', '1', MANIFEST_FILE)):
         raise Exception('error, version 1 manifest file not found')  
 
-    if not manifest = json.loads(file_get_contents(p.join(DATA_DIR, 'versions', '1', MANIFEST_FILE))):
-        raise Exception('error, could not decode version 1 manifest')  
+    try: manifest = json.loads(file_get_contents(p.join(DATA_DIR, 'versions', '1', MANIFEST_FILE)))
+    except: raise Exception('error, could not decode manifest')  
 
     if '/test.txt' not in manifest['files']:
         raise Exception('error, file addition not recorded in version 1 json manifest.')  
@@ -94,8 +94,8 @@ def test_versioned_storage_put_overwrite():
     if not os.path.isfile(p.join(DATA_DIR, 'versions', '2', MANIFEST_FILE)):
         raise Exception('error, version 2 manifest file not found')  
 
-    if not manifest = json.loads(file_get_contents(p.join(DATA_DIR, 'versions', '2', MANIFEST_FILE))):
-        raise Exception('error, could not decode version 2 manifest')  
+    try: manifest = json.loads(file_get_contents(p.join(DATA_DIR, 'versions', '1', MANIFEST_FILE)))
+    except: raise Exception('error, could not decode version 2 manifest')  
 
     if '/test.txt' not in manifest['files']:
         raise Exception('error, file addition not recorded in version 2 json manifest.')  
