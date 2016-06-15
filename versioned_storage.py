@@ -268,6 +268,25 @@ class versioned_storage(rel_storage):
     def fs_get(self, rpath):
         return self.r.get(rpath)
 
+
+############################################################################################
+# Save a client uploaded file.
+############################################################################################
+    def fs_save_upload(self, file, r_path):
+        versioned_storage.begin()
+
+        versioned_storage.r_makedirs(path)
+
+        versioned_storage.r_save_upload(file, path)
+
+
+        # update manifest adding newly uploaded file
+        manifest = versioned_storage.read_manifest(head)
+        last_change = versioned_storage.get_single_file_info(DATA_DIR + request.form['path'], request.form['path'])
+        manifest['files'].append(last_change)
+        versioned_storage.write_manifest(manifest)
+
+
 ############################################################################################
 # Move a file in the FS
 ############################################################################################

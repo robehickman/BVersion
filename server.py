@@ -1,5 +1,8 @@
 # Server configuration
 import __builtin__
+from versioned_storage import *
+
+str = versioned_storage()
 
 __builtin__.DATA_DIR       = '/srv/backup/'
 __builtin__.MANIFEST_FILE  = '.manifest_xzf.json'
@@ -80,6 +83,9 @@ For each file:
 
 @app.route('/find_changed', methods=['POST'])
 def find_changed():
+    # Need to lock to stop concurrent access, which could cause corruption
+
+
 # Validate passed data
     error_not_in_dict(request.form, 'client_manifest', 'client manifest missing')
     error_not_in_dict(request.form, 'prev_manifest',   'previous manifest missing')
@@ -202,19 +208,10 @@ def push_file():
 
     # need to make sure remote path is clean
 
-    path = DATA_DIR + request.form['path']
-
-    if not os.path.isdir(os.path.dirname(path)):
-        os.makedirs(os.path.dirname(path))
-
+    path = request.form['path']
     file = request.files['file']
-    file.save(path)
 
-    # update manifest adding newly uploaded file
-    manifest = read_manifest()
-    last_change = get_single_file_info(DATA_DIR + request.form['path'], request.form['path'])
-    manifest['files'].append(last_change)
-    write_manifest(manifest)
+    last_change = versioned_storage.fs_save_upload(file, path)
 
     return json.dumps({
         'status'          : 'ok',
@@ -239,13 +236,19 @@ def pull_file():
         print e
         raise Exception(e)
 
-    path = DATA_DIR + request.form['path']
+    path = versioned_storage.get_file_path(request.form['path'])
 
     l_dir =  os.path.dirname(path)
     file  =  os.path.basename(path)
 
     return send_from_directory(l_dir, file)
 
+#########################################################
+# Delete a file on the server
+#########################################################
+@app.route('/delete_file', methods=['POST'])
+def delete_file():
+    pass
 
 
 if __name__ == "__main__":
