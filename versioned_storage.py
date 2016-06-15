@@ -157,6 +157,18 @@ class versioned_storage(rel_storage):
         self.r_put(p.join('versions', str(vrs), MANIFEST_FILE), json.dumps(manifest))
 
 ############################################################################################
+# Remove named path from the manifest files array
+############################################################################################
+    def remove_from_manifest(self, manifest, rpath):
+        filter_manifest = []
+        for f in manifest['files']:
+            if pfx_path(f['path']) == pfx_path(rpath): pass
+            else: filter_manifest.append(f)
+
+        manifest['files'] = filter_manifest
+        return manifest
+
+############################################################################################
 # Step version number forward
 ############################################################################################
     def step_version(self):
@@ -208,10 +220,15 @@ class versioned_storage(rel_storage):
         if exists == True:
             self.r_move(p.join(self.vrs_dir, str(head), rpath), p.join(self.vrs_dir, str(head - 1), rpath))
 
-            # add up-moved file to parent manifest
+            # Add up-moved file to parent manifest,
             manifest = self.read_local_manifest(head - 1)
             manifest['files'].append(self.get_single_file_info(p.join(self.vrs_dir, str(head - 1), rpath), rpath))
             manifest = self.write_local_manifest(head - 1, manifest)
+
+            # Remove it from head manifest
+            manifest = self.read_local_manifest(head)
+            manifest = self.remove_from_manifest(manifest, rpath)
+            manifest = self.write_local_manifest(head, manifest)
 
         self.commit()
 
@@ -272,20 +289,9 @@ class versioned_storage(rel_storage):
 
             # Rename the file in the manifest
             manifest = self.read_local_manifest(head)
+            manifest = self.remove_from_manifest(manifest, r_src)
+            manifest['files'].append(self.get_single_file_info(p.join(self.vrs_dir, str(head), r_dst), r_dst))
 
-            filter_manifest = []
-            for f in manifest['files']:
-                print pfx_path(f['path'])
-                print pfx_path(r_src)
-
-                if pfx_path(f['path']) == pfx_path(r_src): print 'here'
-                else: filter_manifest.append(f); print f
-
-                if pfx_path(f['path']) == pfx_path(r_dst): print 'here'
-                else: filter_manifest.append(f); print f
-
-            filter_manifest.append(self.get_single_file_info(p.join(self.vrs_dir, str(head), r_dst), r_dst))
-            manifest['files'] = filter_manifest
             manifest = self.write_local_manifest(head, manifest)
 
         except:

@@ -241,8 +241,6 @@ def test_versioned_storage_move_overwrite():
     if passed == False:
         raise Exception('error, file addition not recorded in version 1 json manifest.')  
 
-    quit()
-
     empty_dir(DATA_DIR)
 
     print "Move overwrite OK"
