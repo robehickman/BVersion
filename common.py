@@ -20,17 +20,29 @@ def force_unicode(text):
 
 
 ############################################################################################
+# Prefix a path with the OS path separator if it is not already
+############################################################################################
+def pfx_path(path):
+    if(path[0] != os.path.sep): return os.path.sep + path
+    return path
+
+
+############################################################################################
 # Gets last change time for a single file
 ############################################################################################
+"""
 def get_single_file_info(f_path, int_path):
 
     return { 'path'     : force_unicode(int_path),
              'created'  : os.path.getctime(f_path),
              'last_mod' : os.path.getmtime(f_path)}
+"""
 
 ############################################################################################
 # Obtains a list of all files in a file system.
 ############################################################################################
+
+"""
 def get_file_list(path):
 
     f_list = []
@@ -49,6 +61,8 @@ def get_file_list(path):
     f_list = apply_ignore_filters(f_list)
 
     return f_list
+"""
+
 
 ############################################################################################
 # Convert file list into a dictionary with the file path as its key, and meta data as a
@@ -123,6 +137,7 @@ def apply_ignore_filters(f_list):
 ############################################################################################
 # Read client manifest file.
 ############################################################################################
+"""
 def read_manifest():
     # Read Manifest
     try:
@@ -181,6 +196,7 @@ def read_remote_manifest():
 ############################################################################################
 def write_remote_manifest(manifest):
     file_put_contents(DATA_DIR + REMOTE_MANIFEST_FILE, json.dumps(manifest))
+"""
 
 ############################################################################################
 # Block '..' from occurring in file paths, this should not happen under normal operation.
@@ -214,6 +230,7 @@ def validate_request(r):
 
     allowed_path(r.form['path'])
 
+"""
 ############################################################################################
 # Returns contents of file located at 'path'
 ############################################################################################
@@ -231,6 +248,7 @@ def file_get_contents(path):
 def file_put_contents(path, data):
     with open(path, 'w') as f:
         f.write(data)
+"""
 
 ############################################################################################
 # Send a HTTP request to the server

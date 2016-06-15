@@ -12,6 +12,7 @@ import os, shutil, json, errno
 import pdb
 
 from storage import *
+from common import *
 
 
 ############################################################################################
@@ -120,7 +121,41 @@ class versioned_storage(rel_storage):
                 self.begin()
                 self.r_put(self.head_file, str(actual_head))
                 self.commit()
+
+############################################################################################
+# Gets last change time for a single file
+############################################################################################
+    def get_single_file_info(self, f_path, int_path):
+        f_path = self.mkfs_path(f_path)
+        int_path = pfx_path(os.path.normpath(force_unicode(int_path).strip()))
+        return { 'path'     : int_path,
+                 'created'  : os.path.getctime(f_path),
+                 'last_mod' : os.path.getmtime(f_path)}
             
+############################################################################################
+# Read local manifest file.
+############################################################################################
+    def read_local_manifest(self, vrs):
+        # Read Manifest
+        try:
+            manifest = json.loads(self.r_get(p.join('versions', str(vrs), MANIFEST_FILE)))
+        except:
+            # no manifest, create one, manifest stores file access times as
+            # of last run to detect files which have changed
+            manifest = {
+                'format_vers' : 1,
+                'root'        : '/',
+                'files'       : []
+            }
+
+        return manifest
+
+############################################################################################
+# Write local manifest file
+############################################################################################
+    def write_local_manifest(self, vrs, manifest):
+        self.r_put(p.join('versions', str(vrs), MANIFEST_FILE), json.dumps(manifest))
+
 ############################################################################################
 # Step version number forward
 ############################################################################################
@@ -152,7 +187,6 @@ class versioned_storage(rel_storage):
 # if doing so would overwrite a file in the parent.
 ############################################################################################
     def step_if_exists(self, rpath):
-
         head = self.get_head()
 
         # does target file exist in current rv?
@@ -173,6 +207,11 @@ class versioned_storage(rel_storage):
         # If there is a current file, move it back to prior RV
         if exists == True:
             self.r_move(p.join(self.vrs_dir, str(head), rpath), p.join(self.vrs_dir, str(head - 1), rpath))
+
+            # add up-moved file to parent manifest
+            manifest = self.read_local_manifest(head - 1)
+            manifest['files'].append(self.get_single_file_info(p.join(self.vrs_dir, str(head - 1), rpath), rpath))
+            manifest = self.write_local_manifest(head - 1, manifest)
 
         self.commit()
 
@@ -195,11 +234,10 @@ class versioned_storage(rel_storage):
             # Add the file to the current revision
             self.r_put(p.join(self.vrs_dir, str(head), rpath), data)
 
-            # Deal with the manifests...
-
-            #manifest = json.loads(file_get_contents(p.join(cur_rv, MANIFEST_FILE)))
-            #manifest['files'].append(get_file_info(p.join(cur_rv, sys_path)))
-            #file_put_contents(p.join(cur_rv, MANIFEST_FILE), json.dumps(manifest))
+            # Add to the manifest
+            manifest = self.read_local_manifest(head)
+            manifest['files'].append(self.get_single_file_info(p.join(self.vrs_dir, str(head), rpath), rpath))
+            manifest = self.write_local_manifest(head, manifest)
 
         except:
             raise
@@ -232,11 +270,23 @@ class versioned_storage(rel_storage):
             # Move the file
             self.r_move(p.join(cur_vrs, r_src), p.join(cur_vrs, r_dst))
 
-            # Deal with the manifests...
+            # Rename the file in the manifest
+            manifest = self.read_local_manifest(head)
 
-            #manifest = json.loads(file_get_contents(p.join(cur_rv, MANIFEST_FILE)))
-            #manifest['files'].append(get_file_info(p.join(cur_rv, sys_path)))
-            #file_put_contents(p.join(cur_rv, MANIFEST_FILE), json.dumps(manifest))
+            filter_manifest = []
+            for f in manifest['files']:
+                print pfx_path(f['path'])
+                print pfx_path(r_src)
+
+                if pfx_path(f['path']) == pfx_path(r_src): print 'here'
+                else: filter_manifest.append(f); print f
+
+                if pfx_path(f['path']) == pfx_path(r_dst): print 'here'
+                else: filter_manifest.append(f); print f
+
+            filter_manifest.append(self.get_single_file_info(p.join(self.vrs_dir, str(head), r_dst), r_dst))
+            manifest['files'] = filter_manifest
+            manifest = self.write_local_manifest(head, manifest)
 
         except:
             self.rollback()

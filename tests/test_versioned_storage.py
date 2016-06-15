@@ -7,6 +7,9 @@ sys.path.insert(0,parentdir)
 
 from versioned_storage import *
 
+
+############################################################################################
+############################################################################################
 def test_versioned_storage_init():
     empty_dir(DATA_DIR)
 
@@ -25,7 +28,8 @@ def test_versioned_storage_init():
 
     print "Storage init OK"
 
-
+############################################################################################
+############################################################################################
 def test_versioned_storage_step():
     empty_dir(DATA_DIR)
 
@@ -45,6 +49,8 @@ def test_versioned_storage_step():
 
     print "Version step OK"
 
+############################################################################################
+############################################################################################
 def test_versioned_storage_put():
     empty_dir(DATA_DIR)
 
@@ -60,13 +66,21 @@ def test_versioned_storage_put():
     try: manifest = json.loads(file_get_contents(p.join(DATA_DIR, 'versions', '1', MANIFEST_FILE)))
     except: raise Exception('error, could not decode manifest')  
 
-    if '/test.txt' not in manifest['files']:
+    passed = False
+    for f in manifest['files']:
+        if f['path'] == pfx_path('test.txt'):
+            passed = True
+            break
+
+    if passed == False:
         raise Exception('error, file addition not recorded in json manifest.')  
 
     empty_dir(DATA_DIR)
 
     print "Put OK"
 
+############################################################################################
+############################################################################################
 def test_versioned_storage_put_overwrite():
     empty_dir(DATA_DIR)
 
@@ -81,10 +95,17 @@ def test_versioned_storage_put_overwrite():
     if not os.path.isfile(p.join(DATA_DIR, 'versions', '1', MANIFEST_FILE)):
         raise Exception('error, version 1 manifest file not found')  
 
+
     try: manifest = json.loads(file_get_contents(p.join(DATA_DIR, 'versions', '1', MANIFEST_FILE)))
     except: raise Exception('error, could not decode manifest')  
 
-    if '/test.txt' not in manifest['files']:
+    passed = False
+    for f in manifest['files']:
+        if f['path'] == pfx_path('test.txt'):
+            passed = True
+            break
+
+    if passed == False:
         raise Exception('error, file addition not recorded in version 1 json manifest.')  
 
 #-----
@@ -94,10 +115,16 @@ def test_versioned_storage_put_overwrite():
     if not os.path.isfile(p.join(DATA_DIR, 'versions', '2', MANIFEST_FILE)):
         raise Exception('error, version 2 manifest file not found')  
 
-    try: manifest = json.loads(file_get_contents(p.join(DATA_DIR, 'versions', '1', MANIFEST_FILE)))
-    except: raise Exception('error, could not decode version 2 manifest')  
+    try: manifest = json.loads(file_get_contents(p.join(DATA_DIR, 'versions', '2', MANIFEST_FILE)))
+    except: raise Exception('error, could not decode manifest')  
 
-    if '/test.txt' not in manifest['files']:
+    passed = False
+    for f in manifest['files']:
+        if f['path'] == pfx_path('test.txt'):
+            passed = True
+            break
+
+    if passed == False:
         raise Exception('error, file addition not recorded in version 2 json manifest.')  
 
 
@@ -105,6 +132,8 @@ def test_versioned_storage_put_overwrite():
 
     print "Put overwrite OK"
 
+############################################################################################
+############################################################################################
 def test_versioned_storage_move():
     empty_dir(DATA_DIR)
 
@@ -120,10 +149,38 @@ def test_versioned_storage_move():
     if os.path.isdir(p.join(DATA_DIR, 'versions', '2')):
         raise Exception('error, version 2 directory exists where no overwrite happened')  
 
+    try: manifest = json.loads(file_get_contents(p.join(DATA_DIR, 'versions', '1', MANIFEST_FILE)))
+    except: raise Exception('error, could not decode manifest')  
+
+
+    if len(manifest['files']) > 1:
+        raise Exception('Too meny items in manifest.')  
+
+    passed = False
+    for f in manifest['files']:
+        if f['path'] == pfx_path('test.txt'):
+            passed = True
+            break
+
+    if passed == True:
+        raise Exception('error, renamed file not removed from manifest.')  
+
+
+    passed = False
+    for f in manifest['files']:
+        if f['path'] == pfx_path('test2.txt'):
+            passed = True
+            break
+
+    if passed == False:
+        raise Exception('error, file rename not recorded in manifest.')  
+
     empty_dir(DATA_DIR)
 
     print "Move OK"
 
+############################################################################################
+############################################################################################
 def test_versioned_storage_move_overwrite():
     empty_dir(DATA_DIR)
 
@@ -134,17 +191,64 @@ def test_versioned_storage_move_overwrite():
 
     #version should auto step, test 2 should be saved in the parent revision
 
-    if os.path.isfile(p.join(DATA_DIR, 'versions', '1', 'test2.txt')):
+    if not os.path.isfile(p.join(DATA_DIR, 'versions', '1', 'test2.txt')):
         raise Exception('error, version 1 does not contain overwritten version of test_2.txt')  
 
-    if os.path.isfile(p.join(DATA_DIR, 'versions', '2', 'test2.txt')):
-        raise Exception('error, version 2does not contain renamed version of test_2.txt')  
+    try: manifest = json.loads(file_get_contents(p.join(DATA_DIR, 'versions', '1', MANIFEST_FILE)))
+    except: raise Exception('error, could not decode manifest')  
+
+    if len(manifest['files']) > 1:
+        raise Exception('Too meny items in version 1 manifest.')  
+
+
+## ++++
+    passed = False
+    for f in manifest['files']:
+        if f['path'] == pfx_path('test.txt'):
+            passed = True
+            break
+
+    if passed == True:
+        raise Exception('error, renamed file not removed from manifest.')  
+
+## ++++
+    passed = False
+    for f in manifest['files']:
+        if f['path'] == pfx_path('test2.txt'):
+            passed = True
+            break
+
+    if passed == False:
+        raise Exception('error, file addition not recorded in version 1 json manifest.')  
+
+# -------------------------
+    if not os.path.isfile(p.join(DATA_DIR, 'versions', '2', 'test2.txt')):
+        raise Exception('error, version 2does not contain renamed version of text.txt (renamed to test_2.txt)')  
+
+    try: manifest = json.loads(file_get_contents(p.join(DATA_DIR, 'versions', '2', MANIFEST_FILE)))
+    except: raise Exception('error, could not decode manifest')  
+
+
+    if len(manifest['files']) > 1:
+        raise Exception('Too meny items in version 2 manifest.')  
+
+    passed = False
+    for f in manifest['files']:
+        if f['path'] == pfx_path('test2.txt'):
+            passed = True
+            break
+
+    if passed == False:
+        raise Exception('error, file addition not recorded in version 1 json manifest.')  
+
+    quit()
 
     empty_dir(DATA_DIR)
 
     print "Move overwrite OK"
 
-
+############################################################################################
+############################################################################################
 def test_versioned_storage_delete():
     empty_dir(DATA_DIR)
 
@@ -160,6 +264,29 @@ def test_versioned_storage_delete():
     if os.path.isfile(p.join(DATA_DIR, 'versions', '2', 'test.txt')):
         raise Exception('error, version 2 still contains test.txt')  
 
+
+    try: manifest = json.loads(file_get_contents(p.join(DATA_DIR, 'versions', '1', MANIFEST_FILE)))
+    except: raise Exception('error, could not decode manifest')  
+
+    if len(manifest['files']) > 1:
+        raise Exception('Too meny items in version 1 manifest.')  
+
+    passed = False
+    for f in manifest['files']:
+        if f['path'] == pfx_path('test.txt'):
+            passed = True
+            break
+
+    if passed == False:
+        raise Exception('error, file addition not recorded in version 1 json manifest.')  
+
+## --------
+    try: manifest = json.loads(file_get_contents(p.join(DATA_DIR, 'versions', '2', MANIFEST_FILE)))
+    except: raise Exception('error, could not decode manifest')  
+
+    if len(manifest['files']) > 0:
+        raise Exception('Too many items in version 2 manifest, deleted file not removed.')  
+
     empty_dir(DATA_DIR)
 
     print "Delete OK"
@@ -168,8 +295,8 @@ def test_versioned_storage_delete():
 test_versioned_storage_init()
 test_versioned_storage_step()
 test_versioned_storage_put()
-#test_versioned_storage_put_overwrite()
-#test_versioned_storage_move()
-#test_versioned_storage_move_overwrite()
-#test_versioned_storage_delete()
+test_versioned_storage_put_overwrite()
+test_versioned_storage_move()
+test_versioned_storage_move_overwrite()
+test_versioned_storage_delete()
 
