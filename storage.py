@@ -74,6 +74,9 @@ class storage(object):
 # Begin a transaction
 ############################################################################################
     def begin(self):
+        if self.journal != None:
+            raise Exception('Storage is already active, nested begin not supported')
+
         # under normal operation journal is deleted at end of transaction
         # if it does we need to roll back
         if os.path.isfile(self.j_file):  

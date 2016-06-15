@@ -22,3 +22,15 @@ def empty_dir(path):
     except: pass
     os.makedirs(path)
 
+############################################################################################
+# Returns contents of file located at 'path'
+############################################################################################
+def file_get_contents(path):
+    if os.path.isfile(path):  
+        with open(path, 'r') as f:
+            result = f.read()
+    else:
+        raise Exception('file not found')
+    return result
+
+

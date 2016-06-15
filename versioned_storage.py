@@ -151,22 +151,30 @@ class versioned_storage(rel_storage):
 # If a file exists in the current revision, move it to the parent revision. Step version
 # if doing so would overwrite a file in the parent.
 ############################################################################################
-    def step_if_exists(rpath):
+    def step_if_exists(self, rpath):
+
+        head = self.get_head()
+
         # does target file exist in current rv?
         exists = False
         if self.r_isfile(p.join(self.vrs_dir, str(head), rpath)):
             exists = True
             # Does the file exist in the parent rv?
-            if self.r_isfile(p.join(self.vrs_dir, str(head - 1), rpath)):
+            if head == 1 or self.r_isfile(p.join(self.vrs_dir, str(head - 1), rpath)):
                 # if yes, step revision
                 self.step_version()
 
         # reload head in case we stepped version
         head = self.get_head()
 
+
+        self.begin()
+
         # If there is a current file, move it back to prior RV
         if exists == True:
             self.r_move(p.join(self.vrs_dir, str(head), rpath), p.join(self.vrs_dir, str(head - 1), rpath))
+
+        self.commit()
 
         return exists
 
@@ -175,14 +183,12 @@ class versioned_storage(rel_storage):
 # Add a file to the FS
 ############################################################################################
     def fs_put(self, rpath, data):
-        self.begin()
         
         try:
-            head = self.get_head()
-
             # does file exist in current rv? If it does move it to prior rv
-            self.step_if_exists()
+            self.step_if_exists(rpath)
 
+            self.begin()
             # reload head in case we stepped version
             head = self.get_head()
 
@@ -196,8 +202,8 @@ class versioned_storage(rel_storage):
             #file_put_contents(p.join(cur_rv, MANIFEST_FILE), json.dumps(manifest))
 
         except:
-            self.rollback()
             raise
+            self.rollback()
 
         self.commit()
 
@@ -211,13 +217,12 @@ class versioned_storage(rel_storage):
 # Move a file in the FS
 ############################################################################################
     def fs_move(self, r_src, r_dst):
-        self.begin()
         
         try:
-            head = self.get_head()
-
             # does target file exist in current rv? If it does move it to prior rv
             self.step_if_exists(r_dst)
+
+            self.begin()
 
             # reload head in case we stepped version
             head = self.get_head()
@@ -243,22 +248,24 @@ class versioned_storage(rel_storage):
 ############################################################################################
 # Remove file from current revision
 ############################################################################################
-    def delete_file(self, sys_path):
-        self.begin()
-
+    def fs_delete(self, rpath):
         try:
-            head = self.get_head()
-
             # does target file exist in current rv? If it does move it to prior rv
-            self.step_if_exists(r_dst)
+            self.step_if_exists(rpath)
+
+            # do not need to do anything else, step_if_exists moves the file into the
+            # previous revision so it is effectively 'deleted' from the current one.
+
+
+            #self.begin()
 
             # reload head in case we stepped version
-            head = self.get_head()
+            #head = self.get_head()
 
-            cur_vrs = p.join(self.vrs_dir, str(head))
+            #cur_vrs = p.join(self.vrs_dir, str(head))
 
             # Delete the file
-            self.r_delete(p.join(cur_vrs, r_src), p.join(cur_vrs, r_dst))
+            #self.r_delete(p.join(cur_vrs, r_src), p.join(cur_vrs, r_dst))
 
 
             # Deal with the manifests...
@@ -269,8 +276,8 @@ class versioned_storage(rel_storage):
 
 
         except:
-            self.rollback()
             raise
+            #self.rollback()
 
-        self.commit()
+        #self.commit()
 
