@@ -2,7 +2,7 @@
 import __builtin__
 from versioned_storage import *
 
-str = versioned_storage()
+d_store = versioned_storage()
 
 __builtin__.DATA_DIR       = '/srv/backup/'
 __builtin__.MANIFEST_FILE  = '.manifest_xzf.json'
@@ -83,7 +83,11 @@ For each file:
 
 @app.route('/find_changed', methods=['POST'])
 def find_changed():
-    # Need to lock to stop concurrent access, which could cause corruption
+    # Need to lock to stop concurrent access, which could cause data corruption
+    if d_store.is_locked():
+        return 'Currently locked'
+
+    d_store.lock()
 
 
 # Validate passed data
@@ -248,6 +252,7 @@ def pull_file():
 #########################################################
 @app.route('/delete_file', methods=['POST'])
 def delete_file():
+        versioned_storage.fs_delete()
     pass
 
 
