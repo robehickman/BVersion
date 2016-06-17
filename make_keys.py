@@ -1,4 +1,6 @@
 #import nacl.encoding
+
+import os
 #import hashlib
 import binascii
 import nacl.signing
@@ -9,6 +11,13 @@ import nacl.secret
 import nacl.utils
 
 import getpass
+
+import argparse
+
+print ''
+
+
+
 
 def process_password(password):
     return scrypt.hash(password, 'random salt', 2048, 100, 1, nacl.secret.SecretBox.KEY_SIZE)
@@ -70,10 +79,24 @@ key = process_password(get_password())
 encrypted_private = encrypt_private(key, private)
 
 
-with open('public.key', 'w') as f:
+parser = argparse.ArgumentParser(description='Generate public and private key pair for authentication.')
+parser.add_argument('pubkey', nargs=1 , help='Public key file')
+parser.add_argument('privkey', nargs=1, help='Public key file')
+args = parser.parse_args()
+
+
+pubkey_file  = args.privkey[0]
+privkey_file = args.pubkey[0]
+
+
+os.makedirs(os.path.dirname(pubkey_file))
+os.makedirs(os.path.dirname(privkey_file))
+
+
+with open(pubkey_file + '.key', 'w') as f:
     f.write(binascii.hexlify(public))
 
-with open('private.key', 'w') as f:
+with open(privkey_file + '.key', 'w') as f:
     f.write(binascii.hexlify(encrypted_private))
 
 quit()
