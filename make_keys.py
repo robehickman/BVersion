@@ -1,21 +1,12 @@
 import os, getpass, argparse, binascii
+import sys
+
+sys.path = [ './lib' ] + sys.path
+
+from common import *
 from crypto import *
 
 print ''
-
-############################################################################
-# Prompt the user to enter a new password, with confirmation
-############################################################################
-def prompt_for_new_password():
-    while True:
-        passw = getpass.getpass()
-        passw2 = getpass.getpass()
-
-        if passw == passw2:
-            break
-        else:
-            print 'Passwords do not match'
-    return passw
 
 ############################################################################
 # Create directories in path if they do not exist
@@ -51,15 +42,17 @@ args = parser.parse_args()
 pubkey_file  = args.privkey[0]
 privkey_file = args.pubkey[0]
 
+# need to check if these files exist already
+
 if pubkey_file == privkey_file:
     print 'Error: public and private key file names are identical.'
 else:
     # get password to encrypt private key
-    key = key_from_password(prompt_for_new_password())
+    password = prompt_for_new_password()
 
     # make the key pair
     public, private = make_keypair()
-    encrypted_private = encrypt_private(key, private)
+    encrypted_private = encrypt_private(password, private)
 
     make_dirs_if_dont_exist(pubkey_file)
     make_dirs_if_dont_exist(privkey_file)

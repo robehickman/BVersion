@@ -1,12 +1,30 @@
-import os.path, time
+import os.path, time, fnmatch, json, getpass
 from termcolor import colored
-import fnmatch
-import json
 
 
 from poster.encode import multipart_encode
 from poster.streaminghttp import register_openers
 import urllib2
+
+############################################################################
+# Prompt the user to enter a new password, with confirmation
+############################################################################
+def prompt_for_new_password():
+    while True:
+        passw = getpass.getpass()
+        passw2 = getpass.getpass()
+
+        if passw == passw2:
+            break
+        else:
+            print 'Passwords do not match'
+    return passw
+
+############################################################################
+# Prompt the user to enter there password
+############################################################################
+def prompt_for_password():
+    return getpass.getpass()
 
 ############################################################################################
 # Makes sure a string is utf-8
@@ -230,7 +248,6 @@ def validate_request(r):
 
     allowed_path(r.form['path'])
 
-"""
 ############################################################################################
 # Returns contents of file located at 'path'
 ############################################################################################
@@ -248,7 +265,6 @@ def file_get_contents(path):
 def file_put_contents(path, data):
     with open(path, 'w') as f:
         f.write(data)
-"""
 
 ############################################################################################
 # Send a HTTP request to the server

@@ -7,6 +7,8 @@ __builtin__.MANIFEST_FILE        = '.manifest_xzf.json'
 __builtin__.REMOTE_MANIFEST_FILE = '.remote_manifest_xzf.json'
 __builtin__.IGNORE_FILTER_FILE   = '.pysync_ignore'
 __builtin__.PULL_IGNORE_FILE     = '.pysync_pull_ignore'
+__builtin__.PRIVATE_KEY_FILE     = 'keys/private.key'
+
 
 
 # need to implement a 'local delete' command, delete files
@@ -15,15 +17,49 @@ __builtin__.PULL_IGNORE_FILE     = '.pysync_pull_ignore'
 #########################################################
 # Imports
 #########################################################
-# client.py
-from common import *
 import json
 from poster.encode import multipart_encode
 from poster.streaminghttp import register_openers
 import urllib2
+import sys
+
+sys.path = [ './lib' ] + sys.path
+
+from common import *
+from crypto import *
 
 # Register the streaming http handlers with urllib2
 register_openers()
+
+private_key = ''
+
+#########################################################
+# Request an authentication token from the server, sign
+# it with the local private key, then send to server
+# for verification.
+#########################################################
+def authenticate_client():
+    result = do_request("begin_auth", {})
+
+    print result
+
+    result = json.loads(result)
+
+    if(result['status'] == 'ok'):
+        token = result['token']
+        signed_token = client_auth(private_key, token)
+
+        result2 = do_request("authenticate", {
+            'signed_token' : signed_token})
+
+        result2 = json.loads(result)
+        if(result2['status'] == 'ok'):
+            return
+        else:
+            raise Exception('Authentication failed')
+    else:
+        raise Exception('Count not get auth token from server')
+
 
 #########################################################
 # Detect which, if any files have been changed locally
@@ -189,6 +225,18 @@ def sync_files(manifest, new_files, changed_files, deleated_files):
 
 #########################################################
 #########################################################
+
+encrypted_private = file_get_contents(PRIVATE_KEY_FILE)
+
+try:
+    private_key = decrypt_private(prompt_for_password(), encrypted_private)
+except:
+    print 'password error'
+    raise
+
+
+authenticate_client()
+
 manifest = read_manifest()
 
 new_files, changed_files, deleated_files = detect_local_changes(manifest);

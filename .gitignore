@@ -6,3 +6,5 @@
 
 vers_test/*
 tests/vers_test/*
+keys/*
+srv_dir/*

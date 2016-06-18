@@ -1,10 +1,7 @@
 # Server configuration
 import __builtin__
-from versioned_storage import *
 
-d_store = versioned_storage()
-
-__builtin__.DATA_DIR       = '/srv/backup/'
+__builtin__.DATA_DIR       = './serv_dir/'
 __builtin__.MANIFEST_FILE  = '.manifest_xzf.json'
 
 #########################################################
@@ -15,9 +12,16 @@ import os
 from os import path
 from flask import Flask, request, redirect, url_for, send_from_directory
 from werkzeug.utils import secure_filename
+import sys
 
+sys.path = [ './lib' ] + sys.path
+
+
+from versioned_storage import *
 from common import *
+from crypto import *
 
+# d_store = versioned_storage(DATA_DIR, JOURNAL_FILE, JOURNAL_STEP_FILE, TMP_DIR, BACKUP_DIR)
 
 #########################################################
 # Flask init
@@ -26,6 +30,19 @@ app = Flask(__name__)
 app.debug = True
 app.config['UPLOAD_FOLDER'] = DATA_DIR
 
+#########################################################
+# Authenticate
+#########################################################
+@app.route('/begin_auth', methods=['POST'])
+def begin_auth():
+    try:
+        token = request_auth()
+
+        return json.dumps({
+            'status' : 'ok',
+            'token'  : token})
+    except:
+        return json.dumps({'status' : 'fail'})
 
 #########################################################
 # Get Manifest
@@ -252,7 +269,7 @@ def pull_file():
 #########################################################
 @app.route('/delete_file', methods=['POST'])
 def delete_file():
-        versioned_storage.fs_delete()
+    #versioned_storage.fs_delete()
     pass
 
 
