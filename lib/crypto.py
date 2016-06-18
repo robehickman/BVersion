@@ -85,6 +85,10 @@ def sign_data(private_key, data):
 # Verify the signature of some data
 ############################################################################################
 def varify_signiture(public_key, signed_data):
-    verify_key = nacl.signing.VerifyKey(public_key, encoder=nacl.encoding.HexEncoder)
-    verify_key.verify(signed_data)
+    try:
+        verify_key = nacl.signing.VerifyKey(public_key, encoder=nacl.encoding.HexEncoder)
+        verify_key.verify(signed_data)
+        return True
+    except:
+        return False
 

@@ -21,6 +21,7 @@ import json
 from poster.encode import multipart_encode
 from poster.streaminghttp import register_openers
 import urllib2
+from base64 import b64encode, b64decode
 import sys
 
 sys.path = [ './lib' ] + sys.path
@@ -44,19 +45,23 @@ def authenticate_client():
     result = json.loads(result)
 
     if(result['status'] == 'ok'):
-        token = result['token']
-        signed_token = client_auth(private_key, token)
+        error_not_in_dict(result, 'session_id', 'Server did not return session id')
+        session_id = result['session_id']
+
+        auth_token = sign_data(private_key, str(session_id))
 
         result2 = do_request("authenticate", {
-            'signed_token' : signed_token})
+            'auth_token' : b64encode(auth_token)})
 
-        result2 = json.loads(result)
+        result2 = json.loads(result2)
         if(result2['status'] == 'ok'):
+            print 'auth ok'
+            quit()
             return
         else:
             raise Exception('Authentication failed')
     else:
-        raise Exception('Count not get auth token from server')
+        raise Exception('Count not get auth token from server, the server may be locked.')
 
 
 #########################################################

@@ -13,6 +13,8 @@ import os
 from os import path
 from flask import Flask, request, redirect, url_for, send_from_directory
 from werkzeug.utils import secure_filename
+from base64 import b64encode, b64decode
+
 import sys
 
 sys.path = [ './lib' ] + sys.path
@@ -23,10 +25,6 @@ from common import *
 from crypto import *
 
 
-public_key = file_get_contents(PUBLIC_KEY_FILE)
-
-# d_store = versioned_storage(DATA_DIR, JOURNAL_FILE, JOURNAL_STEP_FILE, TMP_DIR, BACKUP_DIR)
-
 #########################################################
 # Flask init
 #########################################################
@@ -34,39 +32,95 @@ app = Flask(__name__)
 app.debug = True
 app.config['UPLOAD_FOLDER'] = DATA_DIR
 
+
+public_key = file_get_contents(PUBLIC_KEY_FILE)
+
+# d_store = versioned_storage(DATA_DIR, JOURNAL_FILE, JOURNAL_STEP_FILE, TMP_DIR, BACKUP_DIR)
+
+
+
+# because we are dealing with a physical file system we cannot allow more than one
+# user access at a time or we could corrupt the file system, for example where
+# the same file modified by two end points. Because of this access is locked to
+# a single client. In case a client crashes in the middle of a sync, the lock will
+#time out automatically.
+session_lock = 0
+
+# Current Session ID
+session_id     = None
+
+issued_tokens = {}
+
+def gc_tokens():
+    global issued_tokens
+    filtered_dict = {}
+    for key, value in issued_tokens.iteritems():
+        cur_time = time.time()
+        filtered_dict = {}
+        if value > cur_time: # keys which are still valid
+            filtered_dict[key] = value
+
+    issued_tokens = filtered_dict
+
+
+
 #########################################################
 # Request authentication token to sign
 #########################################################
 @app.route('/begin_auth', methods=['POST'])
 def begin_auth():
-    try:
-        token = request_auth()
+    global issued_tokens
+
+    gc_tokens()
+
+    if int(time.time()) > session_lock:
+
+        auth_token = random_bytes(35)
+        issued_tokens[auth_token] = time.time() + (60 * 5)
 
         return json.dumps({
-            'status' : 'ok',
-            'token'  : token})
-    except:
-        return json.dumps({'status' : 'fail'})
+            'status'     : 'ok',
+            'session_id' : auth_token})
+
+    print 'locked'
+    return json.dumps({'status' : 'fail'})
 
 #########################################################
 # Authenticate
 #########################################################
 @app.route('/authenticate', methods=['POST'])
 def authenticate():
-    error_not_in_dict(request.form, 'signed_token', 'Signed authentication token missing')
+    global session_lock
+    global issued_tokens
 
-    token = request.form['signed_token']
+    error_not_in_dict(request.form, 'auth_token', 'Signed authentication token missing')
 
-    varify_auth(public_key, token)
+    auth_token = b64decode(request.form['auth_token'])
 
-    try:
-        token = request_auth()
+    valid = False
+    if varify_signiture(public_key, auth_token):
+        print 'signiture ok'
+        for key, value in issued_tokens.iteritems():
+            print key
+            print auth_token
+            if auth_token.find(key):
+                del issued_tokens[key]
+                valid = True
+                break
 
-        return json.dumps({
-            'status' : 'ok',
-            'token'  : token})
-    except:
-        return json.dumps({'status' : 'fail'})
+    if valid == True:
+        session_lock = int(time.time()) + (60 * 10)
+
+        result = json.dumps({
+            'status' : 'ok'})
+
+    else:
+        result = json.dumps({'status' : 'fail'})
+
+    gc_tokens()
+    print result
+    return result
+
 
 #########################################################
 # Get Manifest
