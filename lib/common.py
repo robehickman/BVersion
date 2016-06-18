@@ -26,6 +26,26 @@ def prompt_for_new_password():
 def prompt_for_password():
     return getpass.getpass()
 
+############################################################################
+# Create directories in path if they do not exist
+############################################################################
+def make_dirs_if_dont_exist(path):
+    path = os.path.dirname(path)
+    if path != '':
+        try:
+            os.makedirs(path)
+        except OSError:
+            pass
+
+############################################################################
+# Make sure path ends with the correct extension
+############################################################################
+def exsure_extension(path, ext):
+    if path.endswith(ext):
+        return path
+    else:
+        return path + ext
+
 ############################################################################################
 # Makes sure a string is utf-8
 ############################################################################################

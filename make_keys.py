@@ -6,57 +6,42 @@ sys.path = [ './lib' ] + sys.path
 from common import *
 from crypto import *
 
-print ''
+# File extensions for public and private key files
+PUB_EXT = '.key'
+PRV_EXT = '.key'
 
-############################################################################
-# Create directories in path if they do not exist
-############################################################################
-def make_dirs_if_dont_exist(path):
-    path = os.path.dirname(path)
-    if path != '':
-        try:
-            os.makedirs(path)
-        except OSError:
-            pass
-
-############################################################################
 # Handle command line arguments
-############################################################################
-def put_if_does_not_exist(path, contents):
-    if not os.path.isfile(path):
-        with open(path + '.key', 'w') as f:
-            f.write(contents)
-
-    else:
-        print 'Error, key file already exists'
-
-############################################################################
-# Handle command line arguments
-############################################################################
 parser = argparse.ArgumentParser(description='Generate public and private key pair for authentication.')
 parser.add_argument('pubkey', nargs=1 , help='Public key file')
 parser.add_argument('privkey', nargs=1, help='Private key file')
 args = parser.parse_args()
 
-# read args
-pubkey_file  = args.privkey[0]
-privkey_file = args.pubkey[0]
+pubkey_file  = args.pubkey[0]
+privkey_file = args.privkey[0]
 
-# need to check if these files exist already
 
+
+# Public and private key files should be different
 if pubkey_file == privkey_file:
     print 'Error: public and private key file names are identical.'
-else:
-    # get password to encrypt private key
-    password = prompt_for_new_password()
+    quit()
 
-    # make the key pair
-    public, private = make_keypair()
-    encrypted_private = encrypt_private(password, private)
+# Check if the files exist already and ask the user if they wish to overwrite
+if os.path.isfile(exsure_extension(pubkey_file, PUB_EXT)) or os.path.isfile(exsure_extension(privkey_file, PRV_EXT)):
+    print 'Public and/or private key files already exist, overwrite?'
 
-    make_dirs_if_dont_exist(pubkey_file)
-    make_dirs_if_dont_exist(privkey_file)
+    while True:
+        answer = raw_input('Y/N: ')
 
-    put_if_does_not_exist(pubkey_file + '.key', binascii.hexlify(public))
-    put_if_does_not_exist(privkey_file + '.key', binascii.hexlify(encrypted_private))
+        if answer.lower() == 'y':
+            break
 
+        elif answer.lower() == 'n':
+            print 'Please change file names in your command, exiting.'
+            quit()
+
+# If above passed, prompt for new password to encrypt the private key
+password = prompt_for_new_password()
+
+# Create new key pair and write to the files
+write_keypair(password, pubkey_file, PUB_EXT, privkey_file, PRV_EXT)

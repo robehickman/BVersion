@@ -3,6 +3,7 @@ import __builtin__
 
 __builtin__.DATA_DIR       = './serv_dir/'
 __builtin__.MANIFEST_FILE  = '.manifest_xzf.json'
+PUBLIC_KEY_FILE            = './keys/public.key'
 
 #########################################################
 # Imports
@@ -21,6 +22,9 @@ from versioned_storage import *
 from common import *
 from crypto import *
 
+
+public_key = file_get_contents(PUBLIC_KEY_FILE)
+
 # d_store = versioned_storage(DATA_DIR, JOURNAL_FILE, JOURNAL_STEP_FILE, TMP_DIR, BACKUP_DIR)
 
 #########################################################
@@ -31,10 +35,30 @@ app.debug = True
 app.config['UPLOAD_FOLDER'] = DATA_DIR
 
 #########################################################
-# Authenticate
+# Request authentication token to sign
 #########################################################
 @app.route('/begin_auth', methods=['POST'])
 def begin_auth():
+    try:
+        token = request_auth()
+
+        return json.dumps({
+            'status' : 'ok',
+            'token'  : token})
+    except:
+        return json.dumps({'status' : 'fail'})
+
+#########################################################
+# Authenticate
+#########################################################
+@app.route('/authenticate', methods=['POST'])
+def authenticate():
+    error_not_in_dict(request.form, 'signed_token', 'Signed authentication token missing')
+
+    token = request.form['signed_token']
+
+    varify_auth(public_key, token)
+
     try:
         token = request_auth()
 

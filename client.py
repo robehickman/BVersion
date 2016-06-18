@@ -41,8 +41,6 @@ private_key = ''
 def authenticate_client():
     result = do_request("begin_auth", {})
 
-    print result
-
     result = json.loads(result)
 
     if(result['status'] == 'ok'):
@@ -230,10 +228,9 @@ encrypted_private = file_get_contents(PRIVATE_KEY_FILE)
 
 try:
     private_key = decrypt_private(prompt_for_password(), encrypted_private)
-except:
-    print 'password error'
-    raise
-
+except nacl.exceptions.CryptoError:
+    print 'Password error'
+    quit()
 
 authenticate_client()
 
