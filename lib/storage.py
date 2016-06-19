@@ -216,6 +216,21 @@ class storage(object):
         with open(path, 'w') as f:
             f.write(data)
 
+############################################################################################
+# Save upload file to 'path'
+############################################################################################
+    def save_upload(self, path, file_obj):
+        # if file exists, create a temp copy to allow rollback
+        if os.path.isfile(path):  
+            tmp_path = self.new_tmp()
+            shutil.copy(path, tmp_path)
+
+            self.to_journel(['put_contents', path, tmp_path])
+        else:
+            self.to_journel(['put_contents', path, None])
+
+        file_obj.save(path)
+
 
 ############################################################################################
 # Move file from src to dst

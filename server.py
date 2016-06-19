@@ -1,7 +1,7 @@
 # Server configuration
 import __builtin__
 
-__builtin__.DATA_DIR       = './serv_dir/'
+__builtin__.DATA_DIR       = './srv_dir/'
 __builtin__.MANIFEST_FILE  = '.manifest_xzf.json'
 PUBLIC_KEY_FILE            = './keys/public.key'
 
@@ -35,9 +35,14 @@ app.config['UPLOAD_FOLDER'] = DATA_DIR
 
 public_key = file_get_contents(PUBLIC_KEY_FILE)
 
-# d_store = versioned_storage(DATA_DIR, JOURNAL_FILE, JOURNAL_STEP_FILE, TMP_DIR, BACKUP_DIR)
+data_store = versioned_storage(DATA_DIR, JOURNAL_FILE, JOURNAL_STEP_FILE, TMP_DIR, BACKUP_DIR)
 
 
+
+
+
+# Tokens issued
+issued_tokens = {}
 
 # because we are dealing with a physical file system we cannot allow more than one
 # user access at a time or we could corrupt the file system, for example where
@@ -46,10 +51,9 @@ public_key = file_get_contents(PUBLIC_KEY_FILE)
 #time out automatically.
 session_lock = 0
 
-# Current Session ID
-session_id     = None
+# The currently active session
+active_session = None
 
-issued_tokens = {}
 
 def gc_tokens():
     global issued_tokens
@@ -63,6 +67,18 @@ def gc_tokens():
     issued_tokens = filtered_dict
 
 
+def check_session_auth(form):
+    global session_lock
+    global actice_session
+
+    error_not_in_dict(form, 'session_id', 'session id missing')
+
+    if(actice_session != None and form['session_id'] == actice_session):
+        raise Exception('Session ID does not match active session')
+
+    if not (int(time.time()) > session_lock):
+        raise Exception('Session lock has expired')
+
 
 #########################################################
 # Request authentication token to sign
@@ -70,6 +86,7 @@ def gc_tokens():
 @app.route('/begin_auth', methods=['POST'])
 def begin_auth():
     global issued_tokens
+    global session_lock
 
     gc_tokens()
 
@@ -98,18 +115,20 @@ def authenticate():
     auth_token = b64decode(request.form['auth_token'])
 
     valid = False
+    session_id = None
     if varify_signiture(public_key, auth_token):
         print 'signiture ok'
         for key, value in issued_tokens.iteritems():
-            print key
-            print auth_token
             if auth_token.find(key):
+                session_id = key
                 del issued_tokens[key]
                 valid = True
                 break
 
     if valid == True:
         session_lock = int(time.time()) + (60 * 10)
+
+        active_session = session_id
 
         result = json.dumps({
             'status' : 'ok'})
@@ -127,7 +146,10 @@ def authenticate():
 #########################################################
 @app.route('/get_manifest', methods=['POST'])
 def get_manifest():
-    manifest = read_server_manifest()
+    # check_session_auth(request.form)
+    global data_store
+
+    manifest = data_store.read_local_manifest()
     return json.dumps(manifest)
 
 #########################################################
@@ -178,12 +200,7 @@ For each file:
 
 @app.route('/find_changed', methods=['POST'])
 def find_changed():
-    # Need to lock to stop concurrent access, which could cause data corruption
-    if d_store.is_locked():
-        return 'Currently locked'
-
-    d_store.lock()
-
+    #check_session_auth(request.form)
 
 # Validate passed data
     error_not_in_dict(request.form, 'client_manifest', 'client manifest missing')
@@ -192,27 +209,41 @@ def find_changed():
     error_not_in_dict(request.form, 'changed_files',   'new files list missing')
     error_not_in_dict(request.form, 'deleted_files',   'deleted files list missing')
 
-    manifest      = read_server_manifest()
+
+# List to store files which are new on the server and need sending to the remote
+    server_new_files = []
+
+# List to store files which have been modified on the server
+    server_modified_files = []
+
+# List to store files which have been deleted on the server since last client run
+    server_deleated_files = []
+
+# List to store files which have been deleted on the remote and need deleating from the server
+    server_to_deleate_files = []
+
+
+
+# Filter local manifest to remove files which have been deleted on the remote
+    manifest = data_store.read_local_manifest()
 
     remote_deleated_files = json.loads(request.form['deleted_files'])
     remote_deleated_dict = make_dict(remote_deleated_files)
 
-# handle delete files
     filter_manifest = []
     for itm in manifest['files']:
+        # file has been deleted from remote, remove it locally
         if itm['path'] in remote_deleated_dict:
-            try:
-                os.remove(DATA_DIR + itm['path']) # file has been deleted from remote, remove it locally
-            except OSError:
-                pass # file does not exist locally anyway
+            server_to_deleate_files.append(itm)
+
+        # File still exists, keep it in the manifest
         else:
             filter_manifest.append(itm)
 
     manifest['files'] = filter_manifest
 
-    write_manifest(manifest)
 
-
+# Find files which have changed on the server since the last time this client synced
 
 # Compare current and previous manifests for changes, looking
 # for files which have changed on the server in the time between
@@ -220,34 +251,37 @@ def find_changed():
 # The server manifest should always reflect the current state
 # of the server FS as this should never be changed manually
     prev_manifest = json.loads(request.form['prev_manifest'])
-
+    print prev_manifest
     prev_manifest_dict = make_dict(prev_manifest['files'])
 
     client_manifest = json.loads(request.form['client_manifest'])
     client_manifest_dict = make_dict(client_manifest['files'])
 
-    server_new_files = []
-    server_modified_files = []
-    server_deleated_files = []
+    # Find files which are new on the server
     for itm in manifest['files']:
         if itm['path'] in prev_manifest_dict:
             d_itm = prev_manifest_dict.pop(itm['path'])
-            if itm['last_mod'] == d_itm['last_mod']:
-                if itm['path'] in client_manifest_dict:
-                    pass # file has not changed and already exists on client
-                else:
+            
+        # If the file has been modified we need to check if the modification is in conflict
+            if itm['last_mod'] != d_itm['last_mod']:
+                server_modified_files.append(itm) 
+
+
+        # Items which have not been modified, but are not in the client manifest are new from other clients
+            if itm['last_mod'] == d_itm['last_mod'] and (itm['path'] not in client_manifest_dict):
                     server_new_files.append(itm['path'])# File does not exist on client
-                
-            else:
-                server_modified_files.append(itm) # file has changed
+
         else:
+            # anything here was not found in the remote manifest is new on the server
             print 'unknown file: ' + itm['path']
 
-#TODO need to test if detecting files which are new/modified on the server is working
 
 # any files remaining in the remote manifest have been deleted locally
     for key, value in prev_manifest_dict.iteritems():
         server_deleated_files.append(value)
+
+
+
 
 # File arrays
 
@@ -310,7 +344,7 @@ def push_file():
     path = request.form['path']
     file = request.files['file']
 
-    last_change = versioned_storage.fs_save_upload(file, path)
+    data_store.fs_save_upload(file, path)
 
     return json.dumps({
         'status'          : 'ok',

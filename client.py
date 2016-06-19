@@ -2,7 +2,7 @@
 import __builtin__
 
 __builtin__.SERVER_URL           = 'http://localhost:5000/'
-__builtin__.DATA_DIR             = './'
+__builtin__.DATA_DIR             = './client_dir/' # dirs must include trailing slash
 __builtin__.MANIFEST_FILE        = '.manifest_xzf.json'
 __builtin__.REMOTE_MANIFEST_FILE = '.remote_manifest_xzf.json'
 __builtin__.IGNORE_FILTER_FILE   = '.pysync_ignore'
@@ -34,34 +34,39 @@ register_openers()
 
 private_key = ''
 
+session_id = None
+
 #########################################################
 # Request an authentication token from the server, sign
 # it with the local private key, then send to server
 # for verification.
 #########################################################
 def authenticate_client():
+    global session_id
+
     result = do_request("begin_auth", {})
 
     result = json.loads(result)
 
-    if(result['status'] == 'ok'):
-        error_not_in_dict(result, 'session_id', 'Server did not return session id')
-        session_id = result['session_id']
-
-        auth_token = sign_data(private_key, str(session_id))
-
-        result2 = do_request("authenticate", {
-            'auth_token' : b64encode(auth_token)})
-
-        result2 = json.loads(result2)
-        if(result2['status'] == 'ok'):
-            print 'auth ok'
-            quit()
-            return
-        else:
-            raise Exception('Authentication failed')
-    else:
+    if(result['status'] != 'ok'):
         raise Exception('Count not get auth token from server, the server may be locked.')
+
+
+    error_not_in_dict(result, 'session_id', 'Server did not return session id')
+    tmp_session_id = result['session_id']
+
+    auth_token = sign_data(private_key, str(tmp_session_id))
+
+    result2 = do_request("authenticate", {
+        'auth_token' : b64encode(auth_token)})
+
+    result2 = json.loads(result2)
+
+    if(result2['status'] != 'ok'):
+        raise Exception('Authentication failed')
+
+    print 'auth ok'
+    session_id = tmp_session_id
 
 
 #########################################################
@@ -78,6 +83,9 @@ def detect_local_changes(manifest):
     f_list = get_file_list(DATA_DIR)
 
     f_list_dict = make_dict(f_list)
+
+    for itm in f_list:
+        print itm
 
     # Check for changes since last run
     new_files = []
@@ -112,6 +120,7 @@ def sync_files(manifest, new_files, changed_files, deleated_files):
 
     #send list to server, which will return changes
     result = do_request("find_changed", {
+        #"session_id"      : session_id,
         "client_manifest" : json.dumps(manifest),
         "prev_manifest"   : json.dumps(remote_manifest),
         "new_files"       : json.dumps(new_files),
@@ -119,6 +128,7 @@ def sync_files(manifest, new_files, changed_files, deleated_files):
         "deleted_files"   : json.dumps(deleated_files)});
 
     result = json.loads(result)
+
 
     if(result['status'] == 'ok'):
     # update manifests to account for files deleted on the remote
@@ -229,6 +239,7 @@ def sync_files(manifest, new_files, changed_files, deleated_files):
 #########################################################
 #########################################################
 
+"""
 encrypted_private = file_get_contents(PRIVATE_KEY_FILE)
 
 try:
@@ -239,6 +250,11 @@ except nacl.exceptions.CryptoError:
 
 authenticate_client()
 
+if session_id == None:
+    raise Exception('Authentication failed')
+"""
+
+
 manifest = read_manifest()
 
 new_files, changed_files, deleated_files = detect_local_changes(manifest);
@@ -246,7 +262,6 @@ new_files, changed_files, deleated_files = detect_local_changes(manifest);
 display_list('New: ',     new_files, 'green')
 display_list('Changed: ', changed_files, 'yellow')
 display_list('Deleted: ', deleated_files, 'red')
-
 
 sync_files(manifest, new_files, changed_files, deleated_files)
 

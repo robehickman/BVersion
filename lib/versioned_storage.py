@@ -1,9 +1,9 @@
 import __builtin__
 
-__builtin__.DATA_DIR       = './vers_test/'
+#__builtin__.DATA_DIR       = './vers_test/'
 __builtin__.TMP_DIR        = '.tmp/'
 __builtin__.BACKUP_DIR       = 'back/'
-__builtin__.MANIFEST_FILE  = '.manifest_xzf.json'
+#__builtin__.MANIFEST_FILE  = '.manifest_xzf.json'
 __builtin__.JOURNAL_FILE       = '.journal.json'
 __builtin__.JOURNAL_STEP_FILE  = '.journal_step'
 
@@ -24,6 +24,12 @@ class rel_storage(storage):
 ############################################################################################
     def r_put(self, rpath, data):
         return self.file_put_contents(self.mkfs_path(rpath), data)
+
+############################################################################################
+# Save an uploaded file
+############################################################################################
+    def r_save_upload(self, rpath, file_obj):
+        return self.save_upload(self.mkfs_path(rpath), file_obj)
 
 ############################################################################################
 # Relative file get contents
@@ -135,7 +141,10 @@ class versioned_storage(rel_storage):
 ############################################################################################
 # Read local manifest file.
 ############################################################################################
-    def read_local_manifest(self, vrs):
+    def read_local_manifest(self, vrs = None):
+        if vrs == None:
+            vrs = self.get_head()
+
         # Read Manifest
         try:
             manifest = json.loads(self.r_get(p.join('versions', str(vrs), MANIFEST_FILE)))
@@ -261,6 +270,34 @@ class versioned_storage(rel_storage):
             self.rollback()
 
         self.commit()
+
+############################################################################################
+# Save an uploaded file
+############################################################################################
+    def fs_save_upload(self, rpath, file_obj):
+        
+        try:
+            # does file exist in current rv? If it does move it to prior rv
+            self.step_if_exists(rpath)
+
+            self.begin()
+            # reload head in case we stepped version
+            head = self.get_head()
+
+            # Add the file to the current revision
+            self.r_save_upload(p.join(self.vrs_dir, str(head), rpath), file_obj)
+
+            # Add to the manifest
+            manifest = self.read_local_manifest(head)
+            manifest['files'].append(self.get_single_file_info(p.join(self.vrs_dir, str(head), rpath), rpath))
+            manifest = self.write_local_manifest(head, manifest)
+
+        except:
+            raise
+            self.rollback()
+
+        self.commit()
+
 
 ############################################################################################
 # Get a files contents from the FS

@@ -68,29 +68,23 @@ def pfx_path(path):
 ############################################################################################
 # Gets last change time for a single file
 ############################################################################################
-"""
 def get_single_file_info(f_path, int_path):
-
     return { 'path'     : force_unicode(int_path),
              'created'  : os.path.getctime(f_path),
              'last_mod' : os.path.getmtime(f_path)}
-"""
 
 ############################################################################################
 # Obtains a list of all files in a file system.
 ############################################################################################
-
-"""
 def get_file_list(path):
-
     f_list = []
-    def recur_dir(path, newpath = '/'):
+    def recur_dir(path, newpath = os.path.sep):
         files = os.listdir(path) 
 
         for file in files:
             f_path = path + file
             if os.path.isdir(f_path):
-                recur_dir(f_path + '/', newpath + file + '/')
+                os.path.join(f_path, os.path.join(newpath, file))
             elif os.path.isfile(f_path):
                 f_list.append(get_single_file_info(f_path, newpath + file))
 
@@ -99,8 +93,6 @@ def get_file_list(path):
     f_list = apply_ignore_filters(f_list)
 
     return f_list
-"""
-
 
 ############################################################################################
 # Convert file list into a dictionary with the file path as its key, and meta data as a
@@ -175,7 +167,6 @@ def apply_ignore_filters(f_list):
 ############################################################################################
 # Read client manifest file.
 ############################################################################################
-"""
 def read_manifest():
     # Read Manifest
     try:
@@ -191,6 +182,7 @@ def read_manifest():
 
     return manifest
 
+"""
 ############################################################################################
 # Read server manifest file
 ############################################################################################
@@ -211,7 +203,7 @@ def write_manifest(manifest):
 ############################################################################################
 def write_remote_manifest(manifest):
     file_put_contents(DATA_DIR + REMOTE_MANIFEST_FILE, json.dumps(manifest))
-
+"""
 ############################################################################################
 # Read locally stored remote manifest. The server sends this data at the end of each
 # sync request. It is used to detect file changes on the server since the last run.
@@ -234,7 +226,6 @@ def read_remote_manifest():
 ############################################################################################
 def write_remote_manifest(manifest):
     file_put_contents(DATA_DIR + REMOTE_MANIFEST_FILE, json.dumps(manifest))
-"""
 
 ############################################################################################
 # Block '..' from occurring in file paths, this should not happen under normal operation.

@@ -5,6 +5,7 @@
 *.swn
 
 vers_test/*
+client_dir/*
 tests/vers_test/*
 keys/*
 srv_dir/*
