@@ -73,69 +73,34 @@ def authenticate_client():
 # Detect which, if any files have been changed locally
 #########################################################
 def detect_local_changes(manifest):
-    #extract old local file list from manifest
+    # Obtain previous state from the manifest
     old_f_list = manifest['files']
-    old_f_list_dict = make_dict(old_f_list)
 
-
-    # create a list of all files including there modification times
-
+    # Obtain current state of the file system
     f_list = get_file_list(DATA_DIR)
 
-    f_list_dict = make_dict(f_list)
-
-    for itm in f_list:
-        print itm
-
     # Check for changes since last run
-    new_files = []
-    changed_files = []
-    deleated_files = []
+    client_files = find_manifest_changes(f_list, old_f_list)
 
-    for r_itm in f_list:
-        if  r_itm['path'] in old_f_list_dict:
-            # Remove and check for changes
-            old_itm = old_f_list_dict.pop(r_itm['path'])
-
-            if r_itm['last_mod'] !=  old_itm['last_mod']:
-                changed_files.append(r_itm)
-            else:
-                pass # file has not changed, do nothing
-
-        else:
-            new_files.append(r_itm)
-
-    # anything remaining in the dict has been deleted
-    for key, value in old_f_list_dict.iteritems():
-        deleated_files.append(value)
-
-    return (new_files, changed_files, deleated_files)
+    return client_files
 
 #########################################################
 # Do actual file sync
 #########################################################
-def sync_files(manifest, new_files, changed_files, deleated_files):
+def sync_files(client_files):
     # Get previous server manifest
     remote_manifest = read_remote_manifest()
 
     #send list to server, which will return changes
     result = do_request("find_changed", {
         #"session_id"      : session_id,
-        "client_manifest" : json.dumps(manifest),
         "prev_manifest"   : json.dumps(remote_manifest),
-        "new_files"       : json.dumps(new_files),
-        "changed_files"   : json.dumps(changed_files),
-        "deleted_files"   : json.dumps(deleated_files)});
+        "client_files"    : json.dumps(client_files)})
 
     result = json.loads(result)
 
-
     if(result['status'] == 'ok'):
-    # update manifests to account for files deleted on the remote
-        remote_manifest = result['remote_manifest']
-        write_remote_manifest(remote_manifest)
-
-
+        """
         if deleated_files != []:
             deleted_dict = make_dict(deleated_files)
             manifest = read_manifest()
@@ -147,9 +112,8 @@ def sync_files(manifest, new_files, changed_files, deleated_files):
                     filter_manifest.append(f)
             manifest['files'] = filter_manifest
             write_manifest(manifest) 
-
+        """
         
-
     #see if there is anything that needs pulling or pushing
         errors = []
 
@@ -157,12 +121,18 @@ def sync_files(manifest, new_files, changed_files, deleated_files):
             print 'Nothing to do'
 
         # Push files
-        for file in result['push_files']:
+        for fle in result['push_files']:
+            print fle
 
-            print 'Sending: ' + file
+            print 'Sending: ' + fle['path']
+
+            print DATA_DIR
+            print os.path.join(DATA_DIR, fle['path'])
 
             req_result = do_request("push_file", {
-                "file": open(DATA_DIR + file, "rb"), 'path' : file})
+                "file": open(DATA_DIR + fle['path'], "rb"), 'path' : fle['path']})
+
+            quit()
 
             responce = json.loads(req_result)
             if responce['status'] == 'ok':
@@ -172,7 +142,6 @@ def sync_files(manifest, new_files, changed_files, deleated_files):
 
                 # update local and remote manifest after every upload to not re-upload files
                 # if the system fails mid-sync
-
 
                 manifest = read_manifest()
                 manifest['files'].append(get_single_file_info(
@@ -184,8 +153,6 @@ def sync_files(manifest, new_files, changed_files, deleated_files):
                 write_remote_manifest(remote_manifest)
             else:
                 errors.append(responce['last_path'])
-            
-
 
         try:
             pull_ignore = file_get_contents(DATA_DIR + PULL_IGNORE_FILE)
@@ -254,16 +221,26 @@ if session_id == None:
     raise Exception('Authentication failed')
 """
 
-
 manifest = read_manifest()
 
-new_files, changed_files, deleated_files = detect_local_changes(manifest);
+client_files = detect_local_changes(manifest);
+
+new_files     = []
+changed_files = []
+deleted_files = []
+for itm in client_files.values():
+    if itm['status'] == 'new':
+        new_files.append(itm)
+    if itm['status'] == 'changed':
+        changed_files.append(itm)
+    if itm['status'] == 'deleted':
+        deleted_files.append(itm)
 
 display_list('New: ',     new_files, 'green')
 display_list('Changed: ', changed_files, 'yellow')
-display_list('Deleted: ', deleated_files, 'red')
+display_list('Deleted: ', deleted_files, 'red')
 
-sync_files(manifest, new_files, changed_files, deleated_files)
+sync_files(client_files)
 
 
 

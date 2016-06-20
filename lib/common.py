@@ -227,6 +227,44 @@ def read_remote_manifest():
 def write_remote_manifest(manifest):
     file_put_contents(DATA_DIR + REMOTE_MANIFEST_FILE, json.dumps(manifest))
 
+
+############################################################################################
+# Find what has changed between two manifests
+############################################################################################
+def find_manifest_changes(files_state1, files_state2):
+    prev_state_dict = make_dict(files_state2)
+
+    changed_files = {}
+
+    # Find files which are new on the server
+    for itm in files_state1:
+        if itm['path'] in prev_state_dict:
+            d_itm = prev_state_dict.pop(itm['path'])
+            
+        # If the file has been modified
+            if itm['last_mod'] != d_itm['last_mod']:
+                n_itm = itm.copy()
+                n_itm['status'] = 'changed'
+                changed_files[itm['path']] = n_itm
+            else:
+                pass # The file has not changed
+
+        else:
+            # anything here was not found in the remote manifest is new on the server
+            n_itm = itm.copy()
+            n_itm['status'] = 'new'
+            changed_files[itm['path']] = n_itm
+
+
+# any files remaining in the remote manifest have been deleted locally
+    for key, itm in prev_state_dict.iteritems():
+        n_itm = itm.copy()
+        n_itm['status'] = 'deleted'
+        changed_files[itm['path']] = n_itm
+
+    return changed_files
+
+
 ############################################################################################
 # Block '..' from occurring in file paths, this should not happen under normal operation.
 ############################################################################################
