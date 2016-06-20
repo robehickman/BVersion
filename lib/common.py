@@ -105,12 +105,12 @@ def get_file_list(path):
     def recur_dir(path, newpath = os.path.sep):
         files = os.listdir(path) 
 
-        for file in files:
-            f_path = path + file
+        for fle in files:
+            f_path = cpjoin(path, fle)
             if os.path.isdir(f_path):
-                os.path.join(f_path, os.path.join(newpath, file))
+                recur_dir(f_path, cpjoin(newpath, fle))
             elif os.path.isfile(f_path):
-                f_list.append(get_single_file_info(f_path, newpath + file))
+                f_list.append(get_single_file_info(f_path, newpath + fle))
 
     recur_dir(path)
 
