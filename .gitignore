@@ -6,6 +6,7 @@
 
 vers_test/*
 client_dir/*
+client_dir2/*
 tests/vers_test/*
 keys/*
 srv_dir/*

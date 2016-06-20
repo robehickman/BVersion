@@ -2,7 +2,7 @@
 import __builtin__
 
 __builtin__.SERVER_URL           = 'http://localhost:5000/'
-__builtin__.DATA_DIR             = './client_dir/' # dirs must include trailing slash
+__builtin__.DATA_DIR             = './client_dir2/' # dirs must include trailing slash
 __builtin__.MANIFEST_FILE        = '.manifest_xzf.json'
 __builtin__.REMOTE_MANIFEST_FILE = '.remote_manifest_xzf.json'
 __builtin__.IGNORE_FILTER_FILE   = '.pysync_ignore'

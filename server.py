@@ -195,6 +195,11 @@ def push_file():
     path = request.form['path']
     file = request.files['file']
 
+    dirpath = os.path.dirname(data_store.get_full_file_path(path))
+    if not os.path.isdir(dirpath):
+        os.makedirs(dirpath)
+
+
     data_store.fs_save_upload(path, file)
     last_change = data_store.get_single_file_info(path, path)
 

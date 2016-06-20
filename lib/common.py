@@ -87,8 +87,6 @@ def cpjoin(*args):
     return path
 
 
-
-
 ############################################################################################
 # Gets last change time for a single file
 ############################################################################################
@@ -110,7 +108,7 @@ def get_file_list(path):
             if os.path.isdir(f_path):
                 recur_dir(f_path, cpjoin(newpath, fle))
             elif os.path.isfile(f_path):
-                f_list.append(get_single_file_info(f_path, newpath + fle))
+                f_list.append(get_single_file_info(f_path, cpjoin(newpath, fle)))
 
     recur_dir(path)
 
