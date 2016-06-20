@@ -126,13 +126,8 @@ def sync_files(client_files):
 
             print 'Sending: ' + fle['path']
 
-            print DATA_DIR
-            print os.path.join(DATA_DIR, fle['path'])
-
             req_result = do_request("push_file", {
-                "file": open(DATA_DIR + fle['path'], "rb"), 'path' : fle['path']})
-
-            quit()
+                "file": open(cpjoin(DATA_DIR, fle['path']), "rb"), 'path' : fle['path']})
 
             responce = json.loads(req_result)
             if responce['status'] == 'ok':
@@ -173,12 +168,12 @@ def sync_files(client_files):
             print 'Warning, pull ignore file does not exist'
                     
         # Get files
-        for file in result['pull_files']:
-            path = DATA_DIR + file
+        for fle in result['pull_files']:
+            path = DATA_DIR + fle['path']
             print 'Pulling file: ' + path
 
             req_result = do_request("pull_file", {
-                'path' : file})
+                'path' : fle['path']})
 
             try:
                 os.makedirs(os.path.dirname(path))
@@ -188,11 +183,12 @@ def sync_files(client_files):
             file_put_contents(path, req_result)
 
             manifest = read_manifest()
-            manifest['files'].append(get_single_file_info(path, file))
+            manifest['files'].append(get_single_file_info(path, fle['path']))
             write_manifest(manifest)
 
             print 'Done' 
 
+    """
     # write manifest
     manifest = read_manifest()
     f_list = get_file_list(DATA_DIR)
@@ -200,6 +196,7 @@ def sync_files(client_files):
     write_manifest(manifest)
 
     write_remote_manifest(result['remote_manifest'])
+    """
 
     return errors
 

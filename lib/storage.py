@@ -1,6 +1,8 @@
 import os.path as p
 import os, shutil, json, errno
 
+from common import cpjoin
+
 ############################################################################################
 # Journaling file storage subsystem, only use one instance at any time, not thread safe
 ############################################################################################
@@ -15,12 +17,14 @@ class storage(object):
 ############################################################################################
 # init
 ############################################################################################
-    def __init__(self, data_dir, j_file, j_step_file, tmp_dir, backup_dir):
+    def __init__(self, data_dir):
+        # need to make sure data dir path has a trailing slash
+
         self.data_dir    = data_dir
-        self.j_file      = self.mkfs_path(j_file)
-        self.j_step_file = self.mkfs_path(j_step_file)
-        self.tmp_dir     = self.mkfs_path(tmp_dir)
-        self.backup_dir  = self.mkfs_path(backup_dir)
+        self.j_file      = self.mkfs_path('.journal.json')
+        self.j_step_file = self.mkfs_path('.journal_step')
+        self.tmp_dir     = self.mkfs_path('.tmp')
+        self.backup_dir  = self.mkfs_path('.back')
 
     # Make sure tmp dir exists
         try: os.makedirs(self.tmp_dir)
@@ -41,7 +45,7 @@ class storage(object):
 # make path relative to DATA DIR from a system relative path
 ############################################################################################
     def mkfs_path(self, *args):
-        return p.join(self.data_dir, *args)
+        return cpjoin(self.data_dir, *args)
 
 ############################################################################################
 # Create a new temp file allocation
@@ -88,8 +92,10 @@ class storage(object):
 # Do journal rollback
 ############################################################################################
     def rollback(self):
-        # Close the journal for writing
-        self.journal.close()
+        # Close the journal for writing, if this is an automatic rollback following a crash,
+        # the file descriptor will not be open, so don't need to do anything.
+        if self.journal != None:
+            self.journal.close()
         self.journal = None
 
         # Read the journal
@@ -172,8 +178,10 @@ class storage(object):
             step += 1
 
 
-        # Rollback is complete, delete the step file and journal
-        os.remove(self.j_step_file)
+        # Rollback is complete, delete the step file and journal, if journal
+        # is empty the step file won't exist
+        if os.path.isfile(self.j_step_file):
+            os.remove(self.j_step_file)
         os.remove(self.j_file)
 
 ############################################################################################

@@ -1,9 +1,5 @@
 DATA_DIR           = './vers_test/'
-TMP_DIR            = '.tmp/'
-BACKUP_DIR         = 'back/'
-MANIFEST_FILE      = '.manifest_xzf.json'
-JOURNAL_FILE       = '.journal.json'
-JOURNAL_STEP_FILE  = '.journal_step'
+MANIFEST_FILE      = 'manifest_xzf.json'
 
 import os, shutil
 

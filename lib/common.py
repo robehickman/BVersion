@@ -64,6 +64,30 @@ def pfx_path(path):
     if(path[0] != os.path.sep): return os.path.sep + path
     return path
 
+############################################################################################
+# custom path join
+############################################################################################
+def cpjoin(*args):
+    rooted = False
+    if args[0].startswith('/'):
+        rooted = True
+
+    # remove leading and trailing slashes
+    newargs = []
+    for arg in args:
+        acopy = arg
+        if acopy.startswith('/'):
+            acopy = acopy[1:] # remove leading slashes
+        newargs.append(acopy)
+
+    path = os.path.join(*newargs)
+    if rooted == True:
+        path = os.path.sep + path 
+
+    return path
+
+
+
 
 ############################################################################################
 # Gets last change time for a single file
@@ -191,6 +215,7 @@ def read_server_manifest():
     if(manifest['files'] == []):
         manifest['files'] = get_file_list(DATA_DIR)
     return manifest
+"""
 
 ############################################################################################
 # Write manifest file
@@ -203,7 +228,7 @@ def write_manifest(manifest):
 ############################################################################################
 def write_remote_manifest(manifest):
     file_put_contents(DATA_DIR + REMOTE_MANIFEST_FILE, json.dumps(manifest))
-"""
+
 ############################################################################################
 # Read locally stored remote manifest. The server sends this data at the end of each
 # sync request. It is used to detect file changes on the server since the last run.

@@ -36,9 +36,7 @@ app.config['UPLOAD_FOLDER'] = DATA_DIR
 
 public_key = file_get_contents(PUBLIC_KEY_FILE)
 
-data_store = versioned_storage(DATA_DIR, JOURNAL_FILE, JOURNAL_STEP_FILE, TMP_DIR, BACKUP_DIR)
-
-
+data_store = versioned_storage(DATA_DIR, MANIFEST_FILE)
 
 
 
@@ -197,7 +195,8 @@ def push_file():
     path = request.form['path']
     file = request.files['file']
 
-    data_store.fs_save_upload(file, path)
+    data_store.fs_save_upload(path, file)
+    last_change = data_store.get_single_file_info(path, path)
 
     return json.dumps({
         'status'          : 'ok',
@@ -222,7 +221,7 @@ def pull_file():
         print e
         raise Exception(e)
 
-    path = versioned_storage.get_file_path(request.form['path'])
+    path = data_store.get_full_file_path(request.form['path'])
 
     l_dir =  os.path.dirname(path)
     file  =  os.path.basename(path)
