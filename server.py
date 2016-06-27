@@ -1,9 +1,8 @@
 # Server configuration
 import __builtin__
 
-__builtin__.DATA_DIR       = './srv_dir/'
-__builtin__.MANIFEST_FILE  = '.manifest_xzf.json'
-PUBLIC_KEY_FILE            = './keys/public.key'
+__builtin__.SERVER_CONF_FILE = 'server.ini'
+__builtin__.MANIFEST_FILE  = '.manifest.json'
 
 #########################################################
 # Imports
@@ -25,108 +24,176 @@ from merge_file_tree   import *
 from common import *
 from crypto import *
 
+#########################################################
+# Load server config
+#########################################################
+config = read_config(SERVER_CONF_FILE)
+
+if 'global' in config:
+    glb = config.pop('global')
+
+    if 'manifest_file' in glb:
+        __builtin__.MANIFEST_FILE  = glb['manifest_file']
+
+
+if config == {}:
+    print 'Configuration file is empty'
+    quit()
+
+repositories = {}
+for key, val in config.iteritems():
+
+    repositories[key] = {
+        # The root path of the repository
+        'path'          : val['repository_path'],
+
+        # Data store object for the above path
+        'data_store'    : versioned_storage(val['repository_path'], MANIFEST_FILE),
+
+        # The public key for accessing this repository
+        'public_key'    : val['public_key'],
+
+        # Tokens are issued by the authentication system, the client signs one with it's
+        # private key, which is verified by the server using the matching public key.
+        # Dict key is the token, the second element is a validity timestamps. If timestamps
+        # less than current system time, the token has expired.
+        'issued_tokens' : {},
+
+        # because we are dealing with a physical file system we cannot allow more than one
+        # user to access at a time or we could corrupt the file system, for example where
+        # the same file modified by two clients, conflict detection would be a race condition.
+        # Because of this access is locked to a single client. This lock is a timestamps, valid
+        # so long as it is more than current system time. In case a client crashes in the
+        # middle of a sync, the lock will time out automatically.
+        'session_lock' : 0,
+
+        # The currently active session
+        'active_session' : None
+    }
 
 #########################################################
 # Flask init
 #########################################################
 app = Flask(__name__)
 app.debug = True
-app.config['UPLOAD_FOLDER'] = DATA_DIR
 
+#########################################################
+# Obtain repository named in http request
+#########################################################
+def get_repository():
+    global repositories
+    error_not_in_dict(request.form, 'repository', 'Repository identifier is missing')
 
-public_key = file_get_contents(PUBLIC_KEY_FILE)
+    if request.form['repository'] in repositories:
+        return (request.form['repository'], repositories[request.form['repository']])
+    else:
+        raise Exception('Repository does not exist')
 
-data_store = versioned_storage(DATA_DIR, MANIFEST_FILE)
+#########################################################
+# Update repository dict
+#########################################################
+def set_repository(repo_name, repo):
+    global repositories
 
+    if repo_name not in repositories:
+        raise Exception('Repository does not exist')
 
+    repositories['repo_name'] = repo
 
-# Tokens issued
-issued_tokens = {}
-
-# because we are dealing with a physical file system we cannot allow more than one
-# user access at a time or we could corrupt the file system, for example where
-# the same file modified by two end points. Because of this access is locked to
-# a single client. In case a client crashes in the middle of a sync, the lock will
-#time out automatically.
-session_lock = 0
-
-# The currently active session
-active_session = None
-
+#########################################################
+# Garbage collection for expired authentication tokens
+#########################################################
 def gc_tokens():
-    global issued_tokens
-    filtered_dict = {}
-    for key, value in issued_tokens.iteritems():
-        cur_time = time.time()
-        filtered_dict = {}
-        if value > cur_time: # keys which are still valid
-            filtered_dict[key] = value
+    global repositories
 
-    issued_tokens = filtered_dict
+    filtered_repos = {}
+    for key, value in repositories.iteritems():
+        issued_tokens = value['issued_tokens']
 
+        filtered_toknes = {}
+        for key1, value1 in issued_tokens.iteritems():
+            if value1 > time.time(): # keys which are still valid
+                filtered_toknes[key1] = value1
 
+        new_value = value.copy()
+        new_value['issued_tokens'] = filtered_toknes
+        filtered_repos[key] = new_value
+
+    repositories = filtered_repos
+
+#########################################################
+# Check a session is valid
+#########################################################
 def check_session_auth(form):
-    global session_lock
-    global actice_session
+    repo_name, repo = get_repository()
 
     error_not_in_dict(form, 'session_id', 'session id missing')
 
-    if(actice_session != None and form['session_id'] == actice_session):
+    if(repo['active_session'] != None and form['session_id'] != repo['active_session']):
         raise Exception('Session ID does not match active session')
 
-    if not (int(time.time()) > session_lock):
+    if (int(time.time()) > repo['session_lock']):
         raise Exception('Session lock has expired')
-
 
 #########################################################
 # Request authentication token to sign
 #########################################################
 @app.route('/begin_auth', methods=['POST'])
 def begin_auth():
-    global issued_tokens
-    global session_lock
-
     gc_tokens()
 
-    if int(time.time()) > session_lock:
+    repo_name, repo = get_repository()
 
+# Client sends its past authentication token in order to allow the client
+# that locked the server to unlock it again.
+    prior_token = b64decode(request.form['prior_token'])
+
+    if prior_token == repo['active_session']:
+        repo['session_lock'] = 0
+        set_repository(repo_name, repo)
+
+
+# Issue a new token if the server is not locked
+    if int(time.time()) > repo['session_lock']:
         auth_token = random_bytes(35)
-        issued_tokens[auth_token] = time.time() + (60 * 5)
+        repo['issued_tokens'][auth_token] = time.time() + (60 * 5) # 5 min token validity
+
+        set_repository(repo_name, repo)
 
         return json.dumps({
             'status'     : 'ok',
             'session_id' : auth_token})
 
     print 'locked'
-    return json.dumps({'status' : 'fail'})
+    return json.dumps({'status' : 'fail', 'msg' : 'The repository is locked.'})
 
 #########################################################
 # Authenticate
 #########################################################
 @app.route('/authenticate', methods=['POST'])
 def authenticate():
-    global session_lock
-    global issued_tokens
+    repo_name, repo = get_repository()
 
     error_not_in_dict(request.form, 'auth_token', 'Signed authentication token missing')
 
     auth_token = b64decode(request.form['auth_token'])
 
+    public_key = repo['public_key']
+
     valid = False
     session_id = None
     if varify_signiture(public_key, auth_token):
         print 'signiture ok'
-        for key, value in issued_tokens.iteritems():
+        for key, value in repo['issued_tokens'].iteritems():
             if auth_token.find(key):
                 session_id = key
-                del issued_tokens[key]
+                del repo['issued_tokens'][key]
                 valid = True
                 break
 
     if valid == True:
-        session_lock = int(time.time()) + (60 * 10)
-
-        active_session = session_id
+        repo['session_lock'] = int(time.time()) + (60 * 10)
+        repo['active_session'] = session_id
 
         result = json.dumps({
             'status' : 'ok'})
@@ -134,8 +201,9 @@ def authenticate():
     else:
         result = json.dumps({'status' : 'fail'})
 
+    set_repository(repo_name, repo)
+
     gc_tokens()
-    print result
     return result
 
 
@@ -144,10 +212,10 @@ def authenticate():
 #########################################################
 @app.route('/get_manifest', methods=['POST'])
 def get_manifest():
-    # check_session_auth(request.form)
-    global data_store
+    check_session_auth(request.form)
+    repo_name, repo = get_repository()
 
-    manifest = data_store.read_local_manifest()
+    manifest = repo['data_store'].read_local_manifest()
     return json.dumps(manifest)
 
 #########################################################
@@ -155,7 +223,10 @@ def get_manifest():
 #########################################################
 @app.route('/find_changed', methods=['POST'])
 def find_changed():
-    #check_session_auth(request.form)
+    check_session_auth(request.form)
+    repo_name, repo = get_repository()
+
+    data_store = repo['data_store'] 
 
 # Validate passed data
     error_not_in_dict(request.form, 'prev_manifest',   'previous manifest missing')
@@ -181,16 +252,20 @@ def find_changed():
         'conflict_files'  : conflict_files
     })
 
-
 #########################################################
 # Push a file to the server
 #########################################################
 @app.route('/push_file', methods=['POST'])
 def push_file():
-    #try:
+    check_session_auth(request.form)
+    repo_name, repo = get_repository()
+
+    data_store = repo['data_store'] 
+
     validate_request(request)
 
-    # need to make sure remote path is clean
+    # Set the upload dir, don't think this is needed
+    # app.config['UPLOAD_FOLDER'] = DATA_DIR
 
     path = request.form['path']
     file = request.files['file']
@@ -198,7 +273,6 @@ def push_file():
     dirpath = os.path.dirname(data_store.get_full_file_path(path))
     if not os.path.isdir(dirpath):
         os.makedirs(dirpath)
-
 
     data_store.fs_save_upload(path, file)
     last_change = data_store.get_single_file_info(path, path)
@@ -208,19 +282,17 @@ def push_file():
         'last_change'     : last_change
     })
 
-"""
-    except:
-        return json.dumps({
-            'status'          : 'fail',
-        })
-"""
-
 
 #########################################################
 # Get a file from the server
 #########################################################
 @app.route('/pull_file', methods=['POST'])
 def pull_file():
+    check_session_auth(request.form)
+    repo_name, repo = get_repository()
+
+    data_store = repo['data_store'] 
+
     if 'path' not in request.form:
         e = 'file list does not exist'
         print e
@@ -238,9 +310,14 @@ def pull_file():
 #########################################################
 @app.route('/delete_file', methods=['POST'])
 def delete_file():
+    check_session_auth(request.form)
+    repo_name, repo = get_repository()
+
+    data_store = repo['data_store'] 
+
     #versioned_storage.fs_delete()
     pass
 
 
 if __name__ == "__main__":
-    app.run()
+    app.run(port=8080)

@@ -3,10 +3,12 @@
 *.swp
 *.swo
 *.swn
+.prior_token
 
 vers_test/*
 client_dir/*
 client_dir2/*
+test1/*
 tests/vers_test/*
 keys/*
 srv_dir/*

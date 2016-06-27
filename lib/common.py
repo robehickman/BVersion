@@ -1,5 +1,6 @@
 import os.path, time, fnmatch, json, getpass
 from termcolor import colored
+import ConfigParser
 
 
 from poster.encode import multipart_encode
@@ -25,6 +26,25 @@ def prompt_for_new_password():
 ############################################################################
 def prompt_for_password():
     return getpass.getpass()
+
+############################################################################
+# Read config file into dictionary
+############################################################################
+def read_config(file):
+	conf_file = ConfigParser.ConfigParser()
+	conf_file.read(file)
+
+	config = {}
+
+	for section in conf_file.sections():
+		sect = {}
+
+		options = conf_file.options(section)
+
+		for option in options:
+			sect[option] = conf_file.get(section, option)
+		config[section] = sect
+	return config
 
 ############################################################################
 # Create directories in path if they do not exist
@@ -239,8 +259,17 @@ def read_remote_manifest():
     try:
         manifest = json.loads(file_get_contents(DATA_DIR + SERVER_MANIFEST_FILE))
     except:
+
+        manifest = {
+            'format_vers' : 1,
+            'root'        : '/',
+            'files'       : []
+        }
+
+        """
         result = do_request("get_manifest", {})
         manifest = json.loads(result)
+        """
 
     return manifest
 

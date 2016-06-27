@@ -1,8 +1,9 @@
 #Client configuration
 import __builtin__
 
-__builtin__.SERVER_URL           = 'http://localhost:5000/'
-__builtin__.DATA_DIR             = './client_dir2/' # dirs must include trailing slash
+__builtin__.SERVER_URL           = 'http://localhost:8080/'
+__builtin__.REPO                 = 'test1'
+__builtin__.DATA_DIR             = './client_dir/' # dirs must include trailing slash
 __builtin__.MANIFEST_FILE        = '.manifest_xzf.json'
 __builtin__.REMOTE_MANIFEST_FILE = '.remote_manifest_xzf.json'
 __builtin__.IGNORE_FILTER_FILE   = '.pysync_ignore'
@@ -44,7 +45,14 @@ session_id = None
 def authenticate_client():
     global session_id
 
-    result = do_request("begin_auth", {})
+    try:
+        prior_token = file_get_contents('.prior_token')
+    except:
+        prior_token = ''
+
+    result = do_request("begin_auth", {
+        'prior_token' : b64encode(prior_token),
+        'repository' : REPO})
 
     result = json.loads(result)
 
@@ -58,6 +66,7 @@ def authenticate_client():
     auth_token = sign_data(private_key, str(tmp_session_id))
 
     result2 = do_request("authenticate", {
+        'repository' : REPO,
         'auth_token' : b64encode(auth_token)})
 
     result2 = json.loads(result2)
@@ -67,6 +76,7 @@ def authenticate_client():
 
     print 'auth ok'
     session_id = tmp_session_id
+    file_put_contents('.prior_token', session_id)
 
 
 #########################################################
@@ -93,7 +103,8 @@ def sync_files(client_files):
 
     #send list to server, which will return changes
     result = do_request("find_changed", {
-        #"session_id"      : session_id,
+        'repository'      : REPO,
+        "session_id"      : session_id,
         "prev_manifest"   : json.dumps(remote_manifest),
         "client_files"    : json.dumps(client_files)})
 
@@ -127,7 +138,9 @@ def sync_files(client_files):
             print 'Sending: ' + fle['path']
 
             req_result = do_request("push_file", {
-                "file": open(cpjoin(DATA_DIR, fle['path']), "rb"), 'path' : fle['path']})
+                'repository'  : REPO,
+                "session_id"  : session_id,
+                "file"        : open(cpjoin(DATA_DIR, fle['path']), "rb"), 'path' : fle['path']})
 
             responce = json.loads(req_result)
             if responce['status'] == 'ok':
@@ -173,7 +186,9 @@ def sync_files(client_files):
             print 'Pulling file: ' + path
 
             req_result = do_request("pull_file", {
-                'path' : fle['path']})
+                'repository'  : REPO,
+                "session_id"  : session_id,
+                'path'        : fle['path']})
 
             try:
                 os.makedirs(os.path.dirname(path))
@@ -203,7 +218,6 @@ def sync_files(client_files):
 #########################################################
 #########################################################
 
-"""
 encrypted_private = file_get_contents(PRIVATE_KEY_FILE)
 
 try:
@@ -216,7 +230,6 @@ authenticate_client()
 
 if session_id == None:
     raise Exception('Authentication failed')
-"""
 
 manifest = read_manifest()
 
