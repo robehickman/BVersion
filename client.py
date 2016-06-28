@@ -2,13 +2,16 @@
 import __builtin__
 
 __builtin__.SERVER_URL           = 'http://localhost:8080/'
-__builtin__.REPO                 = 'test1'
-__builtin__.DATA_DIR             = './client_dir/' # dirs must include trailing slash
+__builtin__.REPO                 = 'music'
+__builtin__.DATA_DIR             = '/home/a/Music/' # dirs must include trailing slash
 __builtin__.MANIFEST_FILE        = '.manifest_xzf.json'
 __builtin__.REMOTE_MANIFEST_FILE = '.remote_manifest_xzf.json'
 __builtin__.IGNORE_FILTER_FILE   = '.pysync_ignore'
 __builtin__.PULL_IGNORE_FILE     = '.pysync_pull_ignore'
 __builtin__.PRIVATE_KEY_FILE     = 'keys/private.key'
+
+CLIENT_CONF_DIR  = '.shttpfs'
+CLIENT_CONF_FILE = 'client.cnf'
 
 
 
@@ -217,6 +220,125 @@ def sync_files(client_files):
 
 #########################################################
 #########################################################
+
+
+
+#########################################################
+# Searches for configuration file in path, and every
+# parent until reaching root. Path should be absolute.
+#########################################################
+def find_conf_file(search_path):
+
+    cur_path = search_path
+
+    while True:
+        conf_file_path = cpjoin(cur_path, CLIENT_CONF_DIR, CLIENT_CONF_FILE)
+
+        # Look for config file
+        if os.path.isfile(conf_file_path):
+            return conf_file_path
+
+        if cur_path == os.sep:
+            return None
+
+        split_p = cur_path.split(os.sep)
+        split_p.pop()
+        n_path = '/' + os.path.join(*split_p)
+
+        cur_path = n_path
+
+
+#########################################################
+# Handle CLI arguments.
+#########################################################
+
+import argparse
+
+parser = argparse.ArgumentParser(description='Simple HTTP file sync tool.')
+parser.add_argument('mode', metavar='mode', type=str, nargs='?',
+                   help='System mode ("setup") or nothing.')
+parser.add_argument('--url', metavar='url', type=str, nargs='?',
+                   help='URL for setup command.')
+
+args = parser.parse_args()
+
+print args
+
+
+if args.mode.lower() == 'setup':
+    if args.url != None:
+        # split repo name from url and check format
+        split = args.url.rpartition('/')
+
+        if split[0] in ['http:/', 'https:/'] or split[2] == '':
+            print 'Repo name missing, usage: "http(s)://[repo name]"'
+            quit()
+
+        if len(args.url.split('/')) != 4:
+            print 'URL format wrong, usage: "http(s)://[repo name]"'
+            quit()
+
+        # get private key
+        print 'Please enter the private key for this repository, then press enter.'
+        key = raw_input('> ')
+
+        if key == '':
+            print 'Key is blank, exiting.'
+            quit()
+
+        # test private key
+        encrypted_private = file_get_contents(PRIVATE_KEY_FILE)
+
+        try:
+            private_key = decrypt_private(prompt_for_password(), encrypted_private)
+        except nacl.exceptions.CryptoError:
+            print 'Password error'
+            quit()
+
+        authenticate_client()
+        disconnect_client()
+
+        if session_id == None:
+            raise Exception('Authentication failed')
+
+        # create repo dir
+        os.makedir(split[2])
+
+        # create config file
+        os.makedir(cpjoin(split[2], CLIENT_CONF_DIR))
+
+        conf_file = '' # build up conf file content
+
+        conf_file_path = cpjoin(cur_path, CLIENT_CONF_DIR, CLIENT_CONF_FILE)
+        file_put_contents(conf_file_path, conf_file)
+
+    else:
+        print 'URL is missing'
+
+
+quit()
+
+
+
+
+
+
+
+
+cur_path = os.path.normpath(os.path.abspath(DATA_DIR))
+
+config_path = find_conf_file(cur_path)
+
+if config_path != None:
+    print 'have conf'
+
+else:
+    print 'Conf not found'
+
+
+
+
+quit()
 
 encrypted_private = file_get_contents(PRIVATE_KEY_FILE)
 
