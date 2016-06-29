@@ -48,7 +48,7 @@ for key, val in config.iteritems():
         'path'          : val['repository_path'],
 
         # Data store object for the above path
-        'data_store'    : versioned_storage(val['repository_path'], MANIFEST_FILE),
+        'data_store'    : versioned_storage(val['repository_path'], '', MANIFEST_FILE),
 
         # The public key for accessing this repository
         'public_key'    : val['public_key'],
