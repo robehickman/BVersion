@@ -58,7 +58,7 @@ class plain_storage(rel_storage):
 # Write local manifest file
 ############################################################################################
     def write_local_manifest(self, manifest):
-        self.r_put(cpjoin(self.manifest_file), json.dumps(manifest))
+        self.r_put(self.manifest_file, json.dumps(manifest))
 
 ############################################################################################
 # Read locally stored remote manifest. The server sends this data at the end of each
@@ -83,7 +83,7 @@ class plain_storage(rel_storage):
 # Write remote manifest file
 ############################################################################################
     def write_remote_manifest(self, manifest):
-        file_put_contents(self.r_get(self.remote_manifest_file), json.dumps(manifest))
+        self.r_put(self.remote_manifest_file, json.dumps(manifest))
 
 ############################################################################################
 # Remove named path from the manifest files array
@@ -114,8 +114,8 @@ class plain_storage(rel_storage):
             manifest = self.write_local_manifest(manifest)
 
         except:
-            self.rollback()
             raise
+            self.rollback()
 
         self.commit()
 

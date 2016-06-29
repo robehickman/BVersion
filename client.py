@@ -211,20 +211,23 @@ def sync_pull_helper(result):
     for fle in result['pull_files']:
         print 'Pulling file: ' + fle['path']
 
-        req_result = do_request("pull_file", {
+        req_result, headers = do_request_full("pull_file", {
             'repository'  : repository_name,
             "session_id"  : session_id,
             'path'        : fle['path']})
 
         make_dirs_if_dont_exist(data_store.get_full_file_path(fle['path']))
-        
         data_store.fs_put(fle['path'], req_result)
 
-        # need to get remote manifest for files
-        req_result = do_request("get_file_info", {
-            'repository'  : repository_name,
-            "session_id"  : session_id,
-            'path'        : fle['path']})
+
+        # Store remote manifest data, now included in custom header
+        last_change = json.loads(headers.get('file_info_json'))
+
+        remote_manifest = data_store.read_remote_manifest()
+        remote_manifest['files'].append(last_change)
+        data_store.begin()
+        data_store.write_remote_manifest(remote_manifest)
+        data_store.commit()
 
         print 'Done' 
 

@@ -302,8 +302,16 @@ def do_request(url, data):
     datagen, headers = multipart_encode(data)
     request = urllib2.Request(SERVER_URL + url, datagen, headers)
     result = urllib2.urlopen(request)
-    print result.info()
     return result.read()
 
+
+############################################################################################
+# Send a HTTP request to the server, get body and headers
+############################################################################################
+def do_request_full(url, data):
+    datagen, headers = multipart_encode(data)
+    request = urllib2.Request(SERVER_URL + url, datagen, headers)
+    result = urllib2.urlopen(request)
+    return (result.read(), result.info())
 
 

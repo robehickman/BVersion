@@ -298,13 +298,14 @@ def pull_file():
         print e
         raise Exception(e)
 
-    path = data_store.get_full_file_path(request.form['path'])
+    sys_path = request.form['path']
+    path = data_store.get_full_file_path(sys_path)
 
     l_dir =  os.path.dirname(path)
     file  =  os.path.basename(path)
 
     response = make_response(send_from_directory(l_dir, file))
-    response.headers['file_info_json'] = json.dumps(data_store.get_single_file_info(path, path))
+    response.headers['file_info_json'] = json.dumps(data_store.get_single_file_info(sys_path, sys_path))
     return response
 
 
@@ -323,4 +324,4 @@ def delete_file():
 
 
 if __name__ == "__main__":
-    app.run(port=8080)
+    app.run('0.0.0.0', port=8080)
