@@ -1,9 +1,7 @@
 #Client configuration
 import __builtin__
 
-__builtin__.SERVER_URL           = 'http://localhost:8080/'
-__builtin__.REPO                 = 'music'
-__builtin__.DATA_DIR             = '/home/a/Music/' # dirs must include trailing slash
+__builtin__.DATA_DIR             = './Music/' # dirs must include trailing slash
 __builtin__.MANIFEST_FILE        = '.manifest_xzf.json'
 __builtin__.REMOTE_MANIFEST_FILE = '.remote_manifest_xzf.json'
 __builtin__.IGNORE_FILTER_FILE   = '.pysync_ignore'
@@ -36,7 +34,7 @@ from crypto import *
 # Register the streaming http handlers with urllib2
 register_openers()
 
-private_key = ''
+# private_key = ''
 
 session_id = None
 
@@ -45,7 +43,7 @@ session_id = None
 # it with the local private key, then send to server
 # for verification.
 #########################################################
-def authenticate_client():
+def authenticate_client(private_key, server_url, repository_name):
     global session_id
 
     try:
@@ -55,7 +53,7 @@ def authenticate_client():
 
     result = do_request("begin_auth", {
         'prior_token' : b64encode(prior_token),
-        'repository' : REPO})
+        'repository' : repository_name})
 
     result = json.loads(result)
 
@@ -69,7 +67,7 @@ def authenticate_client():
     auth_token = sign_data(private_key, str(tmp_session_id))
 
     result2 = do_request("authenticate", {
-        'repository' : REPO,
+        'repository' : repository_name,
         'auth_token' : b64encode(auth_token)})
 
     result2 = json.loads(result2)
@@ -80,6 +78,13 @@ def authenticate_client():
     print 'auth ok'
     session_id = tmp_session_id
     file_put_contents('.prior_token', session_id)
+
+
+#########################################################
+# Close connection with server.
+#########################################################
+def disconnect_client():
+    pass
 
 
 #########################################################
@@ -100,13 +105,13 @@ def detect_local_changes(manifest):
 #########################################################
 # Do actual file sync
 #########################################################
-def sync_files(client_files):
+def sync_files(client_files, repository_name):
     # Get previous server manifest
     remote_manifest = read_remote_manifest()
 
     #send list to server, which will return changes
     result = do_request("find_changed", {
-        'repository'      : REPO,
+        'repository'      : repository_name,
         "session_id"      : session_id,
         "prev_manifest"   : json.dumps(remote_manifest),
         "client_files"    : json.dumps(client_files)})
@@ -141,7 +146,7 @@ def sync_files(client_files):
             print 'Sending: ' + fle['path']
 
             req_result = do_request("push_file", {
-                'repository'  : REPO,
+                'repository'  : repository_name,
                 "session_id"  : session_id,
                 "file"        : open(cpjoin(DATA_DIR, fle['path']), "rb"), 'path' : fle['path']})
 
@@ -189,7 +194,7 @@ def sync_files(client_files):
             print 'Pulling file: ' + path
 
             req_result = do_request("pull_file", {
-                'repository'  : REPO,
+                'repository'  : repository_name,
                 "session_id"  : session_id,
                 'path'        : fle['path']})
 
@@ -262,93 +267,92 @@ parser.add_argument('--url', metavar='url', type=str, nargs='?',
 
 args = parser.parse_args()
 
-print args
-
-
-if args.mode.lower() == 'setup':
-    if args.url != None:
-        # split repo name from url and check format
-        split = args.url.rpartition('/')
-
-        if split[0] in ['http:/', 'https:/'] or split[2] == '':
-            print 'Repo name missing, usage: "http(s)://[repo name]"'
-            quit()
-
-        if len(args.url.split('/')) != 4:
-            print 'URL format wrong, usage: "http(s)://[repo name]"'
-            quit()
-
-        # get private key
-        print 'Please enter the private key for this repository, then press enter.'
-        key = raw_input('> ')
-
-        if key == '':
-            print 'Key is blank, exiting.'
-            quit()
-
-        # test private key
-        encrypted_private = file_get_contents(PRIVATE_KEY_FILE)
-
-        try:
-            private_key = decrypt_private(prompt_for_password(), encrypted_private)
-        except nacl.exceptions.CryptoError:
-            print 'Password error'
-            quit()
-
-        authenticate_client()
-        disconnect_client()
-
-        if session_id == None:
-            raise Exception('Authentication failed')
-
-        # create repo dir
-        os.makedir(split[2])
-
-        # create config file
-        os.makedir(cpjoin(split[2], CLIENT_CONF_DIR))
-
-        conf_file = '' # build up conf file content
-
-        conf_file_path = cpjoin(cur_path, CLIENT_CONF_DIR, CLIENT_CONF_FILE)
-        file_put_contents(conf_file_path, conf_file)
-
-    else:
+if args.mode != None and args.mode.lower() == 'setup':
+    if args.url == None:
         print 'URL is missing'
+        quit()
+
+    # split repo name from url and check format
+    split = args.url.rpartition('/')
+
+    if split[0] in ['http:/', 'https:/'] or split[2] == '':
+        print 'Repo name missing, usage: "http(s)://[repo name]"'
+        quit()
+
+    if len(args.url.split('/')) != 4:
+        print 'URL format wrong, usage: "http(s)://[repo name]"'
+        quit()
+
+    # get private key
+    print 'Please enter the private key for this repository, then press enter.'
+    encrypted_private = raw_input('> ').strip(' \t\n\r')
+
+    if encrypted_private == '':
+        print 'Key is blank, exiting.'
+        quit()
+
+    # test private key
+    try:
+        private_key = decrypt_private(prompt_for_password(), encrypted_private)
+    except nacl.exceptions.CryptoError:
+        print 'Password error'
+        quit()
+
+    authenticate_client(private_key)
+    if session_id == None:
+        raise Exception('Authentication failed')
+    disconnect_client()
+
+    # create repo dir
+    try: os.makedirs(split[2])
+    except OSError: pass
+
+    # create config file
+    try: os.makedirs(cpjoin(split[2], CLIENT_CONF_DIR))
+    except OSError: pass
+
+    # build up conf file content
+    conf_file = """[client]
+server_url: """ + split[0] + """
+repository_name: """ + split[2] + """
+private_key: """ + encrypted_private
+
+    cur_path = os.getcwd()
+    conf_file_path = cpjoin(cur_path, split[2], CLIENT_CONF_DIR, CLIENT_CONF_FILE)
+    file_put_contents(conf_file_path, conf_file)
+
+    print 'setup ok'
+    quit()
 
 
-quit()
 
-
-
-
-
-
-
-
+# Find the config file
+# cur_path = os.getcwd()
 cur_path = os.path.normpath(os.path.abspath(DATA_DIR))
 
 config_path = find_conf_file(cur_path)
 
-if config_path != None:
-    print 'have conf'
-
-else:
+if config_path == None:
     print 'Conf not found'
+    quit()
 
+config = read_config(config_path)
 
+encrypted_private = config['client']['private_key']
+server_url        = config['client']['server_url'] + '/'
+repository_name   = config['client']['repository_name']
 
+__builtin__.SERVER_URL = server_url 
+print server_url
 
-quit()
-
-encrypted_private = file_get_contents(PRIVATE_KEY_FILE)
-
+# Unlock private key
 try:
     private_key = decrypt_private(prompt_for_password(), encrypted_private)
 except nacl.exceptions.CryptoError:
     print 'Password error'
     quit()
 
-authenticate_client()
+authenticate_client(private_key, server_url, repository_name)
 
 if session_id == None:
     raise Exception('Authentication failed')
@@ -372,7 +376,7 @@ display_list('New: ',     new_files, 'green')
 display_list('Changed: ', changed_files, 'yellow')
 display_list('Deleted: ', deleted_files, 'red')
 
-sync_files(client_files)
+sync_files(client_files, repository_name)
 
 
 
