@@ -168,14 +168,18 @@ def sync_push_helper(result):
             # update local and remote manifest after every upload to not re-upload files
             # if the system fails mid-sync
 
+            data_store.begin()
+
             manifest = data_store.read_local_manifest()
             manifest['files'].append(get_single_file_info(
                 DATA_DIR + last_change['path'], last_change['path']))
-            data_store.write_manifest(manifest)
+            data_store.write_local_manifest(manifest)
 
             remote_manifest = data_store.read_remote_manifest()
             remote_manifest['files'].append(last_change)
             data_store.write_remote_manifest(remote_manifest)
+
+            data_store.commit()
         else:
             errors.append(responce['last_path'])
 
