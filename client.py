@@ -8,8 +8,8 @@ __builtin__.IGNORE_FILTER_FILE   = '.pysync_ignore'
 __builtin__.PULL_IGNORE_FILE     = '.pysync_pull_ignore'
 __builtin__.PRIVATE_KEY_FILE     = 'keys/private.key'
 
-CLIENT_CONF_DIR  = '.shttpfs'
-CLIENT_CONF_FILE = 'client.cnf'
+__builtin__.CLIENT_CONF_DIR  = '.shttpfs'
+__builtin__.CLIENT_CONF_FILE = 'client.cnf'
 
 
 
@@ -30,6 +30,9 @@ sys.path = [ './lib' ] + sys.path
 
 from common import *
 from crypto import *
+from plain_storage import *
+
+data_store = None
 
 # Register the streaming http handlers with urllib2
 register_openers()
@@ -107,7 +110,7 @@ def detect_local_changes(manifest):
 #########################################################
 def sync_files(client_files, repository_name):
     # Get previous server manifest
-    remote_manifest = read_remote_manifest()
+    remote_manifest = data_store.read_remote_manifest()
 
     #send list to server, which will return changes
     result = do_request("find_changed", {
@@ -119,107 +122,111 @@ def sync_files(client_files, repository_name):
     result = json.loads(result)
 
     if(result['status'] == 'ok'):
-        """
-        if deleated_files != []:
-            deleted_dict = make_dict(deleated_files)
-            manifest = read_manifest()
-            filter_manifest = []
-            for f in manifest['files']:
-                if f['path'] in deleted_dict:
-                    pass # file is deleted, remove it from the manifest
-                else:
-                    filter_manifest.append(f)
-            manifest['files'] = filter_manifest
-            write_manifest(manifest) 
-        """
-        
     #see if there is anything that needs pulling or pushing
         errors = []
 
-        if result['push_files'] == [] and result['pull_files'] == []:
-            print 'Nothing to do'
+        hit = False
 
         # Push files
-        for fle in result['push_files']:
-            print fle
-
-            print 'Sending: ' + fle['path']
-
-            req_result = do_request("push_file", {
-                'repository'  : repository_name,
-                "session_id"  : session_id,
-                "file"        : open(cpjoin(DATA_DIR, fle['path']), "rb"), 'path' : fle['path']})
-
-            responce = json.loads(req_result)
-            if responce['status'] == 'ok':
-                last_change = responce['last_change']
-
-                print 'Uploaded: ' + last_change['path']
-
-                # update local and remote manifest after every upload to not re-upload files
-                # if the system fails mid-sync
-
-                manifest = read_manifest()
-                manifest['files'].append(get_single_file_info(
-                    DATA_DIR + last_change['path'], last_change['path']))
-                write_manifest(manifest)
-
-                remote_manifest = read_remote_manifest()
-                remote_manifest['files'].append(last_change)
-                write_remote_manifest(remote_manifest)
-            else:
-                errors.append(responce['last_path'])
-
-        try:
-            pull_ignore = file_get_contents(DATA_DIR + PULL_IGNORE_FILE)
-            pull_ignore = pull_ignore.splitlines()
-
-            filtered_pull_files = []
-            for f in result['pull_files']:
-                matched = False
-                for i in pull_ignore:
-                    if fnmatch.fnmatch(f, i):
-                        matched = True
-
-                if matched == False:
-                    filtered_pull_files.append(f)
-
-            result['pull_files'] = filtered_pull_files
-        except:
-            print 'Warning, pull ignore file does not exist'
+        if result['push_files'] != []:
+            hit = True
+            errors += sync_push_helper(result)
                     
-        # Get files
-        for fle in result['pull_files']:
-            path = DATA_DIR + fle['path']
-            print 'Pulling file: ' + path
+        # Pull files
+        if result['pull_files'] != []:
+            hit = True
+            errors += sync_pull_helper(result)
 
-            req_result = do_request("pull_file", {
-                'repository'  : repository_name,
-                "session_id"  : session_id,
-                'path'        : fle['path']})
+        if hit == False:
+            print 'Nothing to do'
 
-            try:
-                os.makedirs(os.path.dirname(path))
-            except:
-                pass # dir already exists
-            
-            file_put_contents(path, req_result)
 
-            manifest = read_manifest()
-            manifest['files'].append(get_single_file_info(path, fle['path']))
-            write_manifest(manifest)
+    return errors
 
-            print 'Done' 
 
-    """
-    # write manifest
-    manifest = read_manifest()
-    f_list = get_file_list(DATA_DIR)
-    manifest['files'] = f_list
-    write_manifest(manifest)
 
-    write_remote_manifest(result['remote_manifest'])
-    """
+#########################################################
+# Send files from remote
+#########################################################
+def sync_push_helper(result):
+    errors = []
+
+    for fle in result['push_files']:
+        print 'Sending: ' + fle['path']
+
+        req_result = do_request("push_file", {
+            'repository'  : repository_name,
+            "session_id"  : session_id,
+            "file"        : open(cpjoin(DATA_DIR, fle['path']), "rb"), 'path' : fle['path']})
+
+        responce = json.loads(req_result)
+        if responce['status'] == 'ok':
+            last_change = responce['last_change']
+
+            print 'Uploaded: ' + last_change['path']
+
+            # update local and remote manifest after every upload to not re-upload files
+            # if the system fails mid-sync
+
+            manifest = data_store.read_local_manifest()
+            manifest['files'].append(get_single_file_info(
+                DATA_DIR + last_change['path'], last_change['path']))
+            data_store.write_manifest(manifest)
+
+            remote_manifest = data_store.read_remote_manifest()
+            remote_manifest['files'].append(last_change)
+            data_store.write_remote_manifest(remote_manifest)
+        else:
+            errors.append(responce['last_path'])
+
+    return errors
+
+
+#########################################################
+# Pull files from remote
+#########################################################
+def sync_pull_helper(result):
+    errors = []
+
+# See if pull ignore file exists
+    try:
+        pull_ignore = file_get_contents(DATA_DIR + PULL_IGNORE_FILE)
+        pull_ignore = pull_ignore.splitlines()
+
+        filtered_pull_files = []
+        for f in result['pull_files']:
+            matched = False
+            for i in pull_ignore:
+                if fnmatch.fnmatch(f, i):
+                    matched = True
+
+            if matched == False:
+                filtered_pull_files.append(f)
+
+        result['pull_files'] = filtered_pull_files
+    except:
+        print 'Warning, pull ignore file does not exist'
+
+# Pull the files
+    for fle in result['pull_files']:
+        print 'Pulling file: ' + fle['path']
+
+        req_result = do_request("pull_file", {
+            'repository'  : repository_name,
+            "session_id"  : session_id,
+            'path'        : fle['path']})
+
+        make_dirs_if_dont_exist(data_store.get_full_file_path(fle['path']))
+        
+        data_store.fs_put(fle['path'], req_result)
+
+        # need to get remote manifest for files
+        req_result = do_request("get_file_info", {
+            'repository'  : repository_name,
+            "session_id"  : session_id,
+            'path'        : fle['path']})
+
+        print 'Done' 
 
     return errors
 
@@ -298,27 +305,38 @@ if args.mode != None and args.mode.lower() == 'setup':
         print 'Password error'
         quit()
 
-    authenticate_client(private_key)
+    # make sure server URL and repo name are formatted corectly
+    server_url = split[0]
+
+    if not server_url.endswith('/'):
+        server_url += '/'
+
+    repository_name = split[2]
+
+    __builtin__.SERVER_URL = server_url 
+
+    # Make sure key is correct for client
+    authenticate_client(private_key, server_url, repository_name)
     if session_id == None:
         raise Exception('Authentication failed')
     disconnect_client()
 
     # create repo dir
-    try: os.makedirs(split[2])
+    try: os.makedirs(repository_name)
     except OSError: pass
 
     # create config file
-    try: os.makedirs(cpjoin(split[2], CLIENT_CONF_DIR))
+    try: os.makedirs(cpjoin(repository_name, CLIENT_CONF_DIR))
     except OSError: pass
 
     # build up conf file content
     conf_file = """[client]
-server_url: """ + split[0] + """
-repository_name: """ + split[2] + """
+server_url: """ + server_url + """
+repository_name: """ + repository_name + """
 private_key: """ + encrypted_private
 
     cur_path = os.getcwd()
-    conf_file_path = cpjoin(cur_path, split[2], CLIENT_CONF_DIR, CLIENT_CONF_FILE)
+    conf_file_path = cpjoin(cur_path, repository_name, CLIENT_CONF_DIR, CLIENT_CONF_FILE)
     file_put_contents(conf_file_path, conf_file)
 
     print 'setup ok'
@@ -339,8 +357,12 @@ if config_path == None:
 config = read_config(config_path)
 
 encrypted_private = config['client']['private_key']
-server_url        = config['client']['server_url'] + '/'
+server_url        = config['client']['server_url']
 repository_name   = config['client']['repository_name']
+
+# Init data store
+data_store = plain_storage(DATA_DIR, CLIENT_CONF_DIR, MANIFEST_FILE, REMOTE_MANIFEST_FILE)
+
 
 __builtin__.SERVER_URL = server_url 
 print server_url
@@ -357,7 +379,7 @@ authenticate_client(private_key, server_url, repository_name)
 if session_id == None:
     raise Exception('Authentication failed')
 
-manifest = read_manifest()
+manifest = data_store.read_local_manifest()
 
 client_files = detect_local_changes(manifest);
 

@@ -17,14 +17,14 @@ class storage(object):
 ############################################################################################
 # init
 ############################################################################################
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, conf_dir):
         # need to make sure data dir path has a trailing slash
 
         self.data_dir    = data_dir
-        self.j_file      = self.mkfs_path('.journal.json')
-        self.j_step_file = self.mkfs_path('.journal_step')
-        self.tmp_dir     = self.mkfs_path('.tmp')
-        self.backup_dir  = self.mkfs_path('.back')
+        self.j_file      = self.mkfs_path(conf_dir, 'journal.json')
+        self.j_step_file = self.mkfs_path(conf_dir, 'journal_step')
+        self.tmp_dir     = self.mkfs_path(conf_dir, 'tmp')
+        self.backup_dir  = self.mkfs_path(conf_dir, 'back')
 
     # Make sure tmp dir exists
         try: os.makedirs(self.tmp_dir)

@@ -303,7 +303,10 @@ def pull_file():
     l_dir =  os.path.dirname(path)
     file  =  os.path.basename(path)
 
-    return send_from_directory(l_dir, file)
+    response = make_response(send_from_directory(l_dir, file))
+    response.headers['file_info_json'] = json.dumps(data_store.get_single_file_info(path, path))
+    return response
+
 
 #########################################################
 # Delete a file on the server

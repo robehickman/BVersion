@@ -106,7 +106,6 @@ def cpjoin(*args):
 
     return path
 
-
 ############################################################################################
 # Gets last change time for a single file
 ############################################################################################
@@ -114,6 +113,7 @@ def get_single_file_info(f_path, int_path):
     return { 'path'     : force_unicode(int_path),
              'created'  : os.path.getctime(f_path),
              'last_mod' : os.path.getmtime(f_path)}
+
 
 ############################################################################################
 # Obtains a list of all files in a file system.
@@ -194,6 +194,7 @@ def apply_ignore_filters(f_list):
     
     try:
         filters.append('/' + MANIFEST_FILE)
+        filters.append('/' + CLIENT_CONF_DIR + '*')
         filters.append('/' + REMOTE_MANIFEST_FILE)
         filters.append('/' + PULL_IGNORE_FILE)
     except:
@@ -205,79 +206,6 @@ def apply_ignore_filters(f_list):
     return f_list
     
 
-
-############################################################################################
-# Read client manifest file.
-############################################################################################
-def read_manifest():
-    # Read Manifest
-    try:
-        manifest = json.loads(file_get_contents(DATA_DIR + MANIFEST_FILE))
-    except:
-        # no manifest, create one, manifest stores file access times as
-        # of last run to detect files which have changed
-        manifest = {
-            'format_vers' : 1,
-            'root'        : '/',
-            'files'       : []
-        }
-
-    return manifest
-
-"""
-############################################################################################
-# Read server manifest file
-############################################################################################
-def read_server_manifest():
-    manifest = read_manifest()
-    if(manifest['files'] == []):
-        manifest['files'] = get_file_list(DATA_DIR)
-    return manifest
-"""
-
-############################################################################################
-# Write manifest file
-############################################################################################
-def write_manifest(manifest):
-    file_put_contents(DATA_DIR + MANIFEST_FILE, json.dumps(manifest))
-
-############################################################################################
-# Write remote manifest file
-############################################################################################
-def write_remote_manifest(manifest):
-    file_put_contents(DATA_DIR + REMOTE_MANIFEST_FILE, json.dumps(manifest))
-
-############################################################################################
-# Read locally stored remote manifest. The server sends this data at the end of each
-# sync request. It is used to detect file changes on the server since the last run.
-# Storing this client side saves having to store individual copies of this data for every
-# connected client on the server.
-#
-# If this is a first run the remote manifest is obtained from the server.
-############################################################################################
-def read_remote_manifest():
-    try:
-        manifest = json.loads(file_get_contents(DATA_DIR + SERVER_MANIFEST_FILE))
-    except:
-
-        manifest = {
-            'format_vers' : 1,
-            'root'        : '/',
-            'files'       : []
-        }
-
-        """
-        result = do_request("get_manifest", {})
-        manifest = json.loads(result)
-        """
-
-    return manifest
-
-############################################################################################
-# Write remote manifest file
-############################################################################################
-def write_remote_manifest(manifest):
-    file_put_contents(DATA_DIR + REMOTE_MANIFEST_FILE, json.dumps(manifest))
 
 
 ############################################################################################
@@ -373,7 +301,9 @@ def file_put_contents(path, data):
 def do_request(url, data):
     datagen, headers = multipart_encode(data)
     request = urllib2.Request(SERVER_URL + url, datagen, headers)
-    return urllib2.urlopen(request).read()
+    result = urllib2.urlopen(request)
+    print result.info()
+    return result.read()
 
 
 
