@@ -10,7 +10,7 @@ __builtin__.MANIFEST_FILE  = '.manifest.json'
 import json
 import os
 from os import path
-from flask import Flask, request, redirect, url_for, send_from_directory, make_responce
+from flask import Flask, request, redirect, url_for, send_from_directory, make_response
 from werkzeug.utils import secure_filename
 from base64 import b64encode, b64decode
 
