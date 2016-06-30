@@ -1,7 +1,7 @@
 #Client configuration
 import __builtin__
 
-__builtin__.DATA_DIR             = './Music/' # dirs must include trailing slash
+__builtin__.DATA_DIR             = './' # dirs must include trailing slash
 __builtin__.MANIFEST_FILE        = '.manifest_xzf.json'
 __builtin__.REMOTE_MANIFEST_FILE = '.remote_manifest_xzf.json'
 __builtin__.IGNORE_FILTER_FILE   = '.pysync_ignore'
@@ -19,18 +19,16 @@ __builtin__.CLIENT_CONF_FILE = 'client.cnf'
 #########################################################
 # Imports
 #########################################################
-import json
+import json, os
 from poster.encode import multipart_encode
 from poster.streaminghttp import register_openers
 import urllib2
 from base64 import b64encode, b64decode
 import sys
 
-sys.path = [ './lib' ] + sys.path
-
-from common import *
-from crypto import *
-from plain_storage import *
+from lib.common import *
+from lib.crypto import *
+from lib.plain_storage import *
 
 data_store = None
 
@@ -50,7 +48,7 @@ def authenticate_client(private_key, server_url, repository_name):
     global session_id
 
     try:
-        prior_token = file_get_contents('.prior_token')
+        prior_token = file_get_contents(cpjoin(DATA_DIR, CLIENT_CONF_DIR,'prior_token'))
     except:
         prior_token = ''
 
@@ -80,7 +78,7 @@ def authenticate_client(private_key, server_url, repository_name):
 
     print 'auth ok'
     session_id = tmp_session_id
-    file_put_contents('.prior_token', session_id)
+    file_put_contents(cpjoin(DATA_DIR, CLIENT_CONF_DIR,'prior_token'), session_id)
 
 
 #########################################################
@@ -229,6 +227,7 @@ def sync_pull_helper(result):
 
         remote_manifest = data_store.read_remote_manifest()
         remote_manifest['files'].append(last_change)
+
         data_store.begin()
         data_store.write_remote_manifest(remote_manifest)
         data_store.commit()
