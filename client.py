@@ -181,6 +181,8 @@ def sync_local_delete_helper(result):
             data_store.write_remote_manifest(remote_manifest)
             data_store.commit()
 
+    return errors
+
 
 #########################################################
 # Send files from remote
