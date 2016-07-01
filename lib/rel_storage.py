@@ -1,6 +1,7 @@
 import os, shutil, json, errno
 
 from storage import *
+from common import *
 
 ############################################################################################
 # Relative storage layer, all paths are rooted to DATA_DIR
