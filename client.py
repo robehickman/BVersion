@@ -127,6 +127,11 @@ def sync_files(client_files, repository_name):
 
         print result.keys()
 
+        # Files which have been deleted on the client
+        if result['local_delete_files'] != []:
+            hit = True
+            errors += sync_local_delete_helper(result)
+
         quit()
 
         # Push files
@@ -139,12 +144,39 @@ def sync_files(client_files, repository_name):
             hit = True
             errors += sync_pull_helper(result)
 
+
+
         if hit == False:
             print 'Nothing to do'
 
 
     return errors
 
+#########################################################
+# Delete files which have been removed locally from the 
+# server and remove from local and remote manifests.
+#########################################################
+def sync_local_delete_helper(result):
+    errors = []
+
+    for fle in result['local_delete_files']:
+        print fle
+
+        req_result = do_request("delete_file", {
+            'repository'  : repository_name,
+            "session_id"  : session_id,
+            "path"        : fle['path']})
+
+        responce = json.loads(req_result)
+        if responce['status'] == 'ok':
+            # remove the file from the manifest
+            manifest = data_store.read_local_manifest()
+            manifest = delete_from_manifest(manifest, fle['path'])
+            data_store.write_local_manifest(manifest)
+
+            remote_manifest = data_store.read_remote_manifest()
+            manifest = delete_from_manifest(manifest, fle['path'])
+            data_store.write_remote_manifest(remote_manifest)
 
 
 #########################################################
