@@ -246,10 +246,12 @@ def find_changed():
         = merge_file_tree(client_files, server_files)
 
     return json.dumps({
-        'status'          : 'ok',
-        'push_files'      : push_files,
-        'pull_files'      : pull_files,
-        'conflict_files'  : conflict_files
+        'status'              : 'ok',
+        'push_files'          : push_files,
+        'pull_files'          : pull_files,
+        'conflict_files'      : conflict_files,
+        'local_delete_files'  : local_delete_files,
+        'remote_delete_files' : remote_delete_files,
     })
 
 #########################################################

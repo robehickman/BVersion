@@ -125,6 +125,10 @@ def sync_files(client_files, repository_name):
 
         hit = False
 
+        print result.keys()
+
+        quit()
+
         # Push files
         if result['push_files'] != []:
             hit = True
