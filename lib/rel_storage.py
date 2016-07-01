@@ -54,4 +54,16 @@ class rel_storage(storage):
     def r_makedirs(self, rpath):
         return os.makedirs(self.mkfs_path(rpath))
 
+############################################################################################
+# Remove named path from the manifest files array
+############################################################################################
+    def remove_from_manifest(self, manifest, rpath):
+        filter_manifest = []
+        for f in manifest['files']:
+            if pfx_path(f['path']) == pfx_path(rpath): pass
+            else: filter_manifest.append(f)
+
+        manifest['files'] = filter_manifest
+        return manifest
+
 

@@ -157,11 +157,10 @@ def sync_files(client_files, repository_name):
 # server and remove from local and remote manifests.
 #########################################################
 def sync_local_delete_helper(result):
+    print 'Removing locally deleted files from server...'
     errors = []
 
     for fle in result['local_delete_files']:
-        print fle
-
         req_result = do_request("delete_file", {
             'repository'  : repository_name,
             "session_id"  : session_id,
@@ -169,14 +168,18 @@ def sync_local_delete_helper(result):
 
         responce = json.loads(req_result)
         if responce['status'] == 'ok':
+            print 'Deleted on server: ' + fle['path']
+
             # remove the file from the manifest
+            data_store.begin()
             manifest = data_store.read_local_manifest()
-            manifest = delete_from_manifest(manifest, fle['path'])
+            manifest = data_store.remove_from_manifest(manifest, fle['path'])
             data_store.write_local_manifest(manifest)
 
             remote_manifest = data_store.read_remote_manifest()
-            manifest = delete_from_manifest(manifest, fle['path'])
+            remote_manifest = data_store.remove_from_manifest(remote_manifest, fle['path'])
             data_store.write_remote_manifest(remote_manifest)
+            data_store.commit()
 
 
 #########################################################

@@ -135,6 +135,12 @@ def check_session_auth(form):
     if (int(time.time()) > repo['session_lock']):
         raise Exception('Session lock has expired')
 
+
+# if valid, extend expire time
+    repo['session_lock'] = int(time.time()) + 30 # 30 second validity
+
+    set_repository(repo_name, repo)
+
 #########################################################
 # Request authentication token to sign
 #########################################################
@@ -192,7 +198,7 @@ def authenticate():
                 break
 
     if valid == True:
-        repo['session_lock'] = int(time.time()) + (60 * 10)
+        repo['session_lock'] = int(time.time()) + 30 # 30 second validity
         repo['active_session'] = session_id
 
         result = json.dumps({

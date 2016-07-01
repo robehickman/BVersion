@@ -121,17 +121,6 @@ class versioned_storage(rel_storage):
     def write_local_manifest(self, vrs, manifest):
         self.r_put(cpjoin('versions', str(vrs), self.manifest_file), json.dumps(manifest))
 
-############################################################################################
-# Remove named path from the manifest files array
-############################################################################################
-    def remove_from_manifest(self, manifest, rpath):
-        filter_manifest = []
-        for f in manifest['files']:
-            if pfx_path(f['path']) == pfx_path(rpath): pass
-            else: filter_manifest.append(f)
-
-        manifest['files'] = filter_manifest
-        return manifest
 
 ############################################################################################
 # Step version number forward
@@ -183,6 +172,9 @@ class versioned_storage(rel_storage):
 
         # If there is a current file, move it back to prior RV
         if exists == True:
+            try: self.r_makedirs(os.path.dirname(cpjoin(self.vrs_dir, str(head - 1), rpath)))
+            except OSError: pass
+
             self.r_move(cpjoin(self.vrs_dir, str(head), rpath), cpjoin(self.vrs_dir, str(head - 1), rpath))
 
             # Add up-moved file to parent manifest,
