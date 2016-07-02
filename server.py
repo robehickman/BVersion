@@ -136,7 +136,12 @@ def check_session_auth(form):
         raise Exception('Session lock has expired')
 
 
-# if valid, extend expire time
+#########################################################
+# Extend session auth into the future
+#########################################################
+def extend_session_auth():
+    repo_name, repo = get_repository()
+
     repo['session_lock'] = int(time.time()) + 30 # 30 second validity
 
     set_repository(repo_name, repo)
@@ -222,6 +227,9 @@ def get_manifest():
     repo_name, repo = get_repository()
 
     manifest = repo['data_store'].read_local_manifest()
+
+
+    extend_session_auth()
     return json.dumps(manifest)
 
 #########################################################
@@ -251,6 +259,7 @@ def find_changed():
     push_files, pull_files, conflict_files, local_delete_files, remote_delete_files \
         = merge_file_tree(client_files, server_files)
 
+    extend_session_auth()
     return json.dumps({
         'status'              : 'ok',
         'push_files'          : push_files,
@@ -285,6 +294,7 @@ def push_file():
     data_store.fs_save_upload(path, file)
     last_change = data_store.get_single_file_info(path, path)
 
+    extend_session_auth()
     return json.dumps({
         'status'          : 'ok',
         'last_change'     : last_change
@@ -314,6 +324,8 @@ def pull_file():
 
     response = make_response(send_from_directory(l_dir, file))
     response.headers['file_info_json'] = json.dumps(data_store.get_single_file_info(sys_path, sys_path))
+
+    extend_session_auth()
     return response
 
 
@@ -336,6 +348,7 @@ def delete_file():
 
     data_store.fs_delete(sys_path)
 
+    extend_session_auth()
     return json.dumps({'status': 'ok'})
 
 #############################################################

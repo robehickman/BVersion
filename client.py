@@ -132,8 +132,6 @@ def sync_files(client_files, repository_name):
             hit = True
             errors += sync_local_delete_helper(result)
 
-        quit()
-
         # Push files
         if result['push_files'] != []:
             hit = True
@@ -207,14 +205,19 @@ def sync_push_helper(result):
             # update local and remote manifest after every upload to not re-upload files
             # if the system fails mid-sync
 
+
+            # need to check if item already exists in the manifest so don't end up with double insertions
+
             data_store.begin()
 
             manifest = data_store.read_local_manifest()
+            manifest = data_store.remove_from_manifest(manifest, last_change['path']) 
             manifest['files'].append(get_single_file_info(
                 DATA_DIR + last_change['path'], last_change['path']))
             data_store.write_local_manifest(manifest)
 
             remote_manifest = data_store.read_remote_manifest()
+            remote_manifest = data_store.remove_from_manifest(remote_manifest, last_change['path']) 
             remote_manifest['files'].append(last_change)
             data_store.write_remote_manifest(remote_manifest)
 
