@@ -142,7 +142,7 @@ def check_session_auth(form):
 def extend_session_auth():
     repo_name, repo = get_repository()
 
-    repo['session_lock'] = int(time.time()) + 30 # 30 second validity
+    repo['session_lock'] = int(time.time()) + 60 # 30 second validity
 
     set_repository(repo_name, repo)
 
@@ -203,7 +203,7 @@ def authenticate():
                 break
 
     if valid == True:
-        repo['session_lock'] = int(time.time()) + 30 # 30 second validity
+        repo['session_lock'] = int(time.time()) + 60 # 30 second validity
         repo['active_session'] = session_id
 
         result = json.dumps({
