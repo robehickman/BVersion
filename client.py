@@ -125,12 +125,17 @@ def sync_files(client_files, repository_name):
 
         hit = False
 
-        print result.keys()
+        print result
 
         # Files which have been deleted on the client
         if result['local_delete_files'] != []:
             hit = True
             errors += sync_local_delete_helper(result)
+
+        # Files which have been deleted on the server
+        if result['remote_delete_files'] != []:
+            hit = True
+            errors += sync_remote_delete_helper(result)
 
         # Push files
         if result['push_files'] != []:
@@ -178,6 +183,35 @@ def sync_local_delete_helper(result):
             remote_manifest = data_store.remove_from_manifest(remote_manifest, fle['path'])
             data_store.write_remote_manifest(remote_manifest)
             data_store.commit()
+
+    return errors
+
+
+#########################################################
+# Delete files which no longer exist on the server,
+# Remove from local and remote manifests.
+#########################################################
+def sync_remote_delete_helper(result):
+    print 'Removing files deleted on the server...'
+    errors = []
+
+    for fle in result['remote_delete_files']:
+        print 'Deleting file: ' + fle['path']
+
+        try: data_store.fs_delete(fle['path'])
+        except OSError:
+            print 'Warning: remote deleted file does not exist locally.'
+
+        # remove the file from the manifest
+        data_store.begin()
+        manifest = data_store.read_local_manifest()
+        manifest = data_store.remove_from_manifest(manifest, fle['path'])
+        data_store.write_local_manifest(manifest)
+
+        remote_manifest = data_store.read_remote_manifest()
+        remote_manifest = data_store.remove_from_manifest(remote_manifest, fle['path'])
+        data_store.write_remote_manifest(remote_manifest)
+        data_store.commit()
 
     return errors
 

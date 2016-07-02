@@ -1,3 +1,4 @@
+# here local refers to the client, remote refers to the server
 def merge_file_tree(remote, local):
     remote_copy = remote.copy()
     local_copy  = local.copy()
@@ -71,14 +72,12 @@ def merge_file_tree(remote, local):
             conflict_files.append(value)
             continue
 
-        # If file was changed on the client which conflicts with one deleted on the server by another client
+        # If file was deleted on the client which conflicts with one deleted on the server by another client
         if key in local and value['status'] == 'deleted' and local[key]['status'] == 'deleted':
+            remote_delete_files.append(value)
             continue
 
-    # remote_copy should now be empty
-    print remote_copy
-
-    # Secondly deal with any files left over from the client, these will mainly be new files
+    # Secondly deal with any files left over from the client
     for key, value in local_copy.iteritems():
         # If file new on server and does not exist on the client, get client to pull it
         if key not in remote_copy and value['status'] == 'new':
