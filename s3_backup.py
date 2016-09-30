@@ -17,6 +17,8 @@ def backup_process():
     global repositories
 
     while True:
+        print repositories
+
         print 'S3 backup process'
         time.sleep(10)
 

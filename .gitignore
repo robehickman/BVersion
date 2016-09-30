@@ -4,6 +4,7 @@
 *.swo
 *.swn
 .prior_token
+server.ini
 
 vers_test/*
 client_dir/*
