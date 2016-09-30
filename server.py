@@ -78,6 +78,13 @@ app = Flask(__name__)
 app.debug = True
 
 #########################################################
+# Run Modules
+#########################################################
+import s3_backup
+s3_backup.init_module(repositories)
+
+
+#########################################################
 # Obtain repository named in http request
 #########################################################
 def get_repository():

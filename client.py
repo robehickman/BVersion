@@ -458,31 +458,32 @@ except nacl.exceptions.CryptoError:
     print 'Password error'
     quit()
 
-authenticate_client(private_key, server_url, repository_name)
+while True:
+    authenticate_client(private_key, server_url, repository_name)
 
-if session_id == None:
-    raise Exception('Authentication failed')
+    if session_id == None:
+        raise Exception('Authentication failed')
 
-manifest = data_store.read_local_manifest()
+    manifest = data_store.read_local_manifest()
 
-client_files = detect_local_changes(manifest);
+    client_files = detect_local_changes(manifest);
 
-new_files     = []
-changed_files = []
-deleted_files = []
-for itm in client_files.values():
-    if itm['status'] == 'new':
-        new_files.append(itm)
-    if itm['status'] == 'changed':
-        changed_files.append(itm)
-    if itm['status'] == 'deleted':
-        deleted_files.append(itm)
+    new_files     = []
+    changed_files = []
+    deleted_files = []
+    for itm in client_files.values():
+        if itm['status'] == 'new':
+            new_files.append(itm)
+        if itm['status'] == 'changed':
+            changed_files.append(itm)
+        if itm['status'] == 'deleted':
+            deleted_files.append(itm)
 
-display_list('New: ',     new_files, 'green')
-display_list('Changed: ', changed_files, 'yellow')
-display_list('Deleted: ', deleted_files, 'red')
+    display_list('New: ',     new_files, 'green')
+    display_list('Changed: ', changed_files, 'yellow')
+    display_list('Deleted: ', deleted_files, 'red')
 
-sync_files(client_files, repository_name)
+    sync_files(client_files, repository_name)
 
-
+    time.sleep(60)
 
