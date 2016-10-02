@@ -225,7 +225,7 @@ class storage(object):
             if callable(data):
                 while True:
                     Chunk = data(1000 * 1000)
-                    if not chunk: break
+                    if not Chunk: break
                     f.write(Chunk)
             else:
                 f.write(data)
