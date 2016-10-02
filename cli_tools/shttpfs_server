@@ -1,12 +1,13 @@
 #!/usr/bin/env python
-# Server configuration
-import __builtin__
+#########################################################
+# Default server configuration
+#########################################################
 
-__builtin__.SERVER_CONF_FILE = 'server.ini'
-__builtin__.MANIFEST_FILE  = '.manifest.json'
+SERVER_CONF_FILE = '/etc/shttpfs/server.ini'
+MANIFEST_FILE    = '.manifest.json'
 
 #########################################################
-# Imports
+# imports
 #########################################################
 import json
 import os
