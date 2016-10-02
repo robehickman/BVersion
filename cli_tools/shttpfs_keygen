@@ -1,10 +1,9 @@
+#!/usr/bin/env python
 import os, getpass, argparse, binascii
 import sys
 
-sys.path = [ './lib' ] + sys.path
-
-from common import *
-from crypto import *
+from shttpfs.common import *
+from shttpfs.crypto import *
 
 # File extensions for public and private key files
 PUB_EXT = '.key'
@@ -18,7 +17,6 @@ args = parser.parse_args()
 
 pubkey_file  = args.pubkey[0]
 privkey_file = args.privkey[0]
-
 
 
 # Public and private key files should be different

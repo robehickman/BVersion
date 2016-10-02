@@ -5,6 +5,9 @@
 *.swn
 .prior_token
 server.ini
+build
+dist
+shttpfs.egg-info
 
 vers_test/*
 client_dir/*

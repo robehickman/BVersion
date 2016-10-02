@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 #Client configuration
 import __builtin__
 
@@ -10,7 +11,6 @@ __builtin__.PRIVATE_KEY_FILE     = 'keys/private.key'
 
 __builtin__.CLIENT_CONF_DIR  = '.shttpfs'
 __builtin__.CLIENT_CONF_FILE = 'client.cnf'
-
 
 
 # need to implement a 'local delete' command, delete files
@@ -26,9 +26,9 @@ import urllib2
 from base64 import b64encode, b64decode
 import sys
 
-from lib.common import *
-from lib.crypto import *
-from lib.plain_storage import *
+from shttpfs.common import *
+from shttpfs.crypto import *
+from shttpfs.plain_storage import *
 
 data_store = None
 

@@ -42,7 +42,7 @@ def write_keypair(password, pubkey_file, pubkey_ext, privkey_file, privkey_ext):
 ############################################################################################
 # Encrypt a private key
 ############################################################################################
-def encrypt_private(password, private):
+def encrypt_private(password, private, dohex = True):
     key = key_from_password(password)
     box = nacl.secret.SecretBox(key)
     # nonce must only be used once, make a new one every time
@@ -52,14 +52,16 @@ def encrypt_private(password, private):
     # do not need to store these separately.
 
     result = box.encrypt(private, nonce)
-    result = hexlify(result)
+    if dohex == True:
+        result = hexlify(result)
     return result
 
 ############################################################################################
 # Decrypt a private key
 ############################################################################################
-def decrypt_private(password, crypt_private):
-    crypt_private = unhexlify(crypt_private)
+def decrypt_private(password, crypt_private, dohex = True):
+    if dohex == True:
+        crypt_private = unhexlify(crypt_private)
 
     key = key_from_password(password)
     box = nacl.secret.SecretBox(key)
