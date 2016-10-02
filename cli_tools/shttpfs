@@ -146,8 +146,29 @@ def sync_files(client_files, repository_name):
                     
         # Pull files
         if result['pull_files'] != []:
-            hit = True
-            errors += sync_pull_helper(result)
+        # See if pull ignore file exists
+            try:
+                pull_ignore = file_get_contents(DATA_DIR + PULL_IGNORE_FILE)
+                pull_ignore = pull_ignore.splitlines()
+
+                filtered_pull_files = []
+                for f in result['pull_files']:
+                    matched = False
+                    for i in pull_ignore:
+                        if fnmatch.fnmatch(f, i):
+                            matched = True
+
+                    if matched == False:
+                        filtered_pull_files.append(f)
+
+                result['pull_files'] = filtered_pull_files
+            except:
+                print 'Warning, pull ignore file does not exist'
+
+
+            if result['pull_files'] != []:
+                hit = True
+                errors += sync_pull_helper(result)
 
 
 
@@ -270,24 +291,6 @@ def sync_push_helper(result):
 def sync_pull_helper(result):
     errors = []
 
-# See if pull ignore file exists
-    try:
-        pull_ignore = file_get_contents(DATA_DIR + PULL_IGNORE_FILE)
-        pull_ignore = pull_ignore.splitlines()
-
-        filtered_pull_files = []
-        for f in result['pull_files']:
-            matched = False
-            for i in pull_ignore:
-                if fnmatch.fnmatch(f, i):
-                    matched = True
-
-            if matched == False:
-                filtered_pull_files.append(f)
-
-        result['pull_files'] = filtered_pull_files
-    except:
-        print 'Warning, pull ignore file does not exist'
 
 # Pull the files
     for fle in result['pull_files']:
@@ -296,11 +299,10 @@ def sync_pull_helper(result):
         req_result, headers = server_connection.request_full("pull_file", {
             'repository'  : repository_name,
             "session_id"  : session_id,
-            'path'        : fle['path']})
+            'path'        : fle['path']}, True)
 
         make_dirs_if_dont_exist(data_store.get_full_file_path(fle['path']))
         data_store.fs_put(fle['path'], req_result)
-
 
         # Store remote manifest data, now included in custom header
         last_change = json.loads(headers.get('file_info_json'))

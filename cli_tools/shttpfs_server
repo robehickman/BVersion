@@ -31,7 +31,7 @@ if 'global' in config:
     glb = config.pop('global')
 
     if 'manifest_file' in glb:
-        __builtin__.MANIFEST_FILE  = glb['manifest_file']
+        MANIFEST_FILE  = glb['manifest_file']
 
 
 if config == {}:

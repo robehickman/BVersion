@@ -222,7 +222,13 @@ class storage(object):
             self.to_journel(['put_contents', path, None])
 
         with open(path, 'w') as f:
-            f.write(data)
+            if callable(data):
+                while True:
+                    Chunk = data(1000 * 1000)
+                    if not chunk: break
+                    f.write(Chunk)
+            else:
+                f.write(data)
 
 ############################################################################################
 # Save upload file to 'path'

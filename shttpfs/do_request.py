@@ -24,8 +24,14 @@ class do_request:
 
 
 ############################################################################################
-    def request_full(self, url, data):
+    def request_full(self, url, data, gen = False):
         "Send a HTTP request to the configured server and return the result body and headers"
         result = self.request_raw(url, data)
-        return (result.read(), result.info())
+
+        if gen == False:
+            return (result.read(), result.info())
+
+        return (result.read, result.info())
+
+        
 
