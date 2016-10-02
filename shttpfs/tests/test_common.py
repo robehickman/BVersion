@@ -1,7 +1,8 @@
-DATA_DIR           = './vers_test/'
+import os, shutil
+
+DATA_DIR           = os.path.dirname(__file__) + '/vers_test/'
 MANIFEST_FILE      = 'manifest_xzf.json'
 
-import os, shutil
 
 try: os.mkdir(DATA_DIR)
 except: pass

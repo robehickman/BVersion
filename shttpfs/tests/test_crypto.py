@@ -1,76 +1,64 @@
 from test_common import *
+from unittest import TestCase
 
-import os,sys,inspect
-currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-parentdir = os.path.dirname(currentdir)
-parentdir = parentdir + '/lib'
-sys.path.insert(0,parentdir) 
+from shttpfs.crypto import *
 
-from crypto import *
+class TestCrypto(TestCase):
+#######################################################################################
+    def test_key_encrypt_decrypt(self):
+        """ Test that encryption and decryption of a item returns the same item """
+
+        prvate, public = make_keypair()
+
+        encrypted = encrypt_private('test', prvate)
+        decrypted = decrypt_private('test', encrypted)
+
+        self.assertEqual(decrypted, prvate,
+            msg = 'Decrypted result does not match source')
 
 #######################################################################################
-# Test that encryption and decryption of a item returns the same item
-#######################################################################################
-def test_key_encrypt_decrypt():
-    prvate, public = make_keypair()
+    def test_sign_varify(self):
+        """ Test signing and verification that signature """
 
-    encrypted = encrypt_private('test', prvate)
-    decrypted = decrypt_private('test', encrypted)
+        data = 'something to sign'
 
-    if decrypted != prvate:
-        raise Exception('Decrypted result does not match source')
+        prv, pub = make_keypair()
 
-    print "Encrypt and decrypt pass"
+        signed = sign_data(prv, data)
 
-#######################################################################################
-# Test signing and verification that signature
-#######################################################################################
-def test_sign_varify():
-    data = 'something to sign'
-
-    prv, pub = make_keypair()
-
-    signed = sign_data(prv, data)
-    varify_signiture(pub, signed)
-
-    print "Sign and verify pass"
+        self.assertTrue(varify_signiture(pub, signed),
+            msg='Signature verification failed')
 
 #######################################################################################
-# Test keys are written to files correctly
-#######################################################################################
-def test_key_wirte():
-    empty_dir('keys')
+    def test_key_wirte(self):
+        """ Test keys are written to files correctly """
 
-    prv, pub = write_keypair('test', 'keys/public', '.key', 'keys/private', '.key')
-    private = file_get_contents('keys/private.key')
-    public  = file_get_contents('keys/public.key')
+        empty_dir('keys')
 
-    if prv != private:
-        print 'private key file corrupted'
+        prv, pub = write_keypair('test', 'keys/public', '.key', 'keys/private', '.key')
+        private = file_get_contents('keys/private.key')
+        public  = file_get_contents('keys/public.key')
 
-    if pub != public:
-        print 'public key file corrupted'
+        self.assertEqual(prv, private,
+            msg = 'private key file corrupted')
 
-    data = 'something to sign'
+        self.assertEqual(pub, public,
+            msg = 'public key file corrupted')
 
-    prv     = decrypt_private('test', prv)
-    private = decrypt_private('test', private)
+        data = 'something to sign'
 
-    signed = sign_data(prv, data)
-    varify_signiture(pub, signed)
+        prv     = decrypt_private('test', prv)
+        private = decrypt_private('test', private)
 
-    signed = sign_data(private, data)
-    varify_signiture(public, signed)
+        signed = sign_data(prv, data)
 
-    empty_dir('keys')
-    os.rmdir('keys')
-    
-    print "Key write to file pass"
+        self.assertTrue(varify_signiture(pub, signed),
+            msg='Signature verification failed')
 
+        signed = sign_data(private, data)
+        self.assertTrue(varify_signiture(public, signed),
+            msg='Signature verification failed')
 
-# run tests
-test_key_encrypt_decrypt()
-test_sign_varify()
-test_key_wirte()
-
-    
+        empty_dir('keys')
+        os.rmdir('keys')
+        

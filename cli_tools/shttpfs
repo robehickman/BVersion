@@ -27,17 +27,19 @@ from base64 import b64encode, b64decode
 import sys
 
 from shttpfs.common import *
+from shttpfs.do_request import *
 from shttpfs.crypto import *
 from shttpfs.plain_storage import *
 
+# Variable used to store the active file system storage object
 data_store = None
 
-# Register the streaming http handlers with urllib2
-register_openers()
+# Variable used to store the server connection object
+server_connection = None
 
-# private_key = ''
-
+# Variable used to store the current session ID
 session_id = None
+
 
 #########################################################
 # Request an authentication token from the server, sign
@@ -52,7 +54,7 @@ def authenticate_client(private_key, server_url, repository_name):
     except:
         prior_token = ''
 
-    result = do_request("begin_auth", {
+    result = server_connection.request("begin_auth", {
         'prior_token' : b64encode(prior_token),
         'repository' : repository_name})
 
@@ -67,7 +69,7 @@ def authenticate_client(private_key, server_url, repository_name):
 
     auth_token = sign_data(private_key, str(tmp_session_id))
 
-    result2 = do_request("authenticate", {
+    result2 = server_connection.request("authenticate", {
         'repository' : repository_name,
         'auth_token' : b64encode(auth_token)})
 
@@ -111,7 +113,7 @@ def sync_files(client_files, repository_name):
     remote_manifest = data_store.read_remote_manifest()
 
     #send list to server, which will return changes
-    result = do_request("find_changed", {
+    result = server_connection.request("find_changed", {
         'repository'      : repository_name,
         "session_id"      : session_id,
         "prev_manifest"   : json.dumps(remote_manifest),
@@ -164,7 +166,7 @@ def sync_local_delete_helper(result):
     errors = []
 
     for fle in result['local_delete_files']:
-        req_result = do_request("delete_file", {
+        req_result = server_connection.request("delete_file", {
             'repository'  : repository_name,
             "session_id"  : session_id,
             "path"        : fle['path']})
@@ -225,7 +227,7 @@ def sync_push_helper(result):
     for fle in result['push_files']:
         print 'Sending: ' + fle['path']
 
-        req_result = do_request("push_file", {
+        req_result = server_connection.request("push_file", {
             'repository'  : repository_name,
             "session_id"  : session_id,
             "file"        : open(cpjoin(DATA_DIR, fle['path']), "rb"), 'path' : fle['path']})
@@ -291,7 +293,7 @@ def sync_pull_helper(result):
     for fle in result['pull_files']:
         print 'Pulling file: ' + fle['path']
 
-        req_result, headers = do_request_full("pull_file", {
+        req_result, headers = server_connection.request_full("pull_file", {
             'repository'  : repository_name,
             "session_id"  : session_id,
             'path'        : fle['path']})
@@ -348,6 +350,9 @@ def find_conf_file(search_path):
 # Handle CLI arguments.
 #########################################################
 
+# Register the streaming http handlers with urllib2
+register_openers()
+
 import argparse
 
 parser = argparse.ArgumentParser(description='Simple HTTP file sync tool.')
@@ -389,7 +394,7 @@ if args.mode != None and args.mode.lower() == 'setup':
         print 'Password error'
         quit()
 
-    # make sure server URL and repo name are formatted corectly
+    # make sure server URL and repo name are formatted correctly
     server_url = split[0]
 
     if not server_url.endswith('/'):
@@ -397,7 +402,7 @@ if args.mode != None and args.mode.lower() == 'setup':
 
     repository_name = split[2]
 
-    __builtin__.SERVER_URL = server_url 
+    server_connection = do_request(server_url)
 
     # Make sure key is correct for client
     authenticate_client(private_key, server_url, repository_name)
@@ -448,8 +453,8 @@ repository_name   = config['client']['repository_name']
 data_store = plain_storage(DATA_DIR, CLIENT_CONF_DIR, MANIFEST_FILE, REMOTE_MANIFEST_FILE)
 
 
-__builtin__.SERVER_URL = server_url 
-print server_url
+server_connection = do_request(server_url)
+
 
 # Unlock private key
 try:

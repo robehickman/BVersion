@@ -21,6 +21,8 @@ setup(
     author_email='robehickman@gmail.com',
     license='MIT',
     packages=['shttpfs'],
+    test_suite='nose.collector',
+    tests_require=['nose'],
     install_requires=[
         'termcolor', 'pynacl', 'scrypt', 'poster', 'flask'
     ],

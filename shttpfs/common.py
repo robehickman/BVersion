@@ -2,11 +2,6 @@ import os.path, time, fnmatch, json, getpass
 from termcolor import colored
 import ConfigParser
 
-
-from poster.encode import multipart_encode
-from poster.streaminghttp import register_openers
-import urllib2
-
 ############################################################################
 # Prompt the user to enter a new password, with confirmation
 ############################################################################
@@ -294,24 +289,5 @@ def file_get_contents(path):
 def file_put_contents(path, data):
     with open(path, 'w') as f:
         f.write(data)
-
-############################################################################################
-# Send a HTTP request to the server
-############################################################################################
-def do_request(url, data):
-    datagen, headers = multipart_encode(data)
-    request = urllib2.Request(SERVER_URL + url, datagen, headers)
-    result = urllib2.urlopen(request)
-    return result.read()
-
-
-############################################################################################
-# Send a HTTP request to the server, get body and headers
-############################################################################################
-def do_request_full(url, data):
-    datagen, headers = multipart_encode(data)
-    request = urllib2.Request(SERVER_URL + url, datagen, headers)
-    result = urllib2.urlopen(request)
-    return (result.read(), result.info())
 
 
