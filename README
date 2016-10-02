@@ -1,5 +1,11 @@
 This is a client-server based file synchronisation tool inspired by subversion, but is considerably simpler in it's implementation. I work with hundreds of gigabytes of binary files, mostly camera raw files, and require a means of synchronising these across multiple computers. I have tried out numerous tools over the past few years, and subversion is the only one with the required features which has worked dependably. Unfortunately subversion always stores two copies of every file in every checkout for delta compression. When dealing with large volumes of binary files this greatly blows up the storage required. As I mostly add to the files and rarely change them, delta compression offers little value in my use case. Finally due to limited outbound bandwidth combined with the large volume of data, I required a tool that is hosted within my LAN.
 
+The design of this tool was inspired by the 'suckless philosophy' and consequently it aims to be simple. It has a minimal command line interface and the server has a configuration file. Beyond these it's meant to be configured by editing the source code.
+
+The system is built around a journaling file system class (shttpfs.storage) which provides atomic operations for file integrity. Any issues during critical file system operations are rolled back to the last stable state. This includes whole system crashes as long as the OS was able to write the journal to disk. Any files which get deleted in a rollback are backed up in the '.shttpfs/back' directory.
+
+Notice: This has only been tested on linux ext4, running on other operating systems or file systems could cause undefined behaviour.
+
 Features:
 
 * HTTP(S) based sync protocol.
@@ -34,7 +40,6 @@ As I don't want the entire data set on every machine partial checkout support wa
 
 
 
-Notice: This has only been tested on linux ext4, running on other operating systems or filesystems could cause undefined behaviour.
 
 ---------------------------------------------------
 
