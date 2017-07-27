@@ -127,8 +127,6 @@ def sync_files(client_files, repository_name):
 
         hit = False
 
-        print result
-
         # Files which have been deleted on the client
         if result['local_delete_files'] != []:
             hit = True
@@ -155,7 +153,7 @@ def sync_files(client_files, repository_name):
                 for f in result['pull_files']:
                     matched = False
                     for i in pull_ignore:
-                        if fnmatch.fnmatch(f, i):
+                        if fnmatch.fnmatch(f['path'], i):
                             matched = True
 
                     if matched == False:

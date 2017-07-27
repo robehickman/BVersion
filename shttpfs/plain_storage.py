@@ -125,7 +125,6 @@ class plain_storage(rel_storage):
     def fs_get(self, rpath):
         return self.r.get(rpath)
 
-
 ############################################################################################
 # Move a file in the FS
 ############################################################################################
@@ -149,7 +148,6 @@ class plain_storage(rel_storage):
             raise
 
         self.commit()
-
 
 ############################################################################################
 # Remove file from current revision
