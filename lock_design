@@ -1,0 +1,21 @@
+When reading:
+    when item read begins obtain a shared lock.
+
+    when item read ends release the lock
+
+
+When writing:
+    Ensure that no shared locks exist
+        if a shared lock does exist, create a file to signal reading processes to terminate after there current
+        read is finished
+
+    Obtain an exclusive lock stopping readers from making changes
+    
+    Need two layers of locks:
+        a low level non-expiring lock which exists only while a single file is being changed.
+
+        a broader reaching expiring lock existing over multiple write operations. This lock
+        has to be time expiring and renewed by the client after every operation. We do not want
+        a client which crashes or looses it's connection to permanently lock the server.
+
+        if a client's write lock expires it has to obtain a new one
