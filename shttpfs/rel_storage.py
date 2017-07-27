@@ -20,12 +20,6 @@ class rel_storage(storage):
         return self.file_put_contents(self.mkfs_path(rpath), data)
 
 ############################################################################################
-# Save an uploaded file
-############################################################################################
-    def r_save_upload(self, rpath, file_obj):
-        return self.save_upload(self.mkfs_path(rpath), file_obj)
-
-############################################################################################
 # Relative file get contents
 ############################################################################################
     def r_get(self, rpath):

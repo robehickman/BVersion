@@ -220,34 +220,6 @@ class versioned_storage(rel_storage):
         self.commit()
 
 ############################################################################################
-# Save an uploaded file
-############################################################################################
-    def fs_save_upload(self, rpath, file_obj):
-        
-        try:
-            # does file exist in current rv? If it does move it to prior rv
-            self.step_if_exists(rpath)
-
-            self.begin()
-            # reload head in case we stepped version
-            head = self.get_head()
-
-            # Add the file to the current revision
-            self.r_save_upload(cpjoin(self.vrs_dir, str(head), rpath), file_obj)
-
-            # Add to the manifest
-            manifest = self.read_local_manifest(head)
-            manifest['files'].append(self.get_single_file_info(rpath, rpath, head))
-            manifest = self.write_local_manifest(head, manifest)
-
-        except:
-            raise
-            self.rollback()
-
-        self.commit()
-
-
-############################################################################################
 # Get a files contents from the FS
 ############################################################################################
     def fs_get(self, rpath):

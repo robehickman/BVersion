@@ -120,29 +120,6 @@ class plain_storage(rel_storage):
         self.commit()
 
 ############################################################################################
-# Save an uploaded file
-############################################################################################
-    def fs_save_upload(self, rpath, file_obj):
-        
-        try:
-            self.begin()
-
-            # Add the file to the current revision
-            self.r_save_upload(rpath, file_obj)
-
-            # Add to the manifest
-            manifest = self.read_local_manifest()
-            manifest['files'].append(self.get_single_file_info(rpath, rpath))
-            manifest = self.write_local_manifest(manifest)
-
-        except:
-            self.rollback()
-            raise
-
-        self.commit()
-
-
-############################################################################################
 # Get a files contents from the FS
 ############################################################################################
     def fs_get(self, rpath):

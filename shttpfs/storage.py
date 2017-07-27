@@ -1,5 +1,6 @@
 import os.path as p
-import os, shutil, json, errno
+import os, shutil, json, errno, fcntl
+from collections import deque
 
 from common import cpjoin
 
@@ -7,24 +8,19 @@ from common import cpjoin
 # Journaling file storage subsystem, only use one instance at any time, not thread safe
 ############################################################################################
 class storage(object):
-    data_dir = ''
-    tmp_dir = ''
-    j_file = ''
-    j_step_file = ''
-    journal = None
-    tmp_idx = 0
 
 ############################################################################################
 # init
 ############################################################################################
     def __init__(self, data_dir, conf_dir):
         # need to make sure data dir path has a trailing slash
-
         self.data_dir    = data_dir
         self.j_file      = self.mkfs_path(conf_dir, 'journal.json')
-        self.j_step_file = self.mkfs_path(conf_dir, 'journal_step')
         self.tmp_dir     = self.mkfs_path(conf_dir, 'tmp')
         self.backup_dir  = self.mkfs_path(conf_dir, 'back')
+        self.journal     = None
+        self.lock        = None
+        self.tmp_idx     = 0
 
     # Make sure tmp dir exists
         try: os.makedirs(self.tmp_dir)
@@ -33,6 +29,36 @@ class storage(object):
     # Make sure backup dir exists
         try: os.makedirs(self.backup_dir)
         except: pass
+
+############################################################################################
+# Lock the file system, returns true on success, false on failure
+#
+# lock types:
+# 'shared'    - shared lock
+# 'exclusive' - exclusive lock
+############################################################################################
+    def lock(self, l_type):
+        if self.lock != None:
+            return True
+
+        try:
+            l_type = {'shared' : pfcntl.LOCK_SH, 'exclusive' : pfcntl.LOCK_EX}[l_type]
+            fd = open(self.data_dir + 'lock_file', 'w')
+            fcntl.flock(fd, l_type | fcntl.LOCK_NB)
+            self.lock = fd # assigned last so that does not indicate a lock exists if locking failed
+            return True
+
+        except IOError:
+            return False
+
+
+############################################################################################
+# Unlock the file system
+############################################################################################
+    def unlock():
+        lock = self.lock
+        self.lock = None
+        fcntl.flock(lock, l_type | fcntl.LOCK_NB)
 
 ############################################################################################
 # write to journal
@@ -82,11 +108,38 @@ class storage(object):
             raise Exception('Storage is already active, nested begin not supported')
 
         # under normal operation journal is deleted at end of transaction
-        # if it does we need to roll back
+        # if it does exist we need to roll back
         if os.path.isfile(self.j_file):  
             self.rollback()
 
         self.journal = open(self.j_file, 'w')
+
+############################################################################################
+# Implementation for declarative file operations.
+############################################################################################
+    def do_action(self, command, journal = True):
+        cmd = 0; src = 1; path = 1; data = 2; dst = 2
+
+        if journal == True:
+            self.to_journel(command['undo'])
+
+        d = command['do']
+        if d[cmd] == 'copy':
+            shutil.copy(d[src], d[dst])
+
+        elif d[cmd] == 'move':
+            shutil.move(d[src], d[dst])
+
+        elif d[cmd] == 'backup':
+            shutil.move(d[src], self.new_backup(d[src]))
+
+        elif d[cmd] == 'write' :
+            if callable(d[data]):
+                d[data](d[path])
+            else:
+                with open(d[path], 'w') as f:
+                    f.write(d[data])
+
 
 ############################################################################################
 # Do journal rollback
@@ -101,87 +154,26 @@ class storage(object):
         # Read the journal
         journal = self.file_get_contents(self.j_file)
 
-
         journ_list = []
         with open(self.j_file) as fle:
-            for l in fle:
-                journ_list.append(json.loads(l))
+            for l in fle: journ_list.append(json.loads(l))
 
-        # If step file exists there has been a failure in the middle of rollback.
-        # Continue from where it failed.
-        try: targ_step = int(self.file_get_contents(self.j_step_file))
-        except OSError:
-           targ_step = -1 
+        journ_subtract = deque(reversed(journ_list))
 
-        step = 0
         for j_itm in reversed(journ_list):
-            # step is always recorded at the end of each rollback item, if the step file
-            #records '2', that means something failed during step 3 and we need to start there.  
+            print j_itm
 
-            if step > targ_step: 
-            # ------------------------------------------------------
-                if j_itm[0] == 'put_contents':
-                    src = j_itm[1]
-                    tmp = j_itm[2]
+            self.do_action({'do' : j_itm}, False)
 
-                    # If the new file exists, move it to backup dir
-                    if os.path.isfile(src):  
-                        bk = self.new_backup(src)
-
-                        shutil.move(src, bk)
-
-                    # if tmp file exists move the temp file back to it's original location
-                    if tmp != None:
-                        if os.path.isfile(tmp):  
-                            shutil.move(tmp, src)
-
-
-            # ------------------------------------------------------
-                if j_itm[0] == 'move_file':
-                    src = j_itm[1]
-                    dst = j_itm[2]
-
-                    if os.path.isfile(dst):  
-                        shutil.move(dst, src)
-
-
-            # ------------------------------------------------------
-                if j_itm[0] == 'overwrite_file':
-                    src = j_itm[1]
-                    dst = j_itm[2]
-                    tmp = j_itm[3]
-
-                    if os.path.isfile(dst):  
-                        shutil.move(dst, src)
-
-                    if os.path.isfile(tmp):  
-                        shutil.move(tmp, dst)
-
-
-            # ------------------------------------------------------
-                if j_itm[0] == 'delete_file':
-                    src = j_itm[1]
-                    tmp = j_itm[2]
-
-                    if os.path.isfile(tmp):  
-                        shutil.move(tmp, src)
-
-
-            # ---------------------------------
-
-            # Record how many journal stages have been stepped back in case something fails
-            # during the rollback and we need to pick up later.
-            with open(self.j_step_file, 'w') as f: 
-                f.write(str(step))
+            # As each item is completed remove it from the journal file, in case
+            # something fails during the rollback we can pick up where it stopped.
+            journ_subtract.popleft()
+            with open(self.j_file, 'w') as f: 
+                for data in list(journ_subtract):
+                    f.write(json.dumps(data) + "\n")
                 f.flush()
             
-            step += 1
-
-
-        # Rollback is complete, delete the step file and journal, if journal
-        # is empty the step file won't exist
-        if os.path.isfile(self.j_step_file):
-            os.remove(self.j_step_file)
+        # Rollback is complete so delete the journal file
         os.remove(self.j_file)
 
 ############################################################################################
@@ -195,7 +187,6 @@ class storage(object):
         if(cont == True):
             self.begin()
             
-
 ############################################################################################
 # Returns contents of file located at 'path', not changing FS so does not require journaling
 ############################################################################################
@@ -215,36 +206,13 @@ class storage(object):
         # if file exists, create a temp copy to allow rollback
         if os.path.isfile(path):  
             tmp_path = self.new_tmp()
-            shutil.copy(path, tmp_path)
+            self.do_action({
+                'do'   : ['copy', path, tmp_path],
+                'undo' : ['move', tmp_path, path]})
 
-            self.to_journel(['put_contents', path, tmp_path])
-        else:
-            self.to_journel(['put_contents', path, None])
-
-        with open(path, 'w') as f:
-            if callable(data):
-                while True:
-                    Chunk = data(1000 * 1000)
-                    if not chunk: break
-                    f.write(Chunk)
-            else:
-                f.write(data)
-
-############################################################################################
-# Save upload file to 'path'
-############################################################################################
-    def save_upload(self, path, file_obj):
-        # if file exists, create a temp copy to allow rollback
-        if os.path.isfile(path):  
-            tmp_path = self.new_tmp()
-            shutil.copy(path, tmp_path)
-
-            self.to_journel(['put_contents', path, tmp_path])
-        else:
-            self.to_journel(['put_contents', path, None])
-
-        file_obj.save(path)
-
+        self.do_action(
+            {'do'   : ['write', path, data],
+             'undo' : ['backup', path]})
 
 ############################################################################################
 # Move file from src to dst
@@ -254,17 +222,15 @@ class storage(object):
 
         if os.path.isfile(src):  
             # if destination file exists, copy it to tmp first
-            if os.path.isfile(dst):
+            if os.path.isfile(dst):  
                 tmp_path = self.new_tmp()
-                shutil.move(dst, tmp_path)
-                self.to_journel(['overwrite_file', src, dst, tmp_path])
+                self.do_action({
+                    'do'   : ['copy', dst, tmp_path],
+                    'undo' : ['move', tmp_path, dst]})
 
-            # if dst does not exist, just log the move
-            else: 
-                self.to_journel(['move_file', src, dst])
-
-        shutil.move(src, dst)
-
+        self.do_action(
+            {'do'   : ['move', src, dst],
+             'undo' : ['move', dst, src]})
 
 ############################################################################################
 # delete a file
@@ -273,11 +239,9 @@ class storage(object):
         # if file exists, create a temp copy to allow rollback
         if os.path.isfile(path):  
             tmp_path = self.new_tmp()
-
-            self.to_journel(['delete_file', path, tmp_path])
-
-            shutil.move(path, tmp_path)
+            self.do_action({
+                'do'   : ['copy', path, tmp_path],
+                'undo' : ['move', tmp_path, path]})
 
         else:
             raise OSError(errno.ENOENT, 'No such file or directory', path)
-

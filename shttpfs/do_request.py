@@ -31,7 +31,14 @@ class do_request:
         if gen == False:
             return (result.read(), result.info())
 
-        return (result.read, result.info())
+        def writer(path):
+            with open(d[path], 'w') as f:
+                while True:
+                    Chunk = result.read(1000 * 1000)
+                    if not chunk: break
+                    f.write(Chunk)
+
+        return (writer, result.info())
 
         
 
