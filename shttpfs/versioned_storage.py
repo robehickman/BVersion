@@ -214,8 +214,8 @@ class versioned_storage(rel_storage):
             manifest = self.write_local_manifest(head, manifest)
 
         except:
-            raise
             self.rollback()
+            raise
 
         self.commit()
 
