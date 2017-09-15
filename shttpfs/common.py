@@ -239,6 +239,36 @@ def find_manifest_changes(files_state1, files_state2):
 
     return changed_files
 
+###########################################################################################
+def apply_diffs(diffs, manifest):
+    key_filter = lambda item : { key : value for key, value in item.iteritems() if key != 'status'}
+
+    for diff in diffs:
+        manifest_dict = {item['path'] : None for item in manifest}
+
+        #remove deleted and changed items from manifest
+        deleted = {item['path'] : None for x, item in diff.iteritems()
+            if item['status'] == 'deleted'
+            or item['status'] == 'changed'
+            or item['path'] in manifest_dict} # treat duplicate items as updates
+
+        # need to filter out 'status' key
+         
+        applied = [key_filter(item) for item in manifest if item['path'] not in deleted]
+
+        # add new and changed items
+        applied += [key_filter(item) for x, item in diff.iteritems()
+            if item['status'] == 'new'
+            or item['status'] == 'changed']
+
+        manifest = applied
+
+    return manifest
+
+###################################################################################
+def detect_moved_files():
+    # look for files with the same names, but in different directories
+    pass
 
 ############################################################################################
 # Block '..' from occurring in file paths, this should not happen under normal operation.
