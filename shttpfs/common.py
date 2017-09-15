@@ -26,20 +26,17 @@ def prompt_for_password():
 # Read config file into dictionary
 ############################################################################
 def read_config(file):
-	conf_file = ConfigParser.ConfigParser()
-	conf_file.read(file)
+    conf_file = ConfigParser.ConfigParser()
 
-	config = {}
+    if conf_file.read(file) == []:
+        raise IOError('Cannot open configuration file')
 
-	for section in conf_file.sections():
-		sect = {}
+    config = {}
+    for section in conf_file.sections():
+        options = conf_file.options(section)
+        config[section] = {option : conf_file.get(section, option) for option in options}
 
-		options = conf_file.options(section)
-
-		for option in options:
-			sect[option] = conf_file.get(section, option)
-		config[section] = sect
-	return config
+    return config
 
 ############################################################################
 # Create directories in path if they do not exist
