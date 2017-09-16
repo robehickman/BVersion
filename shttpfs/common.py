@@ -223,16 +223,15 @@ def find_manifest_changes(new_file_state, old_file_state):
 ############################################################################################
 def detect_moved_files(file_manifest, diff, base_path):
     """ Detect files that have been moved """
-    move_detected = {}
+    moved_files = {}
     previous_hashes = {item['hash'] : item['path'] for item in file_manifest['files']}
     for key, val in diff.iteritems():
         if val['status'] == 'new':
-            f_hash = sfs.force_unicode(hash_file(cpjoin(base_path, val['path'])))
-            val2 = val.copy()
+            f_hash = force_unicode(hash_file(cpjoin(base_path, val['path'])))
             if f_hash in previous_hashes:
-                val2['status'] = 'moved'
-            move_detected[key] = val2
-    return move_detected
+                moved_files[key] = {'from' : previous_hashes[f_hash],
+                                    'to'   : val['path']}
+    return moved_files
 
 ###########################################################################################
 def apply_diffs(diffs, manifest):
