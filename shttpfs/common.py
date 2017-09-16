@@ -24,15 +24,15 @@ def prompt_for_password():
 ############################################################################
 def read_config(conf_file):
     """ Read configuration file into dictionary, raises IOError if file does not exist """
-    conf_file = ConfigParser.ConfigParser()
+    conf_parser = ConfigParser.ConfigParser()
 
-    if conf_file.read(conf_file) == []:
+    if conf_parser.read(conf_file) == []:
         raise IOError('Cannot open configuration file')
 
     config = {}
-    for section in conf_file.sections():
-        options = conf_file.options(section)
-        config[section] = {option : conf_file.get(section, option) for option in options}
+    for section in conf_parser.sections():
+        options = conf_parser.options(section)
+        config[section] = {option : conf_parser.get(section, option) for option in options}
 
     return config
 
@@ -187,14 +187,14 @@ def make_dict(s_list):
     return { l_itm['path'] : l_itm for l_itm in s_list}
 
 ############################################################################################
-def find_manifest_changes(files_state1, files_state2):
+def find_manifest_changes(new_file_state, old_file_state):
     """ Find what has changed between two sets of files """
-    prev_state_dict = make_dict(files_state2)
+    prev_state_dict = make_dict(old_file_state)
 
     changed_files = {}
 
     # Find files which are new on the server
-    for itm in files_state1:
+    for itm in new_file_state:
         if itm['path'] in prev_state_dict:
             d_itm = prev_state_dict.pop(itm['path'])
             
@@ -219,6 +219,20 @@ def find_manifest_changes(files_state1, files_state2):
         changed_files[itm['path']] = n_itm
 
     return changed_files
+
+############################################################################################
+def detect_moved_files(file_manifest, diff, base_path):
+    """ Detect files that have been moved """
+    move_detected = {}
+    previous_hashes = {item['hash'] : item['path'] for item in file_manifest['files']}
+    for key, val in diff.iteritems():
+        if val['status'] == 'new':
+            f_hash = sfs.force_unicode(hash_file(cpjoin(base_path, val['path'])))
+            val2 = val.copy()
+            if f_hash in previous_hashes:
+                val2['status'] = 'moved'
+            move_detected[key] = val2
+    return move_detected
 
 ###########################################################################################
 def apply_diffs(diffs, manifest):
@@ -245,11 +259,6 @@ def apply_diffs(diffs, manifest):
         manifest = applied
 
     return manifest
-
-############################################################################################
-def detect_moved_files():
-    """ NOT IMPLEMENTED! Look for files with the same hash in different directories. """
-    pass
 
 ############################################################################################
 def filter_f_list(f_list, unix_wildcard):
