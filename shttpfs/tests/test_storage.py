@@ -1,4 +1,4 @@
-from test_common import *
+from helpers import *
 from unittest import TestCase
 
 from shttpfs.storage import *

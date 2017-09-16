@@ -1,11 +1,11 @@
 import os.path, time, fnmatch, json, getpass
 from termcolor import colored
+import hashlib
 import ConfigParser
 
 ############################################################################
-# Prompt the user to enter a new password, with confirmation
-############################################################################
 def prompt_for_new_password():
+    """ Prompt the user to enter a new password, with confirmation """
     while True:
         passw = getpass.getpass()
         passw2 = getpass.getpass()
@@ -17,18 +17,16 @@ def prompt_for_new_password():
     return passw
 
 ############################################################################
-# Prompt the user to enter there password
-############################################################################
 def prompt_for_password():
+    """ Prompt the user to enter there password """
     return getpass.getpass()
 
 ############################################################################
-# Read config file into dictionary
-############################################################################
-def read_config(file):
+def read_config(conf_file):
+    """ Read configuration file into dictionary, raises IOError if file does not exist """
     conf_file = ConfigParser.ConfigParser()
 
-    if conf_file.read(file) == []:
+    if conf_file.read(conf_file) == []:
         raise IOError('Cannot open configuration file')
 
     config = {}
@@ -38,48 +36,98 @@ def read_config(file):
 
     return config
 
-############################################################################
-# Create directories in path if they do not exist
-############################################################################
-def make_dirs_if_dont_exist(path):
-    path = os.path.dirname(path)
-    if path != '':
-        try:
-            os.makedirs(path)
-        except OSError:
-            pass
-
-############################################################################
-# Make sure path ends with the correct extension
-############################################################################
-def exsure_extension(path, ext):
-    if path.endswith(ext):
-        return path
-    else:
-        return path + ext
-
-############################################################################################
-# Makes sure a string is utf-8
 ############################################################################################
 def force_unicode(text):
+    """ Encodes a string as UTF-8 if it isn't already """
     try:
         text = unicode(text, 'utf-8')
         return text
     except TypeError:
         return text
 
+############################################################################################
+def error_not_in_dict(dct, what, msg):
+    """  Looks in dict for key, and prints an error plus raises an exception
+    if the key is missing. """
+    if what not in dct:
+        print msg
+        raise Exception(msg)
 
 ############################################################################################
-# Prefix a path with the OS path separator if it is not already
+def display_list(prefix, l, color):
+    """ Prints a file list to terminal, allows colouring output. """
+    for itm in l: print colored(prefix + itm['path'], color)
+
+############################################################################################
+def validate_request(r): # Why is this in common when I think it is only used by the server?
+    """ Validate a sync request """
+    if 'file' not in r.files:
+        e = 'file var does not exist'
+        print e
+        raise Exception(e)
+
+    if r.files['file'].filename == '':
+        e = 'file name cannot be empty'
+        print e
+        raise Exception(e)
+
+    if 'path' not in r.form:
+        e = 'path var does not exist'
+        print e
+        raise Exception(e)
+
+    allowed_path(r.form['path'])
+
+
+# +++++
+# File system related stuff
+# +++++
+
+############################################################################################
+def file_get_contents(path):
+    """ Returns contents of file located at 'path' """
+    with open(path, 'r') as f:
+        return f.read()
+
+############################################################################################
+def file_put_contents(path, data):
+    """ Put passed contents into file located at 'path' """
+    with open(path, 'w') as f:
+        f.write(data)
+
+############################################################################################
+def make_dirs_if_dont_exist(path):
+    """ Create directories in path if they do not exist """
+    path = os.path.dirname(path)
+    if path != '':
+        try: os.makedirs(path)
+        except OSError: pass
+
+############################################################################################
+def allowed_path(path):
+    """ Block '..' from occurring in file paths, this should not happen under normal operation. """
+    udir = path.split('/')
+    for x in udir:
+        if(x == '..'):
+            e = '.. in file paths not aloud'
+            print e
+            raise Exception(e)
+
+############################################################################################
+def exsure_extension(path, ext):
+    """ Make sure path ends with the correct extension """
+    if path.endswith(ext): return path
+    else: return path + ext
+
 ############################################################################################
 def pfx_path(path):
+    """ Prefix a path with the OS path separator if it is not already """
     if(path[0] != os.path.sep): return os.path.sep + path
     return path
 
 ############################################################################################
-# custom path join
-############################################################################################
 def cpjoin(*args):
+    """ custom path join """
     rooted = False
     if args[0].startswith('/'):
         rooted = True
@@ -93,28 +141,35 @@ def cpjoin(*args):
         newargs.append(acopy)
 
     path = os.path.join(*newargs)
-    if rooted == True:
-        path = os.path.sep + path 
-
+    if rooted == True: path = os.path.sep + path 
     return path
 
 ############################################################################################
-# Gets last change time for a single file
-############################################################################################
 def get_single_file_info(f_path, int_path):
+    """ Gets the creates and last change times for a single file,
+    f_path is the path to the file on disk, int_path is an internal
+    path relative to a root directory.  """
     return { 'path'     : force_unicode(int_path),
              'created'  : os.path.getctime(f_path),
              'last_mod' : os.path.getmtime(f_path)}
 
+############################################################################################
+def hash_file(file_path, block_size = 65536):
+    """ Hashes a file with sha256 """
+    sha = hashlib.sha256()
+    with open(file_path, 'rb') as h_file:
+        file_buffer = h_file.read(block_size)
+        while len(file_buffer) > 0:
+            sha.update(file_buffer)
+            file_buffer = h_file.read(block_size)
+    return sha.hexdigest()
 
 ############################################################################################
-# Obtains a list of all files in a file system.
-############################################################################################
 def get_file_list(path):
+    """ Recursively lists all files in a file system below 'path'. """
     f_list = []
     def recur_dir(path, newpath = os.path.sep):
         files = os.listdir(path) 
-
         for fle in files:
             f_path = cpjoin(path, fle)
             if os.path.isdir(f_path):
@@ -123,87 +178,17 @@ def get_file_list(path):
                 f_list.append(get_single_file_info(f_path, cpjoin(newpath, fle)))
 
     recur_dir(path)
+    return apply_ignore_filters(f_list)
 
-    f_list = apply_ignore_filters(f_list)
-
-    return f_list
-
-############################################################################################
-# Convert file list into a dictionary with the file path as its key, and meta data as a
-# list stored as the keys value. This format change makes searching easier.
 ############################################################################################
 def make_dict(s_list):
-    new_dict = {} 
-    for l_itm in s_list:
-        new_dict[l_itm['path']] = l_itm
+    """ Convert file list into a dictionary with the file path as its key, and meta data
+    as a list stored as the keys value. This format change makes searching easier. """
+    return { l_itm['path'] : l_itm for l_itm in s_list}
 
-    return new_dict
-
-############################################################################################
-# Looks in dict for key, and prints an error plus raises an exception if the key is missing.
-############################################################################################
-def error_not_in_dict(dct, what, msg):
-    if what not in dct:
-        print msg
-        raise Exception(msg)
-
-############################################################################################
-# Prints a file list to terminal, allows colouring output.
-############################################################################################
-def display_list(prefix, l, color):
-    for itm in l:
-        print colored(prefix + itm['path'], color)
-
-############################################################################################
-# Removes files from list by unix-type wild cards, used to implement ignored files.
-############################################################################################
-def filter_f_list(f_list, filters):
-    f_list_filter = []
-    for itm in f_list:
-        if fnmatch.fnmatch(itm['path'], filters):
-            pass
-        else:
-            f_list_filter.append(itm)
-    return f_list_filter;
-
-############################################################################################
-# Loads file ignore filters from IGNORE_FILTER_FILE and applies them to file list passed
-############################################################################################
-def apply_ignore_filters(f_list):
-    filters = []
-
-    try:
-        IGNORE_FILTER_FILE
-
-        try:
-            f_file = file_get_contents(DATA_DIR + IGNORE_FILTER_FILE)
-            lines = f_file.splitlines()
-            filters = filters + lines
-        except:
-            print 'Warning: filters file does not exist'
-    except NameError:
-        print 'Warning: configuration var IGNORE_FILTER_FILE is not defined'
-    
-    try:
-        filters.append('/' + MANIFEST_FILE)
-        filters.append('/' + CLIENT_CONF_DIR + '*')
-        filters.append('/' + REMOTE_MANIFEST_FILE)
-        filters.append('/' + PULL_IGNORE_FILE)
-    except:
-        pass # on the server remote manifest does not exist
-
-    for f in filters:
-        f_list = filter_f_list(f_list, f)
-
-    return f_list
-    
-
-
-
-############################################################################################
-# Find what has changed between two manifests
 ############################################################################################
 def find_manifest_changes(files_state1, files_state2):
+    """ Find what has changed between two sets of files """
     prev_state_dict = make_dict(files_state2)
 
     changed_files = {}
@@ -213,7 +198,7 @@ def find_manifest_changes(files_state1, files_state2):
         if itm['path'] in prev_state_dict:
             d_itm = prev_state_dict.pop(itm['path'])
             
-        # If the file has been modified
+            # If the file has been modified
             if itm['last_mod'] != d_itm['last_mod']:
                 n_itm = itm.copy()
                 n_itm['status'] = 'changed'
@@ -227,8 +212,7 @@ def find_manifest_changes(files_state1, files_state2):
             n_itm['status'] = 'new'
             changed_files[itm['path']] = n_itm
 
-
-# any files remaining in the remote manifest have been deleted locally
+    # any files remaining in the remote manifest have been deleted locally
     for key, itm in prev_state_dict.iteritems():
         n_itm = itm.copy()
         n_itm['status'] = 'deleted'
@@ -262,55 +246,45 @@ def apply_diffs(diffs, manifest):
 
     return manifest
 
-###################################################################################
+############################################################################################
 def detect_moved_files():
-    # look for files with the same names, but in different directories
+    """ NOT IMPLEMENTED! Look for files with the same hash in different directories. """
     pass
 
 ############################################################################################
-# Block '..' from occurring in file paths, this should not happen under normal operation.
-############################################################################################
-def allowed_path(path):
-    udir = path.split('/')
-    for x in udir:
-        if(x == '..'):
-            e = '.. in file paths not aloud'
-            print e
-            raise Exception(e)
+def filter_f_list(f_list, unix_wildcard):
+    """ Removes files from list by unix-type wild cards, used to implement ignored files. """
+    f_list_filter = []
+    for itm in f_list:
+        if fnmatch.fnmatch(itm['path'], unix_wildcard): pass
+        else: f_list_filter.append(itm)
+    return f_list_filter;
 
 ############################################################################################
-# Validate sync request
-############################################################################################
-def validate_request(r):
-    if 'file' not in r.files:
-        e = 'file var does not exist'
-        print e
-        raise Exception(e)
+def apply_ignore_filters(f_list): # I think this is only used by the client
+    """  Loads file ignore filters from IGNORE_FILTER_FILE and applies them to file list passed """
+    filters = []
 
-    if r.files['file'].filename == '':
-        e = 'file name cannot be empty'
-        print e
-        raise Exception(e)
+    try:
+        IGNORE_FILTER_FILE
 
-    if 'path' not in r.form:
-        e = 'path var does not exist'
-        print e
-        raise Exception(e)
+        try:
+            f_file = file_get_contents(DATA_DIR + IGNORE_FILTER_FILE)
+            lines = f_file.splitlines()
+            filters = filters + lines
+        except:
+            print 'Warning: filters file does not exist'
+    except NameError:
+        print 'Warning: configuration var IGNORE_FILTER_FILE is not defined'
+    
+    try:
+        filters.append('/' + MANIFEST_FILE)
+        filters.append('/' + CLIENT_CONF_DIR + '*')
+        filters.append('/' + REMOTE_MANIFEST_FILE)
+        filters.append('/' + PULL_IGNORE_FILE)
+    except:
+        pass # on the server remote manifest does not exist
 
-    allowed_path(r.form['path'])
-
-############################################################################################
-# Returns contents of file located at 'path'
-############################################################################################
-def file_get_contents(path):
-    with open(path, 'r') as f:
-        return f.read()
-
-############################################################################################
-# Put passed contents into file located at 'path'
-############################################################################################
-def file_put_contents(path, data):
-    with open(path, 'w') as f:
-        f.write(data)
-
+    for f in filters: f_list = filter_f_list(f_list, f)
+    return f_list
 
