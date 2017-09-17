@@ -1,7 +1,5 @@
-import os.path, time, fnmatch, json, getpass
+import os.path, time, fnmatch, json, getpass, hashlib, copy, ConfigParser
 from termcolor import colored
-import hashlib
-import ConfigParser
 
 ############################################################################
 def prompt_for_new_password():
@@ -225,35 +223,59 @@ def detect_moved_files(file_manifest, diff, base_path):
     """ Detect files that have been moved """
     moved_files = {}
     previous_hashes = {item['hash'] : item['path'] for item in file_manifest['files']}
-    for key, val in diff.iteritems():
+    for val in diff:
         if val['status'] == 'new':
+            key = val['path']
             f_hash = force_unicode(hash_file(cpjoin(base_path, val['path'])))
             if f_hash in previous_hashes:
                 moved_files[key] = {'from' : previous_hashes[f_hash],
                                     'to'   : val['path']}
-    return moved_files
+
+    # Replace separate 'new' and 'delete' with a single 'moved' command.
+    diff_dict = make_dict(diff)
+    for key, value in moved_files.iteritems():
+        moved_from = diff_dict.pop(value['from']) # remove the delete from the diff
+        diff_dict[value['to']]['status']         = 'moved'
+        diff_dict[value['to']]['moved_from']     = value['from']
+        diff_dict[value['to']]['hash']           = moved_from['hash']
+        diff_dict[value['to']]['src_version_id'] = moved_from['version_id']
+
+    return [change for p, change in diff_dict.iteritems()]
 
 ###########################################################################################
 def apply_diffs(diffs, manifest):
+    """ Apply a series of differences to a manifest
+    diffs is an list(diffs) of list(diff) of dict(change item) """
+
+    manifest = copy.deepcopy(manifest)
+
+    # helper which removes the 'status' key from a diff
     key_filter = lambda item : { key : value for key, value in item.iteritems() if key != 'status'}
 
     for diff in diffs:
+        # dict used to find duplicate items between the diff and manifest
         manifest_dict = {item['path'] : None for item in manifest}
 
-        #remove deleted and changed items from manifest
-        deleted = {item['path'] : None for x, item in diff.iteritems()
+        # dict used to remove items that have been moved
+        moved = {change['moved_from'] : None for change in diff if change['status'] == 'moved'}
+
+        # remove deleted, changed and moved items from manifest
+        # and filter the result to remove the 'status' key
+        deleted = {item['path'] : None for item in diff
             if item['status'] == 'deleted'
             or item['status'] == 'changed'
+            or item['status'] == 'moved'
             or item['path'] in manifest_dict} # treat duplicate items as updates
 
-        # need to filter out 'status' key
-         
-        applied = [key_filter(item) for item in manifest if item['path'] not in deleted]
+        applied = [key_filter(item) for item in manifest
+            if  item['path'] not in deleted
+            and item['path'] not in moved]
 
         # add new and changed items
-        applied += [key_filter(item) for x, item in diff.iteritems()
+        applied += [key_filter(item) for item in diff
             if item['status'] == 'new'
-            or item['status'] == 'changed']
+            or item['status'] == 'changed'
+            or item['status'] == 'moved']
 
         manifest = applied
 
