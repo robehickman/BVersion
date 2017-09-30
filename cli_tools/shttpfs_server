@@ -61,8 +61,8 @@ for key, val in config.iteritems():
         # user to access at a time or we could corrupt the file system, for example where
         # the same file modified by two clients, conflict detection would be a race condition.
         # Because of this access is locked to a single client. This lock is a timestamps, valid
-        # so long as it is more than current system time. In case a client crashes in the
-        # middle of a sync, the lock will time out automatically.
+        # so long as it is more than current system time. In case a client crashes or connection
+        # is lost in the middle of a sync, the lock will time out automatically.
         'session_lock' : 0,
 
         # The currently active session
@@ -226,7 +226,6 @@ def get_manifest():
     repo_name, repo = get_repository()
 
     manifest = repo['data_store'].read_local_manifest()
-
 
     extend_session_auth()
     return json.dumps(manifest)

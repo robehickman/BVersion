@@ -10,8 +10,6 @@ from common import cpjoin
 class storage(object):
 
 ############################################################################################
-# init
-############################################################################################
     def __init__(self, data_dir, conf_dir):
         # need to make sure data dir path has a trailing slash
         self.data_dir    = data_dir
@@ -31,13 +29,15 @@ class storage(object):
         except: pass
 
 ############################################################################################
-# Lock the file system, returns true on success, false on failure
-#
-# lock types:
-# 'shared'    - shared lock
-# 'exclusive' - exclusive lock
-############################################################################################
     def lock(self, l_type):
+        """
+        Lock the file system, returns true on success, false on failure
+        
+        lock types:
+        'shared'    - shared lock
+        'exclusive' - exclusive lock
+        """
+
         if self.lock != None:
             return True
 
@@ -51,44 +51,34 @@ class storage(object):
         except IOError:
             return False
 
-
-############################################################################################
-# Unlock the file system
 ############################################################################################
     def unlock():
+        """ Unlock the file system """
+
         lock = self.lock
         self.lock = None
         fcntl.flock(lock, l_type | fcntl.LOCK_NB)
 
 ############################################################################################
-# write to journal
-############################################################################################
-    def to_journel(self, data):
-        self.journal.write(json.dumps(data) + "\n")
-        self.journal.flush()
-
-############################################################################################
-# make path relative to DATA DIR from a system relative path
-############################################################################################
     def mkfs_path(self, *args):
+        """ make path relative to DATA DIR from a system relative path """
+
         return cpjoin(self.data_dir, *args)
 
 ############################################################################################
-# Create a new temp file allocation
-############################################################################################
     def new_tmp(self):
+        """ Create a new temp file allocation """
+
         self.tmp_idx += 1
         return p.join(self.tmp_dir, 'tmp_' + str(self.tmp_idx)) 
 
 ############################################################################################
-# Create a new backup file allocation
-############################################################################################
     def new_backup(self, src):
+        """ Create a new backup file allocation """
+
         backup_id_file = p.join(self.backup_dir, '.bk_idx')
-        try:
-            backup_num = int(self.file_get_contents(backup_id_file))
-        except:
-            backup_num = 1
+        try: backup_num = int(self.file_get_contents(backup_id_file))
+        except: backup_num = 1
 
         backup_name = str(backup_num) + "_" + os.path.basename(src)
         backup_num += 1
@@ -101,9 +91,9 @@ class storage(object):
         return p.join(self.backup_dir, backup_name)
 
 ############################################################################################
-# Begin a transaction
-############################################################################################
     def begin(self):
+        """ Begin a transaction """
+
         if self.journal != None:
             raise Exception('Storage is already active, nested begin not supported')
 
@@ -115,13 +105,14 @@ class storage(object):
         self.journal = open(self.j_file, 'w')
 
 ############################################################################################
-# Implementation for declarative file operations.
-############################################################################################
     def do_action(self, command, journal = True):
+        """ Implementation for declarative file operations. """
+
         cmd = 0; src = 1; path = 1; data = 2; dst = 2
 
         if journal == True:
-            self.to_journel(command['undo'])
+            self.journal.write(json.dumps(command['undo']) + "\n")
+            self.journal.flush()
 
         d = command['do']
         if d[cmd] == 'copy':
@@ -140,11 +131,10 @@ class storage(object):
                 with open(d[path], 'w') as f:
                     f.write(d[data])
 
-
-############################################################################################
-# Do journal rollback
 ############################################################################################
     def rollback(self):
+        """ Do journal rollback """
+
         # Close the journal for writing, if this is an automatic rollback following a crash,
         # the file descriptor will not be open, so don't need to do anything.
         if self.journal != None:
@@ -163,7 +153,9 @@ class storage(object):
         for j_itm in reversed(journ_list):
             print j_itm
 
-            self.do_action({'do' : j_itm}, False)
+            try:
+                self.do_action({'do' : j_itm}, False)
+            except IOError: pass
 
             # As each item is completed remove it from the journal file, in case
             # something fails during the rollback we can pick up where it stopped.
@@ -177,9 +169,9 @@ class storage(object):
         os.remove(self.j_file)
 
 ############################################################################################
-# Finish a transaction
-############################################################################################
     def commit(self, cont = False):
+        """ Finish a transaction """
+
         self.journal.close()
         self.journal = None
         os.remove(self.j_file)
@@ -188,21 +180,17 @@ class storage(object):
             self.begin()
             
 ############################################################################################
-# Returns contents of file located at 'path', not changing FS so does not require journaling
-############################################################################################
     def file_get_contents(self, path):
-        if os.path.isfile(path):  
-            with open(path, 'r') as f:
-                result = f.read()
-        else:
-            raise OSError(errno.ENOENT, 'No such file or directory', path)
+        """ Returns contents of file located at 'path', not changing FS so does
+        not require journaling """
 
-        return result
+        with open(path, 'r') as f:
+            return  f.read()
 
-############################################################################################
-# Put passed contents into file located at 'path'
 ############################################################################################
     def file_put_contents(self, path, data):
+        """ Put passed contents into file located at 'path' """
+
         # if file exists, create a temp copy to allow rollback
         if os.path.isfile(path):  
             tmp_path = self.new_tmp()
@@ -215,11 +203,10 @@ class storage(object):
              'undo' : ['backup', path]})
 
 ############################################################################################
-# Move file from src to dst
-############################################################################################
     def move_file(self, src, dst):
-        # record where file moved
+        """ Move file from src to dst """
 
+        # record where file moved
         if os.path.isfile(src):  
             # if destination file exists, copy it to tmp first
             if os.path.isfile(dst):  
@@ -233,9 +220,9 @@ class storage(object):
              'undo' : ['move', dst, src]})
 
 ############################################################################################
-# delete a file
-############################################################################################
     def delete_file(self, path):
+        """ delete a file """
+
         # if file exists, create a temp copy to allow rollback
         if os.path.isfile(path):  
             tmp_path = self.new_tmp()
@@ -245,3 +232,4 @@ class storage(object):
 
         else:
             raise OSError(errno.ENOENT, 'No such file or directory', path)
+
