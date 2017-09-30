@@ -289,7 +289,7 @@ def push_file():
     if not os.path.isdir(dirpath):
         os.makedirs(dirpath)
 
-    data_store.fs_put(path, lambda path: file_obj.save(path))
+    data_store.fs_put(path, lambda path: file.save(path))
     last_change = data_store.get_single_file_info(path, path)
 
     extend_session_auth()
