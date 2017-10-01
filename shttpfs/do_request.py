@@ -32,10 +32,10 @@ class do_request:
             return (result.read(), result.info())
 
         def writer(path):
-            with open(d[path], 'w') as f:
+            with open(path, 'w') as f:
                 while True:
                     Chunk = result.read(1000 * 1000)
-                    if not chunk: break
+                    if not Chunk: break
                     f.write(Chunk)
 
         return (writer, result.info())
