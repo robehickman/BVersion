@@ -135,6 +135,17 @@ class TestCommon(TestCase):
         self.assertEqual(result, [res_helper('moved', '/test', '/a/test', '12345'),
                                   res_helper('moved', '/test2', '/a/test2n', '12345')])
 
+    def test_detect_moved_files_new_duplicate_not_moved(self):
+        file_manifest = {'files' : [{'path' : '/test',
+                                      'hash' : '12345'}]}
+
+        diff          = [move_helper('new', '/a/test', '12345')]
+
+        result = detect_moved_files(file_manifest, diff)
+
+        self.assertEqual(result, [move_helper('new', '/a/test', '12345')])
+
+
     def test_detect_moved_files_duplicates_and_no_duplicates(self):
         file_manifest = {'files' : [{'hash' : '12345',
                                     'path' : '/test'},

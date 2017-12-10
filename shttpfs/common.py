@@ -1,7 +1,7 @@
 import os.path, time, fnmatch, json, getpass, hashlib, copy, ConfigParser
 from termcolor import colored
 from pprint import pprint
-from collections import defaultdict 
+from collections import defaultdict
 
 ############################################################################
 def prompt_for_new_password():
@@ -235,6 +235,7 @@ def detect_moved_files(file_manifest, diff):
     """ Detect files that have been moved """
     previous_hashes = defaultdict(set)
     for item in file_manifest['files']: previous_hashes[item['hash']].add(item['path'])
+    diff_dict = make_dict(diff)
 
     # files with duplicate hashes are assumed to have the same contents
     moved_files = {}
@@ -245,11 +246,10 @@ def detect_moved_files(file_manifest, diff):
             for itm in previous_hashes[val['hash']]:
                 if itm.split('/')[-1] == val['path'].split('/')[-1]: found = itm; break
 
-            if found != None:
+            if found != None and found in diff_dict and diff_dict[found]['status'] == 'delete':
                 previous_hashes[val['hash']].remove(found)
                 moved_files[val['path']] = {'from' : found, 'to'   : val['path']}
-            else:
-                not_found.append(val)
+            else: not_found.append(val)
 
     # At this point all duplicate items which have been moved but which retain the original name
     # have been removed from there relevant set. Remaining items are assigned on an ad-hoc basis.
@@ -257,10 +257,10 @@ def detect_moved_files(file_manifest, diff):
     # are not very important.
     for val in not_found:
         itm = previous_hashes[val['hash']].pop()
-        moved_files[val['path']] = {'from' : itm, 'to'   : val['path']}
+        if itm in diff_dict and diff_dict[itm]['status'] == 'delete':
+            moved_files[val['path']] = {'from' : itm, 'to'   : val['path']}
 
     # Replace separate 'new' and 'delete' with a single 'moved' command.
-    diff_dict = make_dict(diff)
     for key, value in moved_files.iteritems():
         moved_from = diff_dict.pop(value['from']) # remove the delete from the diff
         moved_to   = diff_dict[value['to']]
