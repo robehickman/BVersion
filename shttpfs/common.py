@@ -1,5 +1,7 @@
 import os.path, time, fnmatch, json, getpass, hashlib, copy, ConfigParser
 from termcolor import colored
+from pprint import pprint
+from collections import defaultdict 
 
 ############################################################################
 def prompt_for_new_password():
@@ -218,27 +220,56 @@ def find_manifest_changes(new_file_state, old_file_state):
 
     return changed_files
 
+
 ############################################################################################
-def detect_moved_files(file_manifest, diff, base_path):
-    """ Detect files that have been moved """
-    moved_files = {}
-    previous_hashes = {item['hash'] : item['path'] for item in file_manifest['files']}
+def hash_new_files(diff, base_path):
+    processed_files = []
     for val in diff:
-        if val['status'] == 'new':
-            key = val['path']
-            f_hash = force_unicode(hash_file(cpjoin(base_path, val['path'])))
-            if f_hash in previous_hashes:
-                moved_files[key] = {'from' : previous_hashes[f_hash],
-                                    'to'   : val['path']}
+        fpath = cpjoin(base_path, val['path'])
+        if val['status'] == 'new': val['hash'] = force_unicode(hash_file(fpath))
+        processed_files.append(val)
+    return processed_files
+
+############################################################################################
+def detect_moved_files(file_manifest, diff):
+    """ Detect files that have been moved """
+    previous_hashes = defaultdict(set)
+    for item in file_manifest['files']: previous_hashes[item['hash']].add(item['path'])
+
+    # files with duplicate hashes are assumed to have the same contents
+    moved_files = {}
+    not_found = []
+    for val in diff:
+        if val['status'] == 'new' and val['hash'] in previous_hashes:
+            found = None; prev_filtered = []
+            for itm in previous_hashes[val['hash']]:
+                if itm.split('/')[-1] == val['path'].split('/')[-1]: found = itm; break
+
+            if found != None:
+                previous_hashes[val['hash']].remove(found)
+                moved_files[val['path']] = {'from' : found, 'to'   : val['path']}
+            else:
+                not_found.append(val)
+
+    # At this point all duplicate items which have been moved but which retain the original name
+    # have been removed from there relevant set. Remaining items are assigned on an ad-hoc basis.
+    # As there hashes are the same, there contents is assumed to be the same so mis-assignments
+    # are not very important.
+    for val in not_found:
+        itm = previous_hashes[val['hash']].pop()
+        moved_files[val['path']] = {'from' : itm, 'to'   : val['path']}
 
     # Replace separate 'new' and 'delete' with a single 'moved' command.
     diff_dict = make_dict(diff)
     for key, value in moved_files.iteritems():
         moved_from = diff_dict.pop(value['from']) # remove the delete from the diff
+        moved_to   = diff_dict[value['to']]
+        diff_dict[value['to']]                   = moved_from     # start with where the file was moved from
         diff_dict[value['to']]['status']         = 'moved'
         diff_dict[value['to']]['moved_from']     = value['from']
-        diff_dict[value['to']]['hash']           = moved_from['hash']
-        diff_dict[value['to']]['src_version_id'] = moved_from['version_id']
+        diff_dict[value['to']]['path']           = moved_to['path']  # Copy the moved path
+        diff_dict[value['to']]['created']        = moved_to['created']  # Copy 'created' from the moved file
+        diff_dict[value['to']]['last_mod']       = moved_to['last_mod']  # Copy last_mod from the moved file
 
     return [change for p, change in diff_dict.iteritems()]
 
