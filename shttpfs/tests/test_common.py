@@ -34,6 +34,20 @@ class TestCommon(TestCase):
         self.assertEqual(result1, result2,
             msg = 'Hashes are not the same')
 
+    def test_find_manifest_changes(self):
+        state_1 = []
+        state_2 = [get_state('/file_1', 10)]
+        state_3 = [get_state('/file_1', 20)]
+        state_4 = [get_state('/file_1', 20), get_state('/file_2', 10)]
+        state_5 = [get_state('/file_2', 20)]
+
+        # Do some diffs
+        diff_1 = state_1
+        diff_2 = sfs.find_manifest_changes(state_2, state_1)
+        diff_3 = sfs.find_manifest_changes(state_3, state_2)
+        diff_4 = sfs.find_manifest_changes(state_4, state_3)
+        diff_5 = sfs.find_manifest_changes(state_5, state_4)
+
     def test_apply_diffs_new_to_empty(self):
         manifest = []
         diff = [{'path'   : '/file1',

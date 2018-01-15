@@ -226,7 +226,7 @@ def hash_new_files(diff, base_path):
     processed_files = []
     for val in diff:
         fpath = cpjoin(base_path, val['path'])
-        if val['status'] == 'new': val['hash'] = force_unicode(hash_file(fpath))
+        if val['status'] in ['new', 'changed']: val['hash'] = force_unicode(hash_file(fpath))
         processed_files.append(val)
     return processed_files
 
