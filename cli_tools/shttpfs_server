@@ -1,354 +1,468 @@
 #!/usr/bin/env python
-#########################################################
-# Default server configuration
-#########################################################
-
-SERVER_CONF_FILE = '/etc/shttpfs/server.ini'
-MANIFEST_FILE    = '.manifest.json'
-
-#########################################################
-# imports
-#########################################################
-import json
-import os
-from os import path
 from flask import Flask, request, redirect, url_for, send_from_directory, make_response
-from base64 import b64encode, b64decode
+import fcntl, os.path, json, time, base64, pysodium, traceback, re
+import sqlite3 as db
+from pprint import pprint
 
-import sys
+#====
+from shttpfs.common import cpjoin, file_get_contents
+from shttpfs.versioned_storage import versioned_storage
+from shttpfs.merge_client_and_server_changes import *
 
-from shttpfs.versioned_storage import *
-from shttpfs.merge_file_tree   import *
-from shttpfs.common import *
-from shttpfs.crypto import *
-
-#########################################################
-# Load server config
-#########################################################
-config = read_config(SERVER_CONF_FILE)
-
-if 'global' in config:
-    glb = config.pop('global')
-
-    if 'manifest_file' in glb:
-        MANIFEST_FILE  = glb['manifest_file']
-
-
-if config == {}:
-    print 'Configuration file is empty'
-    quit()
-
-repositories = {}
-for key, val in config.iteritems():
-
-    repositories[key] = {
-        # The root path of the repository
-        'path'          : val['repository_path'],
-
-        # Data store object for the above path
-        'data_store'    : versioned_storage(val['repository_path'], '', MANIFEST_FILE),
-
-        # The public key for accessing this repository
-        'public_key'    : val['public_key'],
-
-        # Tokens are issued by the authentication system, the client signs one with it's
-        # private key, which is verified by the server using the matching public key.
-        # Dict key is the token, the second element is a validity timestamps. If timestamps
-        # less than current system time, the token has expired.
-        'issued_tokens' : {},
-
-        # because we are dealing with a physical file system we cannot allow more than one
-        # user to access at a time or we could corrupt the file system, for example where
-        # the same file modified by two clients, conflict detection would be a race condition.
-        # Because of this access is locked to a single client. This lock is a timestamps, valid
-        # so long as it is more than current system time. In case a client crashes or connection
-        # is lost in the middle of a sync, the lock will time out automatically.
-        'session_lock' : 0,
-
-        # The currently active session
-        'active_session' : None
-    }
-
-#########################################################
-# Flask init
-#########################################################
 app = Flask(__name__)
 app.debug = True
 
+#===============================================================================
+config = json.loads(file_get_contents('/etc/shttpfs/'))
 
-#########################################################
-# Obtain repository named in http request
-#########################################################
-def get_repository():
-    global repositories
-    error_not_in_dict(request.form, 'repository', 'Repository identifier is missing')
-
-    if request.form['repository'] in repositories:
-        return (request.form['repository'], repositories[request.form['repository']])
-    else:
-        raise Exception('Repository does not exist')
-
-#########################################################
-# Update repository dict
-#########################################################
-def set_repository(repo_name, repo):
-    global repositories
-
-    if repo_name not in repositories:
-        raise Exception('Repository does not exist')
-
-    repositories['repo_name'] = repo
-
-#########################################################
-# Garbage collection for expired authentication tokens
-#########################################################
-def gc_tokens():
-    global repositories
-
-    filtered_repos = {}
-    for key, value in repositories.iteritems():
-        issued_tokens = value['issued_tokens']
-
-        filtered_toknes = {}
-        for key1, value1 in issued_tokens.iteritems():
-            if value1 > time.time(): # keys which are still valid
-                filtered_toknes[key1] = value1
-
-        new_value = value.copy()
-        new_value['issued_tokens'] = filtered_toknes
-        filtered_repos[key] = new_value
-
-    repositories = filtered_repos
-
-#########################################################
-# Check a session is valid
-#########################################################
-def check_session_auth(form):
-    repo_name, repo = get_repository()
-
-    error_not_in_dict(form, 'session_id', 'session id missing')
-
-    if(repo['active_session'] != None and form['session_id'] != repo['active_session']):
-        raise Exception('Session ID does not match active session')
-
-    if (int(time.time()) > repo['session_lock']):
-        raise Exception('Session lock has expired')
+#===============================================================================
+def fail(msg = ''):
+    """ Generate fail JSON to send to client """
+    return json.dumps({'status' : 'fail', 'msg' : msg})
 
 
-#########################################################
-# Extend session auth into the future
-#########################################################
-def extend_session_auth():
-    repo_name, repo = get_repository()
+#===============================================================================
+def success(data = {}):
+    """ Generate success JSON to send to client """
+    status = {'status' : 'ok'}
+    status.update(data)
+    return json.dumps(status)
 
-    repo['session_lock'] = int(time.time()) + 600 # 30 second validity
 
-    set_repository(repo_name, repo)
+#===============================================================================
+#  Locking
+#
+# Locking is only required for writing as clients will read the prior version
+# while a commit is in progress and this updates atomically. This uses flock
+# as a convenient way to synchronise across multiple processes.
+#===============================================================================
+def lock_access(repository_path, callback):
+    """ Synchronise access to the user file between processes, this specifies
+    which user is allowed write access at the current time """
 
-#########################################################
-# Request authentication token to sign
-#########################################################
+    with open(cpjoin(repository_path, 'lock_file'), 'w') as fd:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            returned = callback()
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            return returned
+        except IOError:
+            return fail()
+
+
+#===============================================================================
+def update_user_lock(repository_path, session_token):
+    """ Write or clear the user lock file """ # NOTE ALWAYS use within lock access callback
+
+    # While the user lock file should ALWAYS be written only within a lock_access
+    # callback, it is sometimes read asynchronously. Because of this updates to
+    # the file must be atomic. Write plus move is used to achieve this.
+    real_path = cpjoin(repository_path, 'user_file')
+    tmp_path  = cpjoin(repository_path, 'new_user_file')
+
+    with open(tmp_path, 'w') as fd2:
+        if session_token == None: fd2.write('')
+        else: fd2.write(json.dumps({'session_token' : session_token, 'expires' : int(time.time()) + 30}))
+        fd2.flush()
+    os.rename(tmp_path, real_path)
+
+
+#===============================================================================
+def can_aquire_user_lock(repository_path, session_token):
+    """ Allow a user to acquire the lock if no other user is currently using it, if the original
+    user is returning, presumably after a network error, or if the lock has expired.  """
+
+    user_file_path = cpjoin(repository_path, 'user_file')
+    if not os.path.isfile(user_file_path): return True
+    with open(user_file_path, 'r') as fd2:
+        content = fd2.read()
+        if len(content) == 0: return True
+        try: res = json.loads(content)
+        except ValueError: return True
+        if res['expires'] < int(time.time()): return True
+        elif res['session_token'] == request.form['session_token']: return True
+    return False
+
+#===============================================================================
+def read_user_lock(repository_path):
+    try:
+        user_lock = file_get_contents(cpjoin(repository_path, 'user_file'))
+        if user_lock == '': return None
+        return json.loads(user_lock)
+    except IOError: return None
+    except ValueError: return None
+
+
+#===============================================================================
+def varify_user_lock(repository_path, session_token):
+    """ Verify that a returning user has a valid token and their lock has not expired """
+
+    with open(cpjoin(repository_path, 'user_file'), 'r') as fd2:
+        content = fd2.read()
+        if len(content) == 0: return False
+        try: res = json.loads(content)
+        except ValueError: return False
+        return res['session_token'] == session_token and int(time.time()) < int(res['expires'])
+    return False
+
+
+#===============================================================================
+# Authentication
+#===============================================================================
+def auth_db_connect(db_path):
+    """ An SQLite database is used to store authentication transient data,
+    this is tokens, strings of random data which are signed by the client,
+    and session_tokens which identify authenticated users """
+
+    def dict_factory(cursor, row): return {col[0] : row[idx] for idx,col in enumerate(cursor.description)}
+    conn = db.connect(db_path)
+    conn.row_factory = dict_factory
+    if auth_db_connect.init == False:
+        conn.execute('create table if not exists tokens (expires int, token text, ip text)')
+        conn.execute('create table if not exists session_tokens (expires int, token text, ip text, username text)')
+        auth_db_connect.init = True
+    return conn
+auth_db_connect.init = False
+
+#===============================================================================
+def gc_tokens(conn):
+    """ Garbage collection for expired authentication tokens """
+
+    conn.execute("delete from tokens where expires < ?", (time.time(),))
+    conn.commit()
+
+#===============================================================================
 @app.route('/begin_auth', methods=['POST'])
 def begin_auth():
-    gc_tokens()
+    """ Request authentication token to sign """
 
-    repo_name, repo = get_repository()
+    if request.form['repository'] not in config['repositories']:
+        return fail()
 
-# Client sends its past authentication token in order to allow the client
-# that locked the server to unlock it again.
-    prior_token = b64decode(request.form['prior_token'])
-
-    if prior_token == repo['active_session']:
-        repo['session_lock'] = 0
-        set_repository(repo_name, repo)
-
+    repository_path = config['repositories'][request.form['repository']]['path']
+    conn = auth_db_connect(cpjoin(repository_path, 'auth_transient.db')); gc_tokens(conn)
 
 # Issue a new token if the server is not locked
-    if int(time.time()) > repo['session_lock']:
-        auth_token = random_bytes(35)
-        repo['issued_tokens'][auth_token] = time.time() + (60 * 5) # 5 min token validity
+    auth_token = base64.b64encode(pysodium.randombytes(35)).decode('utf-8')
+    conn.execute("insert into tokens (expires, token, ip) values (?,?,?)",
+                 (time.time() + 30, auth_token, request.environ['REMOTE_ADDR']))
+    conn.commit()
+    return success({'auth_token' : auth_token})
 
-        set_repository(repo_name, repo)
 
-        return json.dumps({
-            'status'     : 'ok',
-            'session_id' : auth_token})
-
-    print 'locked'
-    return json.dumps({'status' : 'fail', 'msg' : 'The repository is locked.'})
-
-#########################################################
-# Authenticate
-#########################################################
+#===============================================================================
 @app.route('/authenticate', methods=['POST'])
 def authenticate():
-    repo_name, repo = get_repository()
+    """ This does two things, either validate a pre-existing session token
+    or create a new one from a signed authentication token. """
 
-    error_not_in_dict(request.form, 'auth_token', 'Signed authentication token missing')
+    if request.form['repository'] not in config['repositories']:
+        return fail()
 
-    auth_token = b64decode(request.form['auth_token'])
+    repository_path = config['repositories'][request.form['repository']]['path']
+    conn = auth_db_connect(cpjoin(repository_path, 'auth_transient.db')); gc_tokens(conn)
 
-    public_key = repo['public_key']
+    gc_tokens(conn)
 
-    valid = False
-    session_id = None
-    if varify_signiture(public_key, auth_token):
-        print 'signiture ok'
-        for key, value in repo['issued_tokens'].iteritems():
-            if auth_token.find(key):
-                session_id = key
-                del repo['issued_tokens'][key]
-                valid = True
-                break
-
-    if valid == True:
-        repo['session_lock'] = int(time.time()) + 600 # 30 second validity
-        repo['active_session'] = session_id
-
-        result = json.dumps({
-            'status' : 'ok'})
+    if 'session_token' in request.form:
+        conn.execute("delete from session_tokens where expires < ?", (time.time(),)); conn.commit()
+        res = conn.execute("select * from session_tokens where token = ? and ip = ?", (request.form['session_token'], request.environ['REMOTE_ADDR'])).fetchall()
+        if res != []: return success({'session_token'  : request.form['session_token']})
+        return fail()
 
     else:
-        result = json.dumps({'status' : 'fail'})
+        #================================================
+        auth_token = request.form['auth_token']
+        signiture  = request.form['signature']
 
-    set_repository(repo_name, repo)
+        try:
+            public_key = config['users'][request.form['user']]['public_key']
 
-    gc_tokens()
-    return result
+            # signature
+            pysodium.crypto_sign_verify_detached(base64.b64decode(signiture),
+                                                 auth_token, base64.b64decode(public_key))
+            res = conn.execute("select * from tokens where token = ? and ip = ? ",
+                               (auth_token,request.environ['REMOTE_ADDR'])).fetchall()
+
+            # Validate token matches one we sent
+            if res == [] or len(res) > 1:
+                return fail()
+
+            # Does the user have permission to use this repository?
+            if request.form['repository'] not in config['users'][request.form['user']]['uses_repositories']:
+                return fail()
+
+            # Everything OK
+            conn.execute("delete from tokens where token = ?", (auth_token,)); conn.commit()
+
+            # generate a session token and send it to the client
+            session_token = base64.b64encode(pysodium.randombytes(35))
+            conn.execute("insert into session_tokens (token, expires, ip, username) values (?,?,?, ?)",
+                         (session_token, time.time() + (60 * 5), request.environ['REMOTE_ADDR'], request.form['user']))
+            conn.commit()
+            return success({'session_token'  : session_token})
+
+        except: return fail()
 
 
-#########################################################
-# Get Manifest
-#########################################################
-@app.route('/get_manifest', methods=['POST'])
-def get_manifest():
-    check_session_auth(request.form)
-    repo_name, repo = get_repository()
+#===============================================================================
+def have_authenticated_user(request, session_token):
+    """ check user submitted session token against the db and that ip has not changed """
 
-    manifest = repo['data_store'].read_local_manifest()
+    if request.form['repository'] not in config['repositories']:
+        return False
 
-    extend_session_auth()
-    return json.dumps(manifest)
+    repository_path = config['repositories'][request.form['repository']]['path']
+    conn = auth_db_connect(cpjoin(repository_path, 'auth_transient.db'))
 
-#########################################################
-# Find what files have changed on a client
-#########################################################
+    # Garbage collect session tokens. We must not garbage collect the authentication token of the client
+    # which is currently doing a commit. Large files can take a long time to upload and during this time,
+    # the locks expiration is not being updated thus can expire. This is a problem here as session tokens
+    # table is garbage collected every time a user authenticates. It does not matter if the user_lock
+    # expires while the client also holds the flock, as it is updated to be in the future at the end of
+    # the current operation. We exclude any tokens owned by the client which currently owns the user
+    # lock for this reason.
+    user_lock = read_user_lock(repository_path)
+    active_commit = user_lock['session_token'] if user_lock != None else None
+
+    if active_commit != None:
+        conn.execute("delete from session_tokens where expires < ? and token != ?", (time.time(), active_commit))
+    else:
+        conn.execute("delete from session_tokens where expires < ?", (time.time(),))
+    conn.commit()
+
+    # Get the session token
+    res = conn.execute("select * from session_tokens where token = ? and ip = ?", (session_token, request.environ['REMOTE_ADDR'])).fetchall()
+    
+    if res != [] and request.form['repository'] in config['users'][res[0]['username']]['uses_repositories']:
+        return res[0]
+    return False
+
+
+#===============================================================================
+# Main System
+#===============================================================================
 @app.route('/find_changed', methods=['POST'])
 def find_changed():
-    check_session_auth(request.form)
-    repo_name, repo = get_repository()
+    """ Find changes since the revision it is currently holding """
 
-    data_store = repo['data_store'] 
+    current_user = have_authenticated_user(request, request.form['session_token'])
+    if current_user == False: return fail()
+    repository_path = config['repositories'][request.form['repository']]['path']
 
-# Validate passed data
-    error_not_in_dict(request.form, 'prev_manifest',   'previous manifest missing')
-    error_not_in_dict(request.form, 'client_files',       'new files list missing')
+    data_store = versioned_storage(repository_path)
+    head = data_store.get_head()
+    if head == 'root': return success({'head' : 'root', 'sorted_changes' : {'none' : []}})
 
-    client_files = json.loads(request.form['client_files'])
-    server_files = {}
+    # Find changed items
+    client_changes = json.loads(request.form['client_changes'])
+    server_changes = data_store.get_changes_since(request.form["previous_revision"], head)
 
-# Find files which have changed on the server since the last time this client synced
-    manifest      = data_store.read_local_manifest()['files']
-    prev_manifest = json.loads(request.form['prev_manifest'])['files']
+    # Resolve conflicts
+    conflict_resolutions = json.loads(request.form['conflict_resolutions'])
+    if conflict_resolutions != []:
+        resolutions = {'server' : {},'client' : {}}
+        for r in conflict_resolutions:
+            if len(r['4_resolution']) != 1 or r['4_resolution'][0] not in ['client', 'server']: return fail('Please resolve conflicts')
+            resolutions[r['4_resolution'][0]][r['1_path']] = None
 
-    server_files = find_manifest_changes(manifest, prev_manifest)
+        client_changes = {k : v for k,v in client_changes.iteritems() if v['path'] not in resolutions['server']}
+        server_changes = {k : v for k,v in server_changes.iteritems() if v['path'] not in resolutions['client']}
 
-# Do merge on remote and local file trees
-    push_files, pull_files, conflict_files, local_delete_files, remote_delete_files \
-        = merge_file_tree(client_files, server_files)
-
-    extend_session_auth()
-    return json.dumps({
-        'status'              : 'ok',
-        'push_files'          : push_files,
-        'pull_files'          : pull_files,
-        'conflict_files'      : conflict_files,
-        'local_delete_files'  : local_delete_files,
-        'remote_delete_files' : remote_delete_files,
-    })
-
-#########################################################
-# Push a file to the server
-#########################################################
-@app.route('/push_file', methods=['POST'])
-def push_file():
-    check_session_auth(request.form)
-    repo_name, repo = get_repository()
-
-    data_store = repo['data_store'] 
-
-    validate_request(request)
-
-    # Set the upload dir, don't think this is needed
-    # app.config['UPLOAD_FOLDER'] = DATA_DIR
-
-    path = request.form['path']
-    file = request.files['file']
-
-    dirpath = os.path.dirname(data_store.get_full_file_path(path))
-    if not os.path.isdir(dirpath):
-        os.makedirs(dirpath)
-
-    data_store.fs_put(path, lambda path: file.save(path))
-    last_change = data_store.get_single_file_info(path, path)
-
-    extend_session_auth()
-    return json.dumps({
-        'status'          : 'ok',
-        'last_change'     : last_change
-    })
+    sorted_changes = merge_client_and_server_changes(server_changes, client_changes)
+    return success({'sorted_changes': sorted_changes, 'head' : head})
 
 
-#########################################################
-# Get a file from the server
-#########################################################
+#===============================================================================
 @app.route('/pull_file', methods=['POST'])
 def pull_file():
-    check_session_auth(request.form)
-    repo_name, repo = get_repository()
+    """ Get a file from the server """
 
-    data_store = repo['data_store'] 
+    current_user = have_authenticated_user(request, request.form['session_token'])
+    if current_user == False: return fail()
+    repository_path = config['repositories'][request.form['repository']]['path']
 
-    if 'path' not in request.form:
-        e = 'file list does not exist'
-        print e
-        raise Exception(e)
-
-    sys_path = request.form['path']
-    path = data_store.get_full_file_path(sys_path)
-
-    l_dir =  os.path.dirname(path)
-    file  =  os.path.basename(path)
-
-    response = make_response(send_from_directory(l_dir, file))
-    response.headers['file_info_json'] = json.dumps(data_store.get_single_file_info(sys_path, sys_path))
-
-    extend_session_auth()
+    data_store = versioned_storage(repository_path)
+    file_info = data_store.get_file_info_from_path(request.form['path'])
+    response = make_response(send_from_directory(data_store.get_file_directory_path(file_info['hash']), file_info['hash'][2:]))
+    response.headers['file_info_json'] = json.dumps(file_info)
     return response
 
 
-#########################################################
-# Delete a file on the server
-#########################################################
-@app.route('/delete_file', methods=['POST'])
-def delete_file():
-    check_session_auth(request.form)
-    repo_name, repo = get_repository()
+#===============================================================================
+@app.route('/list_versions', methods=['POST'])
+def list_versions():
+    current_user = have_authenticated_user(request, request.form['session_token'])
+    if current_user == False: return fail()
+    repository_path = config['repositories'][request.form['repository']]['path']
 
-    data_store = repo['data_store'] 
+    data_store = versioned_storage(repository_path)
+    return success({'versions' : data_store.get_commit_chain()})
 
-    if 'path' not in request.form:
-        e = 'file list does not exist'
-        print e
-        raise Exception(e)
 
-    sys_path = request.form['path']
+#===============================================================================
+@app.route('/list_changes', methods=['POST'])
+def list_changes():
+    current_user = have_authenticated_user(request, request.form['session_token'])
+    if current_user == False: return fail()
+    repository_path = config['repositories'][request.form['repository']]['path']
 
-    data_store.fs_delete(sys_path)
+    data_store = versioned_storage(repository_path)
+    return success({'changes' : data_store.get_commit_changes(request.form['version_id'])})
 
-    extend_session_auth()
-    return json.dumps({'status': 'ok'})
+
+#===============================================================================
+@app.route('/list_files', methods=['POST'])
+def list_files():
+    current_user = have_authenticated_user(request, request.form['session_token'])
+    if current_user == False: return fail()
+    repository_path = config['repositories'][request.form['repository']]['path']
+
+    data_store = versioned_storage(repository_path)
+    return success({'files' : data_store.get_commit_files(request.form['version_id'])})
+
+
+#===============================================================================
+@app.route('/begin_commit', methods=['POST'])
+def begin_commit():
+    """ Allow a client to begin a commit and acquire the write lock """
+
+    current_user = have_authenticated_user(request, request.form['session_token'])
+    if current_user == False: return fail()
+    repository_path = config['repositories'][request.form['repository']]['path']
+
+    def with_exclusive_lock():
+        # The commit is locked for a given time period to a given session token,
+        # a client must hold this lock to use any of push_file(), delete_files() and commit().
+        # It does not matter if the user lock technically expires while a client is writing
+        # a large file, as the user lock is locked using flock for the duration of any
+        # operation and thus cannot be stolen by another client. It is updated to be in
+        # the future before returning to the client. The lock only needs to survive until
+        # the client owning the lock sends another request and re acquires the flock.
+        if not can_aquire_user_lock(repository_path, request.form['session_token']):
+            return fail()
+
+        # Commits can only take place if the committing user has the latest revision,
+        # as committing from an outdated state could cause unexpected results, and may
+        # have conflicts. Conflicts are resolved during a client update so they are
+        # handled by the client, and a server interface for this is not needed.
+        data_store = versioned_storage(repository_path)
+        if data_store.get_head() != request.form["previous_revision"]: return fail()
+
+
+        # Should the lock expire, the client which had the lock previously will be unable
+        # to continue the commit it had in progress. When this, or another client attempts
+        # to commit again it must do so by first obtaining the lock again by calling begin_commit().
+        # Any remaining commit data from failed prior commits is garbage collected here.
+        # While it would technically be possible to implement commit resume should the same
+        # client resume, I only see commits failing due to a network error and this is so
+        # rare I don't think it's worth the trouble.
+        if data_store.have_active_commit(): data_store.rollback()
+
+        #------------
+        data_store.begin()
+        update_user_lock(repository_path, request.form['session_token'])
+
+        return success()
+    return lock_access(repository_path, with_exclusive_lock)
+
+
+
+#===============================================================================
+@app.route('/push_file', methods=['POST'])
+def push_file():
+    """ Push a file to the server """
+
+    current_user = have_authenticated_user(request, request.form['session_token'])
+    if current_user == False: return fail()
+    repository_path = config['repositories'][request.form['repository']]['path']
+
+    def with_exclusive_lock():
+        if not varify_user_lock(repository_path, request.form['session_token']):
+            return fail()
+
+        data_store = versioned_storage(repository_path)
+        if not data_store.have_active_commit():
+            return fail()
+
+        # There is no valid reason for path traversal characters to be in a file path within this system
+        if any(True for item in re.split(r'\\|/', request.form['path']) if item in ['..', '.']):
+            return fail()
+
+        #-------------
+        tmp_path = cpjoin(repository_path, 'tmp_file')
+        request.files['file'].save(tmp_path)
+
+        #-------------
+        data_store.fs_put_from_file(tmp_path, {'path' : request.form['path']})
+
+        # updates the user lock expiry
+        update_user_lock(repository_path, request.form['session_token'])
+
+        return success()
+    return lock_access(repository_path, with_exclusive_lock)
+
+
+#===============================================================================
+@app.route('/delete_files', methods=['POST'])
+def delete_files():
+    """ Delete one or more files from the server """
+
+    current_user = have_authenticated_user(request, request.form['session_token'])
+    if current_user == False: return fail()
+    repository_path = config['repositories'][request.form['repository']]['path']
+
+    def with_exclusive_lock():
+        try:
+            if not varify_user_lock(repository_path, request.form['session_token']):
+                return fail()
+
+            data_store = versioned_storage(repository_path)
+            if not data_store.have_active_commit():
+                return fail()
+
+            #-------------
+            for fle in json.loads(request.form['files']):
+                data_store.fs_delete(fle)
+
+            # updates the user lock expiry
+            update_user_lock(repository_path, request.form['session_token'])
+            return success()
+        except Exception as e: return fail(str(e))
+    return lock_access(repository_path, with_exclusive_lock)
+
+
+#===============================================================================
+@app.route('/commit', methods=['POST'])
+def commit():
+    """ Commit changes and release the write lock """
+
+    current_user = have_authenticated_user(request, request.form['session_token'])
+    if current_user == False: return fail()
+    repository_path = config['repositories'][request.form['repository']]['path']
+
+    def with_exclusive_lock():
+        if not varify_user_lock(repository_path, request.form['session_token']):
+            return fail()
+
+        data_store = versioned_storage(repository_path)
+        if not data_store.have_active_commit():
+            return fail()
+
+        result = {}
+        if request.form['mode'] == 'commit':
+            new_head = data_store.commit(request.form['commit_message'], current_user['username'])
+            result = {'head' : new_head}
+        else:
+            data_store.rollback()
+
+        # Release the user lock
+        update_user_lock(repository_path, None)
+        return success(result)
+    return lock_access(repository_path, with_exclusive_lock)
+
 
 #############################################################
 if __name__ == "__main__":
-    app.run('0.0.0.0', port=8080)
+    app.run('0.0.0.0', port=8090)
+

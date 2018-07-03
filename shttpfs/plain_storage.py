@@ -2,174 +2,106 @@
 import os, shutil, json, errno
 
 #from storage import *
-from rel_storage import *
+from storage import storage
 from common import *
 
-############################################################################################
-# Plain (non-versioned) data store
-############################################################################################
-class plain_storage(rel_storage):
+class plain_storage(storage):
+    """ Plain (non-versioned) data store used by the client """
 
-############################################################################################
-# Setup and validate file system structure
-############################################################################################
-    def __init__(self, data_dir, conf_dir, manifest_file, remote_manifest_file = None):
-        rel_storage.__init__(self, data_dir, conf_dir)
+#===============================================================================
+    def __init__(self, data_dir):
+        """ Setup and validate file system structure """
 
-        self.manifest_file        = manifest_file
-        self.remote_manifest_file = remote_manifest_file
+        storage.__init__(self, data_dir, '.shttpfs')
+        self.manifest_file = cpjoin('.shttpfs', 'manifest.json')
 
-############################################################################################
-# Get the full path of a file
-############################################################################################
-    def get_full_file_path(self, r_path):
-        return self.mkfs_path(r_path)
+#===============================================================================
+    def get_single_file_info(self, rel_path):
+        """ Gets last change time for a single file """
 
-############################################################################################
-# Gets last change time for a single file
-############################################################################################
-    def get_single_file_info(self, f_path, int_path):
-        f_path = self.mkfs_path(f_path)
-
-        int_path = pfx_path(os.path.normpath(force_unicode(int_path).strip()))
-        return { 'path'     : int_path,
-                 'created'  : os.path.getctime(f_path),
-                 'last_mod' : os.path.getmtime(f_path)}
+        f_path = self.get_full_file_path(rel_path)
+        int_path = pfx_path(os.path.normpath(force_unicode(rel_path).strip()))
+        return get_single_file_info(f_path, rel_path)
             
-############################################################################################
-# Read local manifest file.
-############################################################################################
+#===============================================================================
     def read_local_manifest(self):
-        # Read Manifest
-        try:
-            manifest = json.loads(self.r_get(self.manifest_file))
-        except OSError:
-            # no manifest, create one, manifest stores file access times as
-            # of last run to detect files which have changed
-            manifest = {
-                'format_vers' : 1,
-                'root'        : '/',
-                'files'       : []
-            }
+        """ Read the file manifest, or create a new one if there isn't one already """
 
+        manifest = file_or_default(self.get_full_file_path(self.manifest_file), {
+            'format_version' : 2,
+            'root'           : '/',
+            'have_revision'  : 'root',
+            'files'          : {}}, json.loads)
+
+        if 'format_version' not in manifest or manifest['format_version'] < 2:
+            raise SystemExit('Please update the client manifest format')
         return manifest
 
-############################################################################################
-# Write local manifest file
-############################################################################################
+#===============================================================================
     def write_local_manifest(self, manifest):
-        self.r_put(self.manifest_file, json.dumps(manifest))
+        self.file_put_contents(self.manifest_file, json.dumps(manifest))
 
-############################################################################################
-# Read locally stored remote manifest. The server sends this data at the end of each
-# sync request. It is used to detect file changes on the server since the last run.
-# Storing this client side saves having to store individual copies of this data for every
-# connected client on the server.
-############################################################################################
-    def read_remote_manifest(self):
-        try:
-            manifest = json.loads(self.r_get(self.remote_manifest_file))
-        except OSError:
-
-            manifest = {
-                'format_vers' : 1,
-                'root'        : '/',
-                'files'       : []
-            }
-
-        return manifest
-
-############################################################################################
-# Write remote manifest file
-############################################################################################
-    def write_remote_manifest(self, manifest):
-        self.r_put(self.remote_manifest_file, json.dumps(manifest))
-
-############################################################################################
-# Remove named path from the manifest files array
-############################################################################################
+#===============================================================================
     def remove_from_manifest(self, manifest, rpath):
-        filter_manifest = []
-        for f in manifest['files']:
-            if pfx_path(f['path']) == pfx_path(rpath): pass
-            else: filter_manifest.append(f)
-
-        manifest['files'] = filter_manifest
+        """ Remove named path from the manifest files array """
+        del manifest['files'][rpath]
         return manifest
 
-############################################################################################
-# Add a file to the FS
-############################################################################################
+#===============================================================================
     def fs_put(self, rpath, data):
-        
+        """ Add a file to the FS """
         try:
             self.begin()
 
             # Add the file to the fs
-            self.r_put(rpath, data)
+            self.file_put_contents(rpath, data)
 
             # Add to the manifest
             manifest = self.read_local_manifest()
-            manifest['files'].append(self.get_single_file_info(rpath, rpath))
-            manifest = self.write_local_manifest(manifest)
+            manifest['files'][rpath] = self.get_single_file_info(rpath)
+            self.write_local_manifest(manifest)
 
+            self.commit()
         except:
-            raise
-            self.rollback()
+            self.rollback(); raise
 
-        self.commit()
-
-############################################################################################
-# Get a files contents from the FS
-############################################################################################
+#===============================================================================
     def fs_get(self, rpath):
-        return self.r.get(rpath)
+        """ Get a files contents from the FS """
 
-############################################################################################
-# Move a file in the FS
-############################################################################################
+        return self.file_get_contents(rpath)
+
+#===============================================================================
     def fs_move(self, r_src, r_dst):
-        
         try:
             self.begin()
 
             # Move the file
-            self.r_move(r_src, r_dst)
+            self.move_file(r_src, r_dst)
 
             # Rename the file in the manifest
             manifest = self.read_local_manifest()
-            manifest = self.remove_from_manifest(manifest, r_src)
-            manifest['files'].append(self.get_single_file_info(r_dst, r_dst))
-
+            manifest['files'][r_dst] = self.get_single_file_info(r_dst)
             manifest = self.write_local_manifest(manifest)
 
+            self.commit()
         except:
-            self.rollback()
-            raise
+            self.rollback(); raise
 
-        self.commit()
-
-############################################################################################
-# Remove file from current revision
-############################################################################################
+#===============================================================================
     def fs_delete(self, rpath):
-
         try:
             self.begin()
 
             # Delete the file
-            self.r_delete(rpath)
+            self.delete_file(rpath)
 
             # Rename the file in the manifest
             manifest = self.read_local_manifest()
-            manifest = self.remove_from_manifest(manifest, rpath)
+            del manifest['files'][rpath]
             manifest = self.write_local_manifest(manifest)
 
+            self.commit()
         except:
-            self.rollback()
-            raise
-
-        self.commit()
-
-
+            self.rollback(); raise
 

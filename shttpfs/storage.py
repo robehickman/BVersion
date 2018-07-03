@@ -2,7 +2,7 @@ import os.path as p
 import os, shutil, json, errno, fcntl
 from collections import deque
 
-from common import cpjoin
+from common import cpjoin, ignore, file_or_default, file_put_contents
 
 ############################################################################################
 # Journaling file storage subsystem, only use one instance at any time, not thread safe
@@ -11,56 +11,18 @@ class storage(object):
 
 ############################################################################################
     def __init__(self, data_dir, conf_dir):
-        # need to make sure data dir path has a trailing slash
-        self.data_dir    = data_dir
-        self.j_file      = self.mkfs_path(conf_dir, 'journal.json')
-        self.tmp_dir     = self.mkfs_path(conf_dir, 'tmp')
-        self.backup_dir  = self.mkfs_path(conf_dir, 'back')
+        self.data_dir    = data_dir if data_dir[-1] == '/' else data_dir + '/'
+        self.j_file      = self.get_full_file_path(conf_dir, 'journal.json')
+        self.tmp_dir     = self.get_full_file_path(conf_dir, 'tmp')
+        self.backup_dir  = self.get_full_file_path(conf_dir, 'back')
         self.journal     = None
-        self.lock        = None
         self.tmp_idx     = 0
 
-    # Make sure tmp dir exists
-        try: os.makedirs(self.tmp_dir)
-        except: pass
-
-    # Make sure backup dir exists
-        try: os.makedirs(self.backup_dir)
-        except: pass
+        ignore(os.makedirs, self.tmp_dir)    # Make sure tmp dir exists
+        ignore(os.makedirs, self.backup_dir) # Make sure backup dir exists
 
 ############################################################################################
-    def lock(self, l_type):
-        """
-        Lock the file system, returns true on success, false on failure
-        
-        lock types:
-        'shared'    - shared lock
-        'exclusive' - exclusive lock
-        """
-
-        if self.lock != None:
-            return True
-
-        try:
-            l_type = {'shared' : pfcntl.LOCK_SH, 'exclusive' : pfcntl.LOCK_EX}[l_type]
-            fd = open(self.data_dir + 'lock_file', 'w')
-            fcntl.flock(fd, l_type | fcntl.LOCK_NB)
-            self.lock = fd # assigned last so that does not indicate a lock exists if locking failed
-            return True
-
-        except IOError:
-            return False
-
-############################################################################################
-    def unlock():
-        """ Unlock the file system """
-
-        lock = self.lock
-        self.lock = None
-        fcntl.flock(lock, l_type | fcntl.LOCK_NB)
-
-############################################################################################
-    def mkfs_path(self, *args):
+    def get_full_file_path(self, *args):
         """ make path relative to DATA DIR from a system relative path """
 
         return cpjoin(self.data_dir, *args)
@@ -77,17 +39,11 @@ class storage(object):
         """ Create a new backup file allocation """
 
         backup_id_file = p.join(self.backup_dir, '.bk_idx')
-        try: backup_num = int(self.file_get_contents(backup_id_file))
-        except: backup_num = 1
-
+        backup_num = file_or_default(backup_id_file, 1, int)
         backup_name = str(backup_num) + "_" + os.path.basename(src)
         backup_num += 1
 
-        try: os.makedirs(bk_path)
-        except: pass
-
-        with open(backup_id_file, 'w') as f: 
-            f.write(str(backup_num))
+        file_put_contents(backup_id_file, str(backup_num))
         return p.join(self.backup_dir, backup_name)
 
 ############################################################################################
@@ -99,8 +55,7 @@ class storage(object):
 
         # under normal operation journal is deleted at end of transaction
         # if it does exist we need to roll back
-        if os.path.isfile(self.j_file):  
-            self.rollback()
+        if os.path.isfile(self.j_file):  self.rollback()
 
         self.journal = open(self.j_file, 'w')
 
@@ -115,21 +70,12 @@ class storage(object):
             self.journal.flush()
 
         d = command['do']
-        if d[cmd] == 'copy':
-            shutil.copy(d[src], d[dst])
-
-        elif d[cmd] == 'move':
-            shutil.move(d[src], d[dst])
-
-        elif d[cmd] == 'backup':
-            shutil.move(d[src], self.new_backup(d[src]))
-
+        if   d[cmd] == 'copy':   shutil.copy(d[src], d[dst])
+        elif d[cmd] == 'move':   shutil.move(d[src], d[dst])
+        elif d[cmd] == 'backup': shutil.move(d[src], self.new_backup(d[src]))
         elif d[cmd] == 'write' :
-            if callable(d[data]):
-                d[data](d[path])
-            else:
-                with open(d[path], 'w') as f:
-                    f.write(d[data])
+            if callable(d[data]): d[data](d[path])
+            else: file_put_contents(d[path], d[data])
 
 ############################################################################################
     def rollback(self):
@@ -137,13 +83,10 @@ class storage(object):
 
         # Close the journal for writing, if this is an automatic rollback following a crash,
         # the file descriptor will not be open, so don't need to do anything.
-        if self.journal != None:
-            self.journal.close()
+        if self.journal != None: self.journal.close()
         self.journal = None
 
         # Read the journal
-        journal = self.file_get_contents(self.j_file)
-
         journ_list = []
         with open(self.j_file) as fle:
             for l in fle: journ_list.append(json.loads(l))
@@ -151,10 +94,7 @@ class storage(object):
         journ_subtract = deque(reversed(journ_list))
 
         for j_itm in reversed(journ_list):
-            print j_itm
-
-            try:
-                self.do_action({'do' : j_itm}, False)
+            try: self.do_action({'do' : j_itm}, False)
             except IOError: pass
 
             # As each item is completed remove it from the journal file, in case
@@ -176,6 +116,8 @@ class storage(object):
         self.journal = None
         os.remove(self.j_file)
 
+        for itm in os.listdir(self.tmp_dir): os.remove(cpjoin(self.tmp_dir, itm))
+
         if(cont == True):
             self.begin()
             
@@ -184,12 +126,13 @@ class storage(object):
         """ Returns contents of file located at 'path', not changing FS so does
         not require journaling """
 
-        with open(path, 'r') as f:
-            return  f.read()
+        with open(self.get_full_file_path(path), 'r') as f: return  f.read()
 
 ############################################################################################
     def file_put_contents(self, path, data):
         """ Put passed contents into file located at 'path' """
+
+        path = self.get_full_file_path(path)
 
         # if file exists, create a temp copy to allow rollback
         if os.path.isfile(path):  
@@ -205,6 +148,8 @@ class storage(object):
 ############################################################################################
     def move_file(self, src, dst):
         """ Move file from src to dst """
+
+        src = self.get_full_file_path(src); dst = self.get_full_file_path(dst)
 
         # record where file moved
         if os.path.isfile(src):  
@@ -223,11 +168,13 @@ class storage(object):
     def delete_file(self, path):
         """ delete a file """
 
+        path = self.get_full_file_path(path)
+
         # if file exists, create a temp copy to allow rollback
         if os.path.isfile(path):  
             tmp_path = self.new_tmp()
             self.do_action({
-                'do'   : ['copy', path, tmp_path],
+                'do'   : ['move', path, tmp_path],
                 'undo' : ['move', tmp_path, path]})
 
         else:

@@ -1,273 +1,374 @@
-#import os.path as p
-import os, shutil, json, errno
-import pdb
+import common as sfs
+from  collections import defaultdict
+from datetime import datetime
+import json, hashlib, os, os.path, shutil
+from pprint import pprint
 
-from rel_storage import *
-from common import *
+class versioned_storage:
+    def __init__(self, base_path):
+        self.base_path = base_path
+        sfs.make_dirs_if_dont_exist(sfs.cpjoin(base_path, 'index') + '/')
+        sfs.make_dirs_if_dont_exist(sfs.cpjoin(base_path, 'files') + '/')
 
 
-############################################################################################
-# Versioning data store
-############################################################################################
-class versioned_storage(rel_storage):
-    stepped   = False
-    vrs_dir  = ''
-    head_file = ''
+#===============================================================================
+    def gc_log_item(self, item_type, item_hash):
+        with open(sfs.cpjoin(self.base_path, 'gc_log'), 'a') as gc_log:
+            gc_log.write(item_type + ' ' + item_hash + '\n'); gc_log.flush()
 
-############################################################################################
-# Setup and validate file system structure
-############################################################################################
-    def __init__(self, data_dir, conf_dir, manifest_file):
-        rel_storage.__init__(self, data_dir, conf_dir)
 
-        self.vrs_dir       = "versions"
-        self.head_file     = "head"
-        self.manifest_file = manifest_file
+#===============================================================================
+    def write_index_object(self, object_type, contents):
+        new_object = {'type' : object_type}
+        new_object.update(contents)
+        serialised = json.dumps(new_object)
+        object_hash = hashlib.sha256(serialised).hexdigest()
+        target_base = sfs.cpjoin(self.base_path, 'index',object_hash[:2])
+        if os.path.isfile(sfs.cpjoin(target_base, object_hash[2:])): return object_hash
 
-    # find all existing versions
-        versions = None
-        try: 
-            versions = self.r_listdir(self.vrs_dir)
-            versions = [int(ver) for ver in versions] 
-        except ValueError:
-            raise Exception('Error: non integer directory name in versions.') 
-        except: pass
+        # log items which do not exist for garbage collection
+        self.gc_log_item(object_type, object_hash)
 
-    # If versions is none, dir does not exist. Create it, an initial version and
-    # record in the head file.
-        actual_head = None
-        if versions == None:
-            self.r_makedirs(cpjoin(self.vrs_dir, '1'))
+        #----
+        sfs.make_dirs_if_dont_exist(target_base)
+        sfs.file_put_contents(sfs.cpjoin(target_base, object_hash[2:]), serialised)
+        return object_hash
 
-            self.begin()
-            self.r_put(self.head_file, '1')
-            self.commit()
 
-            actual_head = 1
+#===============================================================================
+    def read_index_object(self, object_hash, expected_object_type):
+        index_object = json.loads(sfs.file_get_contents(sfs.cpjoin(self.base_path, 'index', object_hash[:2], object_hash[2:])))
+        if index_object['type'] != expected_object_type: raise IOError('Type of object does not match expected type')
+        return index_object
 
-    # If versions dir does not exist, make sure head file exists and that it contains the latest
-    # version number. Correct it if anything is wrong.
-        else:
-            actual_head = max(versions)
 
-            try:
-                head = self.get_head()
-                if head != actual_head:
-                    self.begin()
-                    self.r_put(self.head_file, str(actual_head))
-                    self.commit()
+#===============================================================================
+    def build_dir_tree(self, files):
+        """ Convert a flat file dict into the tree format used for storage """ 
 
-            except:
-                self.begin()
-                self.r_put(self.head_file, str(actual_head))
-                self.commit()
+        def helper(split_files):
+            this_dir = {'files' : {}, 'dirs' : {}}
+            dirs = defaultdict(list)
 
-############################################################################################
-# Get the number of the head revision
-############################################################################################
+            for fle in split_files:
+                index = fle[0]; fileinfo = fle[1]
+                if len(index)  == 1:
+                    fileinfo['path'] = index[0] # store only the file name instead of the whole path
+                    this_dir['files'][fileinfo['path']] = fileinfo
+                elif len(index) > 1:
+                    dirs[index[0]].append((index[1:], fileinfo))
+
+            for name,info in dirs.iteritems():
+                this_dir['dirs'][name] = helper(info)
+            return this_dir
+        return helper([(name.split('/')[1:], file_info) for name, file_info in files.iteritems()])
+
+
+#===============================================================================
+    def flatten_dir_tree(self, tree):
+        """ Convert a file tree back into a flat dict """ 
+
+        result = {}
+
+        def helper(tree, leading_path = ''):
+            dirs  = tree['dirs']; files = tree['files']
+            for name, file_info in files.iteritems():
+                file_info['path'] = leading_path + '/'  + name
+                result[file_info['path']] = file_info
+
+            for name, contents in dirs.iteritems():
+                helper(contents, leading_path +'/'+ name)
+        helper(tree); return result
+
+
+#===============================================================================
+    def print_dir_tree(self, tree, indent = ''):
+        dirs  = tree['dirs']; files = tree['files']
+        for name in files.keys(): print indent + name
+        for name, contents in dirs.iteritems():
+            print indent + name + '/'
+            self.print_dir_tree(contents, indent + '---')
+
+
+#===============================================================================
+    def read_dir_tree(self, file_hash):
+        """ Recursively read the directory structure beginning at hash """
+
+        json_d = self.read_index_object(file_hash, 'tree')
+        node = {'files' : json_d['files'], 'dirs' : {}}
+        for name, hsh in json_d['dirs'].iteritems(): node['dirs'][name] = self.read_dir_tree(hsh)
+        return node
+
+
+#===============================================================================
+    def write_dir_tree(self, tree):
+        """ Recur through dir tree data structure and write it as a set of objects """
+
+        dirs  = tree['dirs']; files = tree['files']
+        child_dirs = {name : self.write_dir_tree(contents) for name, contents in dirs.iteritems()}
+        return self.write_index_object('tree', {'files' : files, 'dirs': child_dirs})
+
+
+#===============================================================================
+    def have_active_commit(self):
+        """ Checks if there is an active commit owned by the specified user """
+
+        commit_state = sfs.file_or_default(sfs.cpjoin(self.base_path, 'active_commit'), None)
+        if commit_state != None: return True
+        return False
+        
+
+#===============================================================================
     def get_head(self):
-        return int(self.r_get(self.head_file))
+        """ Gets the hash associated with the current head commit """
 
-############################################################################################
-# Get the full path of a file
-############################################################################################
-    def get_full_file_path(self, r_path, version = None):
-        if version == None:
-            version = self.get_head()
-
-        v_path = cpjoin(self.vrs_dir, str(version), r_path)
-        f_path = self.mkfs_path(v_path)
-        return f_path
-
-############################################################################################
-# Gets last change time for a single file
-############################################################################################
-    def get_single_file_info(self, f_path, int_path, version = None):
-        if version == None:
-            version = self.get_head()
-
-        f_path = cpjoin(self.vrs_dir, str(version), f_path)
-        f_path = self.mkfs_path(f_path)
-
-        int_path = pfx_path(os.path.normpath(force_unicode(int_path).strip()))
-        return { 'path'     : int_path,
-                 'created'  : os.path.getctime(f_path),
-                 'last_mod' : os.path.getmtime(f_path)}
-            
-############################################################################################
-# Read local manifest file.
-############################################################################################
-    def read_local_manifest(self, vrs = None):
-        if vrs == None:
-            vrs = self.get_head()
-
-        # Read Manifest
-        try:
-            manifest = json.loads(self.r_get(cpjoin('versions', str(vrs), self.manifest_file)))
-        except:
-            # no manifest, create one, manifest stores file access times as
-            # of last run to detect files which have changed
-            manifest = {
-                'format_vers' : 1,
-                'root'        : '/',
-                'files'       : []
-            }
-
-        return manifest
-
-############################################################################################
-# Write local manifest file
-############################################################################################
-    def write_local_manifest(self, vrs, manifest):
-        self.r_put(cpjoin('versions', str(vrs), self.manifest_file), json.dumps(manifest))
+        return sfs.file_or_default(sfs.cpjoin(self.base_path, 'head'), 'root')
 
 
-############################################################################################
-# Step version number forward
-############################################################################################
-    def step_version(self):
-        self.begin()
+#===============================================================================
+# NOTE Everything below here must not be called concurrently, either from 
+# threads in a single process or from multiple processes
+#===============================================================================
+    def begin(self):
+        if self.have_active_commit(): raise Exception()
 
-        try:
-            head = self.get_head()
-
-            cur_rv = (cpjoin(self.vrs_dir, str(head)))
-            new_rv = (cpjoin(self.vrs_dir, str(head + 1)))
-
-            # move current head forward one step, then make an empty prior revision
-            self.r_move(cur_rv, new_rv)
-            self.r_makedirs(cur_rv)
-
-            self.r_put(cpjoin(cur_rv, self.manifest_file), '')
-
-            head += 1
-            self.r_put(self.head_file, str(head))
-            self.commit()
-
-        except:
-            self.rollback()
-            raise
-
-############################################################################################
-# If a file exists in the current revision, move it to the parent revision. Step version
-# if doing so would overwrite a file in the parent.
-############################################################################################
-    def step_if_exists(self, rpath):
+        active_files = {} 
         head = self.get_head()
+        if head != 'root':
+            commit = self.read_index_object(head, 'commit')
+            active_files = self.flatten_dir_tree(self.read_dir_tree(commit['tree_root']))
 
-        # does target file exist in current rv?
-        exists = False
-        if self.r_isfile(cpjoin(self.vrs_dir, str(head), rpath)):
-            exists = True
-            # Does the file exist in the parent rv?
-            if head == 1 or self.r_isfile(cpjoin(self.vrs_dir, str(head - 1), rpath)):
-                # if yes, step revision
-                self.step_version()
+        # Active commit files stores all of the files which will be in this revision,
+        # including ones carried over from the previous revision
+        sfs.file_put_contents(sfs.cpjoin(self.base_path, 'active_commit_files'), json.dumps(active_files))
 
-        # reload head in case we stepped version
+        # Active commit changes stores a log of files which have been added, changed
+        # or deleted in this revision
+        sfs.file_put_contents(sfs.cpjoin(self.base_path, 'active_commit_changes'), json.dumps([]))
+
+        # The id of the user doing the commit
+        sfs.file_put_contents(sfs.cpjoin(self.base_path, 'active_commit'), 'true')
+
+
+#===============================================================================
+    def update_system_file(self, file_name, callback):
+        contents = json.loads(sfs.file_get_contents(sfs.cpjoin(self.base_path, file_name)))
+        contents = callback(contents)
+        sfs.file_put_contents(sfs.cpjoin(self.base_path, file_name), json.dumps(contents))
+
+
+#===============================================================================
+    def fs_put_from_file(self, source_file, file_info):
+        if not self.have_active_commit(): raise Exception()
+        file_info['hash'] = file_hash = sfs.hash_file(source_file) 
+
+        target_base = sfs.cpjoin(self.base_path, 'files',file_hash[:2])
+        target = sfs.cpjoin(target_base, file_hash[2:])
+        if not os.path.isfile(target):
+            # log items which don't already exist so that we do not have to read the objects referenced in
+            # all existing commits to determine if the new objects are garbage in case of a commit roll back
+            self.gc_log_item('file', file_hash)
+
+            # ---
+            sfs.make_dirs_if_dont_exist(target_base)
+            shutil.move(source_file, target)
+        else:
+            os.remove(source_file)
+
+        #=======================================================
+        # Update commit changes
+        #=======================================================
+        def helper(contents):
+            file_info['status'] = 'changed' if file_info['path'] in contents else 'new'
+            return  contents + [file_info]
+        self.update_system_file('active_commit_changes', helper)
+
+        #=======================================================
+        # Update commit files
+        #=======================================================
+        def helper(contents):
+            contents[file_info['path']] = file_info
+            return contents
+        self.update_system_file('active_commit_files', helper)
+
+
+#===============================================================================
+    def fs_delete(self, file_info):
+        if not self.have_active_commit(): raise Exception()
+
+        #=======================================================
+        # Update commit changes
+        #=======================================================
+        def helper(contents):
+            file_info['status'] = 'deleted'
+            return  contents + [file_info]
+        self.update_system_file('active_commit_changes', helper)
+
+        #=======================================================
+        # Update commit files
+        #=======================================================
+        def helper(contents):
+            del contents[file_info['path']]
+            return contents
+        self.update_system_file('active_commit_files', helper)
+
+
+#===============================================================================
+    def commit(self, commit_message, commit_by, commit_datetime = None):
+        if not self.have_active_commit(): raise Exception()
+
+        current_changes = json.loads(sfs.file_get_contents(sfs.cpjoin(self.base_path, 'active_commit_changes')))
+        active_files    = json.loads(sfs.file_get_contents(sfs.cpjoin(self.base_path, 'active_commit_files')))
+
+        if current_changes == []: raise Exception('Empty commit')
+
+        # Create and store the file tree
+        tree_root   = self.write_dir_tree(self.build_dir_tree(active_files))
+
+        # If no commit message is passed store an indication of what was changed
+        if commit_message == '':
+            new_item = next((change for change in current_changes if change['status'] in ['new', 'changed']), None)
+            deleted_item = next((change for change in current_changes if change['status'] == 'deleted'), None)
+
+            commit_message   = "(Generated message)\n"
+            if new_item     != None: commit_message += new_item['status']     + '    ' + new_item['path'] + '\n'
+            if deleted_item != None: commit_message += deleted_item['status'] + '    ' + deleted_item['path'] + '\n'
+            if len(current_changes) > 2: commit_message += '...'
+
+        # Commit timestamp
+        commit_datetime = datetime.utcnow() if commit_datetime == None else commit_datetime
+        commit_timestamp = commit_datetime.strftime("%d-%m-%Y %H:%M:%S:%f")
+
+        # Create commit
+        commit_object_hash = self.write_index_object('commit', {'parent'         : self.get_head(),
+                                                                'utc_date_time'  : commit_timestamp,
+                                                                'commit_by'      : commit_by,
+                                                                'commit_message' : commit_message,
+                                                                'tree_root'      : tree_root,
+                                                                'changes'        : current_changes})
+
+        #update head, write plus move for atomicity
+        sfs.file_put_contents(sfs.cpjoin(self.base_path, 'new_head'), commit_object_hash)
+        os.rename(sfs.cpjoin(self.base_path, 'new_head'), sfs.cpjoin(self.base_path, 'head'))
+
+        #and clean up working state
+        os.remove(sfs.cpjoin(self.base_path, 'active_commit_changes'))
+        os.remove(sfs.cpjoin(self.base_path, 'active_commit_files'))
+        sfs.ignore(os.remove, sfs.cpjoin(self.base_path, 'gc_log'))
+        os.remove(sfs.cpjoin(self.base_path, 'active_commit'))
+
+        return commit_object_hash
+
+
+#===============================================================================
+    def rollback(self):
+        if not self.have_active_commit(): raise Exception()
+
+        gc_log_contents = sfs.file_or_default(sfs.cpjoin(self.base_path, 'gc_log'), '')
+        gc_log_items = [file_row.split(' ') for file_row in gc_log_contents.splitlines()]
+
+        if gc_log_items != []:
+            # If a commit exists and it's hash matches the current head we do not need to do anything
+            # The commit succeeded but we failed before deleting the active commit file for some reason
+            is_commit = next((item for item in gc_log_items if item[0] == 'commit'), None)
+            if is_commit != None and is_commit[1] == self.get_head():
+                pass # commit actually ok
+
+            else:# commit not ok
+                for item in gc_log_items:
+                    # delete the object for this file, noting that it may not exist
+                    print item
+                    object_dir = 'files' if item[0] == 'file' else 'index'
+                    target_base = sfs.cpjoin(self.base_path, object_dir, item[1][:2])
+                    sfs.ignore(os.remove, sfs.cpjoin(target_base, item[1][2:]))
+                    sfs.ignore(os.rmdir, target_base)
+
+        sfs.ignore(os.remove, sfs.cpjoin(self.base_path, 'active_commit_changes'))
+        sfs.ignore(os.remove, sfs.cpjoin(self.base_path, 'active_commit_files'))
+        sfs.ignore(os.remove, sfs.cpjoin(self.base_path, 'gc_log'))
+        os.remove(sfs.cpjoin(self.base_path, 'active_commit')) # if this is being called, this file should always exist
+
+
+#===============================================================================
+    def get_changes_since(self, version_id, head):
+        pointer = head
+        if pointer == version_id: return {}
+        
+        change_logs = []
+        seen_pointers = {}
+
+        while True:
+            if pointer in seen_pointers: raise Exception("Cycle detected")
+            commit = self.read_index_object(pointer, 'commit')
+            if pointer == version_id: break
+            change_logs.append(commit)
+            if commit['parent'] == version_id: break
+            seen_pointers[pointer] = None
+            pointer = commit['parent']
+
+        return {change['path'] : change for change_log in reversed(change_logs) for change in change_log['changes']}
+
+
+#===============================================================================
+    def get_commit_chain(self):
+        pointer = self.get_head()
+        if pointer == 'root': return []
+
+        commits = []; limiter = 0
+        while True:
+            # store the id of this commit, not it's parent
+            commit = self.read_index_object(pointer, 'commit')
+            commits.append({'id'             : pointer,
+                            'utc_date_time'  : commit['utc_date_time'],
+                            'commit_by'      : commit['commit_by'],
+                            'commit_message' : commit['commit_message']})
+
+            #--
+            pointer = commit['parent']
+            if pointer == 'root': break
+            if limiter > 50: break
+            limiter += 1
+        return commits
+
+
+#===============================================================================
+    def get_commit_changes(self, version_id):
+        commit = self.read_index_object(version_id, 'commit')
+        return commit['changes']
+
+
+#===============================================================================
+    def get_commit_files(self, version_id):
+        commit = self.read_index_object(version_id, 'commit')
+        return self.flatten_dir_tree(self.read_dir_tree(commit['tree_root']))
+
+
+#===============================================================================
+    def get_file_info_from_path(self, file_path):
         head = self.get_head()
+        if head == 'root': raise IOError('There are no commits!')
+        tree_root = self.read_index_object(head, 'commit')['tree_root']
+
+        def helper(tree_root, path):
+            tree_contents = self.read_index_object(tree_root, 'tree')
+
+            if len(path) > 1:
+                if path[0] not in tree_contents['dirs']: raise IOError('No such file or directory')
+                return helper(tree_contents['dirs'][path[0]], path[1:])
+            elif len(path) == 1:
+                if path[0] not in tree_contents['files']: raise IOError('No such file or directory')
+                return tree_contents['files'][path[0]]
+            else: 
+                raise IOError('No such file or directory')
+
+        split_path = file_path.split('/')
+        split_path = split_path[1:] if split_path[0] == '' else split_path
+        result = helper(tree_root, split_path)
+        result['path'] = file_path
+        return result
 
 
-        self.begin()
-
-        # If there is a current file, move it back to prior RV
-        if exists == True:
-            try: self.r_makedirs(os.path.dirname(cpjoin(self.vrs_dir, str(head - 1), rpath)))
-            except OSError: pass
-
-            self.r_move(cpjoin(self.vrs_dir, str(head), rpath), cpjoin(self.vrs_dir, str(head - 1), rpath))
-
-            # Add up-moved file to parent manifest,
-            manifest = self.read_local_manifest(head - 1)
-            manifest['files'].append(self.get_single_file_info(rpath, rpath, head - 1))
-            manifest = self.write_local_manifest(head - 1, manifest)
-
-            # Remove it from head manifest
-            manifest = self.read_local_manifest(head)
-            manifest = self.remove_from_manifest(manifest, rpath)
-            manifest = self.write_local_manifest(head, manifest)
-
-        self.commit()
-
-        return exists
-
-
-############################################################################################
-# Add a file to the FS
-############################################################################################
-    def fs_put(self, rpath, data):
-        
-        try:
-            # does file exist in current rv? If it does move it to prior rv
-            self.step_if_exists(rpath)
-
-            self.begin()
-            # reload head in case we stepped version
-            head = self.get_head()
-
-            # Add the file to the current revision
-            self.r_put(cpjoin(self.vrs_dir, str(head), rpath), data)
-
-            # Add to the manifest
-            manifest = self.read_local_manifest(head)
-            manifest['files'].append(self.get_single_file_info(rpath, rpath, head))
-            manifest = self.write_local_manifest(head, manifest)
-
-        except:
-            self.rollback()
-            raise
-
-        self.commit()
-
-############################################################################################
-# Get a files contents from the FS
-############################################################################################
-    def fs_get(self, rpath):
-        return self.r.get(rpath)
-
-
-############################################################################################
-# Move a file in the FS
-############################################################################################
-    def fs_move(self, r_src, r_dst):
-        
-        try:
-            # does target file exist in current rv? If it does move it to prior rv
-            self.step_if_exists(r_dst)
-
-            self.begin()
-
-            # reload head in case we stepped version
-            head = self.get_head()
-
-            cur_vrs = cpjoin(self.vrs_dir, str(head))
-
-            # Move the file
-            self.r_move(cpjoin(cur_vrs, r_src), cpjoin(cur_vrs, r_dst))
-
-            # Rename the file in the manifest
-            manifest = self.read_local_manifest(head)
-            manifest = self.remove_from_manifest(manifest, r_src)
-            manifest['files'].append(self.get_single_file_info(r_dst, r_dst, head))
-
-            manifest = self.write_local_manifest(head, manifest)
-
-        except:
-            self.rollback()
-            raise
-
-        self.commit()
-
-
-############################################################################################
-# Remove file from current revision
-############################################################################################
-    def fs_delete(self, rpath):
-        # does target file exist in current rv? If it does move it to prior rv
-        self.step_if_exists(rpath)
-
-        # do not need to do anything else, step_if_exists moves the file into the
-        # previous revision so it is effectively 'deleted' from the current one.
-
-
+#===============================================================================
+    def get_file_directory_path(self, file_hash):
+        return sfs.cpjoin(self.base_path, 'files', file_hash[:2])
 

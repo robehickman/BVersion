@@ -1,70 +1,190 @@
-This is a client-server based file synchronisation tool inspired by subversion, but is considerably simpler in it's implementation. I work with hundreds of gigabytes of binary files, mostly camera raw files, and require a means of synchronising these across multiple computers. I have tried out numerous tools over the past few years, and subversion is the only one with the required features which has worked dependably. Unfortunately subversion always stores two copies of every file in every checkout for delta compression. When dealing with large volumes of binary files this greatly blows up the storage required. As I mostly add to the files and rarely change them, delta compression offers little value in my use case. Finally due to limited outbound bandwidth combined with the large volume of data, I required a tool that is hosted within my LAN.
+Simple HTTP File Sync (SHTTPFS) is a file synchroniser and basic version control system designed for managing binary files such as images, it follows a centralised design and has a strong emphasis on code simplicity, being inspired by the 'suckless philosophy'. It is configured using text files and intentionally does not have a web or graphical interface. Note that this has only been tested using linux ext 3 and 4, and that the system currently only works with unix file paths. The server will also only work on a unix style os as it depends on flock.
 
-The design of this tool was inspired by the 'suckless philosophy' and consequently it aims to be simple. It has a minimal command line interface and the server has a configuration file. Beyond these it's meant to be configured by editing the source code.
 
-The system is built around a journaling file system class (shttpfs.storage) which provides atomic operations for file integrity. Any issues during critical file system operations are rolled back to the last stable state. This includes whole system crashes as long as the OS was able to write the journal to disk. Any files which get deleted in a rollback are backed up in the '.shttpfs/back' directory.
 
-Notice: This has only been tested on linux ext4, running on other operating systems or file systems could cause undefined behaviour.
 
-Features:
 
-* HTTP(S) based sync protocol.
+
+SHTTPFS has the following features:
+
+
+### HTTP(S) based sync protocol.
 
 Uses a simple HTTP(S) based sync protocol and public key authentication. The server is implemented using the flask framework.
 
 
-* All files, both on the client and the server, are stored as plain files with there original names. 
+### Automatic or manual syncing:
 
-* Stores limited version history on the server only.
-
-Has limited support for file versioning. As above all prior file versions are stored as-is in the file system, so can be easily accessed with any file browser. However this is not a version control system, file merging for instance is not supported. It is generally not possible to usefully merge binary files anyway. 
+SHTTPFS can operate in two modes, either supporting manual commit and update similar to a version control system, or periodically checking a file system for changes and updating automatically.
 
 
-* No web/graphical UI
+### Simplicity first design:
 
-Designed to perform a single function only, provides a minimal command line interface.
-
-* No database dependency
-
-Stores file manifest information as regular JSON.
+SHTTPFS is configured using text files, does not have a web or graphical interface and does not depend on the system tray. All back end data is stored in a single directory. Most data about files and versioning is stored in a data structure similar to git, with sqlite used for transient authentication data. Thus it is trivial to move when doing a system upgrade, just copy the files. A nice side effect of the data structure used is that it inherently performs whole file reduplication.
 
 
-* Atomic file system operations through journaling. 
+### Atomic commits
 
-File system operations are journaled, and committed atomically in stable states. Errors trigger automatic roll-back to the previous good state.
-
-
-* Supports partial checkouts 
-
-As I don't want the entire data set on every machine partial checkout support was essential. Currently it is implemented using a pull-ignore system. Create a file '.pull_ignore' in the root and list any files and directories which are not required, supports Unix wild cards. 
+All commits are atomic, meaning that we cannot have a half complete commit leaving the server in an inconsistent state. Failed commits are automatically reverted before the next user commits. Commits always store the current system time in UTC and can be labeled with a commit message.
 
 
+### Atomic client side file system operations through journaling. 
+
+The client needs to store both the files in the working copy, and also a manifest of there modification times in order to detect changes. When files are downloaded from the server, if a file was added to the manifest before adding it to the file system, should the system crash in-between these two operations shttpfs would detect the file as deleted, as it is missing from the file system and would subsequently delete it from the server. In order to avoid this kind of problem client side file operations are first written to a journal and flushed to disk so that SHTTPFS can detect and correctly resolve this kind of problem.
+
+Note that this system does nothing to help you if the file system is being modified by another program simultaneously. There is no sensible way to resolve this issues at the current time because common file systems do not support snapshotting. Common version control systems work around this by assuming that you will not edit the files while doing a commit.
 
 
----------------------------------------------------
+### Client/server architecture
 
-Following is a list of tools I have tried up to this point, every one fails in some regard:
+SHTTPFS uses a client/server architecture with version history stored exclusively on the server. While the general trend towards decentralised version control for source code is a good thing, there are problems with using that model for large volumes of binary data. I wrote SHTTPFS mainly due to storage bloat caused by subversion storing two copies of every file in a working copy, and this problem is even worse with a decentralised versioning system. Storing history on a central server is more practical as one only needs a single large hard drive array instead of one per client.
 
-- Rsync:
-Awesome for what it was designed for and I use it extensively for other things. However it's only able to do one-way syncing and can't detect conflicts. 
 
-- Unison:
-Similar to rsync but able to do two way syncing and conflict detection. I found it awkward to use for syncing more than two end points, Change detection sometimes failed and wanted to re-sync the entire file tree which can take several hours.
+### Conflict detection.
 
-- Subversion:
-By far the best of anything I've used. Handles large binary files without issue. However it always stores two copies of every file on the client in order to do delta compression. As my data set is already large I always had to be concious of this when adding files. Eventually gave up on it for this reason.
+As it is impossible to merge binary files in a general case, SHTTPFS detects conflicts on a whole file basis. If two clients edit the same file, or if a file is deleted and edited you will be notified. Conflict resolution is then performed in the client by choosing which file to keep, and you can download changed versions for comparison or manual merging.
 
-- Git, Mercurial, Bazzar:
-Can not support partial checkouts, having entire history locally is too much overhead. Git in particular does not work well with large binary files and can use an awful lot of memory. These tools work fine for managing source, or other textual content and I do use git extensively for other things.
 
-- Sync thing:
-Tries to be clever using broadcast auto detection rather than simply letting you input an IP or host name. Could not find the other client on my network and the UI offered no obvious manual override.
+### Public key based authentication using ed25519 via libsodium
 
-- Owncloud:
-Web UI is completely unnecessary for my needs. Repeatedly stopped syncing when adding my file tree for the first time. Provided no useful error messages as to why. 
+Client server authentication is done using public key cryptography. The server generates a cryptographically strong random sequence and sends this to the client. The client signs it with it's public key and sends this signature back to the server, which checks the signature and that the token matches the one it sent out. For encryption of the stream itself this data can be tunneled over https by proxying the SHTTPFS server process.
 
-- Seafile:
-Web UI is completely unnecessary for my needs. Looked promising to begin with, accepted my files without issue at first. However like Owncloud the client started to randomly desynchronise with the server and required me to manually re-add it. Once again provided no useful error messages.
 
-- Git-annex:
-A large file manager built on top of git and following its distributed model. It is very complicated. The android client while pulling files down stopped entirely after running into a FAT-incompatible file name and provided no obvious way to continue. All or nothing failure is unacceptable to me. Like the two above the web UI gives little indication of what it is doing, getting error messages required bypassing the web ui and looking at the command line.  
+
+# Server Setup
+
+First install using setup.py.
+
+SHTTPFS uses public key authentication, thus the first thing you need to do is generate a new keypair. First run 'shttpfs keygen', you will be asked if you wish to encrypt the private key under a password, if you do so this will be required every time you use the client.
+
+```
+shttpfs keygen
+...
+
+Private key:
+bi/WU+apHh63JH32Vzd+ldklgJ0wAICRNJnM4WemSCUARBbEyFmoKcbQzhMyHy2r5a/MZ1JdX4ITWOBUcd3EYO0=
+
+Public key: 
+RBbEyFmoKcbQzhMyHy2r5a/MZ1JdX4ITWOBUcd3EYO0=
+_-------------
+```
+
+Once you have a new key pair you can set up the server. First you must create a configuration file, by default this is located in '/etc/shttpfs/server.json', if you wish to change the path of this file, you can edit 'cli_tools/shttpfs_server', the path is defined at the top of this file. The most basic configuration looks like this:
+
+```json
+{
+    "repositories" : {
+        "example" : {
+            "path" : "/srv/file_sync/example"
+        },
+    },
+    "users" : {
+        "test" : {
+            "public_key" : "RBbEyFmoKcbQzhMyHy2r5a/MZ1JdX4ITWOBUcd3EYO0=",
+            "uses_repositories" : ["example"]
+        }
+    }
+}
+```
+
+The file has two chunks, 'repositories', which specifies the repositories tracked by the system and where they are stored within the file system. The second chunk stores the users. Replace 'test' with the username you wish to use, 'then insert the public key that you generated above. Make sure that the name mentioned in 'uses repositories' matches the name of the repository or you will not be able to authenticate.
+
+
+```json
+"<your user name>" : {
+    "public_key" : "<the public key you generated>",
+    "uses_repositories" : ["<repository name>"]
+}
+```
+
+Now you just create the directory and run the command 'shttpfs_server' to start the server.
+
+
+
+# Configuring and using the client
+
+To checkout an initial working copy from the server, just do the following command. This creates a directory having the same name as your repository.
+
+
+```
+shttpfs checkout http(s)://localhost:8090:/<your repository name>
+```
+
+To add files to the repository, just add them to this directory and run 'shttpfs commit'. To automatically track changes run 'shttpfs autosync'. The commands available are:
+
+
+*keygen
+
+Generates a new public and private key pair
+
+
+*checkout <your domain or IP>/<your repository>
+
+Creates a new working copy from a server
+
+
+*update
+
+Update the current working copy with any changes on the server since the last time update was run
+
+
+*commit -m <optional commit message>
+
+Commit the current additions and deletions to the server
+
+
+*sync -m <optional commit message>
+
+Run an update followed by a commit
+
+
+*autosync
+
+Periodically run an update followed by a commit. Doing this periodically means that changes affecting a group of files will be handled as a group instead of one at a time, which reduces the number of commits on the server.
+
+
+*list_versions
+
+Lists recent commits
+
+
+*list_changes <commit id>
+
+Lists the changes in a commit.
+
+
+*list_files <commit id>
+
+lists all of the files in a commit
+
+
+
+
+
+## Ignore filters
+
+SHTTPFS can ignore files that you wish to have in a working copy but do not wish to synchronise. Create a file .shttpfs_ignore in the root of your working copy. Within this file add ignore filters, one per line and UNIX wildcards are supported. Notice that paths match exactly, if a filter does not start with a wildcard it must begin with a slash.
+
+
+```
+/ignored*
+
+```
+
+
+Note that these are evaluated top to bottom so be careful with wildcards.  If a file is added to the ignore list after it has been committed previously, the next time shttpfs is run the file will be deleted on the server. Also note that the ignore file and pull ignore file (next section) will be tracked by the system. If you do not wish to track them add '/.shttpfs_ignore' and '/.shttpfs_pull_ignore' to the ignore file.
+
+
+
+## Pull ignore filters
+
+In addition to adding files that you do not wish to push, you can add files that you do not wish to pull from the server as well. This file is called .shttpfs_pull_ignore' and is also created in the root of a working copy. It's internal format is the same as above.
+
+
+
+## Conflict resolution
+
+When the same file in two working copies is changed simultaneously, or a change and deletion happen simultaneously to the same file the system detects this as a conflict. As shttpfs was designed to manage images and other binary files and automatic merging of these is usually impossible, conflict resolution is done on a whole file basis.
+
+When a conflict is detected, you will be notified of this. If the conflict involves a file changed on the server you will be given the opportunity to download the changed files to compare them with the files in the working copy. Weather or not you opt to do so a conflict resolution file will be written to the .shttpfs directory.  To resolve a conflict you specify weather to resolve to the servers version of the file or the one in your working copy by deleting the opposite one from the list. Once you have done so for all items, thus all of the lists contain only one item, re-run the shttpfs client and the conflict will be resolved as described in the file.
+

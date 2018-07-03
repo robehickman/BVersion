@@ -1,96 +1,52 @@
-import scrypt
-import nacl.signing
-import nacl.secret
-import nacl.utils
+import pysodium, base64, getpass
 from binascii import hexlify, unhexlify
+#from common import *
 
-from common import *
+#===============================================================================
+def prompt_for_new_password():
+    """ Prompt the user to enter a new password, with confirmation """
+    while True:
+        passw = getpass.getpass()
+        passw2 = getpass.getpass()
+        if passw == passw2: return passw
+        print 'Passwords do not match'
 
-############################################################################################
-# Generate a key from a password
-############################################################################################
-def key_from_password(password):
-    return scrypt.hash(password, 'random salt', 4096 , 100, 1, nacl.secret.SecretBox.KEY_SIZE)
+#===============================================================================
+def hash_password(password, salt):
+    return  pysodium.crypto_pwhash(pysodium.crypto_secretbox_KEYBYTES, password, salt,
+                                   pysodium.crypto_pwhash_argon2i_OPSLIMIT_INTERACTIVE,
+                                   pysodium.crypto_pwhash_argon2i_MEMLIMIT_INTERACTIVE,
+                                   pysodium.crypto_pwhash_ALG_ARGON2I13)
 
-############################################################################################
-# Create a new public and private key pair
-############################################################################################
+#===============================================================================
 def make_keypair():
-    # Generate a new random signing key
-    signing_key = nacl.signing.SigningKey.generate()
+    public_key, private_key = pysodium.crypto_sign_keypair()
+    print 'Do you wish to encrypt the private key under a password? (y/n)'
+    answer = raw_input().lower()
+    if answer not in ['y', 'n']: raise SystemExit('Invalid answer')
+    if answer == 'y':
+        salt = pysodium.randombytes(pysodium.crypto_pwhash_SALTBYTES)
+        key = hash_password(prompt_for_new_password(), salt)
+        nonce = pysodium.randombytes(pysodium.crypto_box_NONCEBYTES)
+        cyphertext = pysodium.crypto_secretbox(private_key, nonce, key)
+        private_key = b'y'  + salt + nonce + cyphertext
+    else:
+        private_key = b'n' + private_key
 
-    private_key = signing_key.encode(encoder=nacl.encoding.HexEncoder)
-    public_key = signing_key.verify_key.encode(encoder=nacl.encoding.HexEncoder)
+    return base64.b64encode(private_key), base64.b64encode(public_key)
 
-    return (private_key, public_key)
+#===============================================================================
+def unlock_private_key(private_key):
+    private_key = base64.b64decode(private_key)
 
-############################################################################################
-# Create a new public and private key pair and write to files
-############################################################################################
-def write_keypair(password, pubkey_file, pubkey_ext, privkey_file, privkey_ext):
-    private, public = make_keypair()
-    encrypted_private = encrypt_private(password, private)
-
-    make_dirs_if_dont_exist(pubkey_file)
-    make_dirs_if_dont_exist(privkey_file)
-
-    file_put_contents(exsure_extension(pubkey_file,  pubkey_ext), public)
-    file_put_contents(exsure_extension(privkey_file, privkey_ext), encrypted_private)
-
-    return (encrypted_private, public) 
-
-############################################################################################
-# Encrypt a private key
-############################################################################################
-def encrypt_private(password, private, dohex = True):
-    key = key_from_password(password)
-    box = nacl.secret.SecretBox(key)
-    # nonce must only be used once, make a new one every time
-    nonce = nacl.utils.random(nacl.secret.SecretBox.NONCE_SIZE)
-
-    # Encrypted result stores authentication information and nonce alongside it,
-    # do not need to store these separately.
-
-    result = box.encrypt(private, nonce)
-    if dohex == True:
-        result = hexlify(result)
-    return result
-
-############################################################################################
-# Decrypt a private key
-############################################################################################
-def decrypt_private(password, crypt_private, dohex = True):
-    if dohex == True:
-        crypt_private = unhexlify(crypt_private)
-
-    key = key_from_password(password)
-    box = nacl.secret.SecretBox(key)
-    return box.decrypt(crypt_private)
-
-############################################################################################
-# Get random bytes
-############################################################################################
-def random_bytes(length):
-    nonce = nacl.utils.random(length)
-    return hexlify(nonce)
-
-############################################################################################
-# Digitally sign some data
-############################################################################################
-def sign_data(private_key, data):
-    signing_key = nacl.signing.SigningKey(private_key, encoder=nacl.encoding.HexEncoder)
-    signed_token = signing_key.sign(data)
-
-    return signed_token
-
-############################################################################################
-# Verify the signature of some data
-############################################################################################
-def varify_signiture(public_key, signed_data):
-    try:
-        verify_key = nacl.signing.VerifyKey(public_key, encoder=nacl.encoding.HexEncoder)
-        verify_key.verify(signed_data)
-        return True
-    except:
-        return False
+    if private_key[0] == b'y':
+        sbytes = pysodium.crypto_pwhash_SALTBYTES
+        nbytes = pysodium.crypto_box_NONCEBYTES
+        salt  = private_key[1:sbytes+1]
+        nonce = private_key[sbytes+1: sbytes+nbytes+1]
+        cyphertext = private_key[sbytes+nbytes+1:]
+        key = hash_password(getpass.getpass(), salt)
+        private_key = pysodium.crypto_secretbox_open(cyphertext, nonce, key)
+        return private_key
+    return private_key[1:]
 
