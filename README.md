@@ -20,7 +20,7 @@ SHTTPFS can operate in two modes, either supporting manual commit and update sim
 
 ### Simplicity first design:
 
-SHTTPFS is configured using text files, does not have a web or graphical interface and does not depend on the system tray. All back end data is stored in a single directory. Most data about files and versioning is stored in a data structure similar to git, with sqlite used for transient authentication data. Thus it is trivial to move when doing a system upgrade, just copy the files. A nice side effect of the data structure used is that it inherently performs whole file reduplication.
+SHTTPFS is configured using text files, does not have a web or graphical interface and does not depend on the system tray. All back end data is stored in a single directory. Most data about files and versioning is stored in a data structure similar to git, with sqlite used for transient authentication data. Thus it is trivial to move when doing a system upgrade, just copy the files. A nice side effect of the data structure used is that it inherently performs whole file de-duplication.
 
 
 ### Atomic commits
