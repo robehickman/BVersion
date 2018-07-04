@@ -13,7 +13,7 @@ app = Flask(__name__)
 app.debug = True
 
 #===============================================================================
-config = json.loads(file_get_contents('/etc/shttpfs/'))
+config = json.loads(file_get_contents('/etc/shttpfs/server.json'))
 
 #===============================================================================
 def fail(msg = ''):

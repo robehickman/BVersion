@@ -49,7 +49,8 @@ def authenticate(previous_token = None):
 
     # if we already have a session token, try to authenticate with it
     if previous_token != None:
-        res = json.loads(server_connection.request("authenticate", {'session_token' : previous_token}))
+        res = json.loads(server_connection.request("authenticate", {'session_token' : previous_token,
+                                                                    'repository' : config['repository']}))
         if res['status'] == 'ok':
             return previous_token
 
@@ -402,7 +403,7 @@ elif args [0] == 'autosync':
         session_token = authenticate(session_token)
         update(session_token)
         commit(session_token)
-        time.sleep(5)
+        time.sleep(60)
 
 #----------------------------
 elif args [0] == 'list_versions':
