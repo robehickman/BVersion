@@ -117,6 +117,8 @@ def update(session_token):
     result = json_decode(req_result)
     changes = result['sorted_changes']
 
+    errors = []
+
     # Are there any changes?
     if all(v == [] for k,v in changes.iteritems()):
         print 'Nothing to update'
@@ -146,10 +148,11 @@ def update(session_token):
                 'repository'    : config['repository'],
                 'path'          : fle['path']}, True)
 
-            if headers['status'] != 'ok': raise SystemExit('Error pulling file')
-
-            make_dirs_if_dont_exist(data_store.get_full_file_path(cpjoin(*fle['path'].split('/')[:-1]) + '/'))
-            data_store.fs_put(fle['path'], req_result)
+            if headers['status'] != 'ok':
+                errors.append(fle['path'])
+            else:
+                make_dirs_if_dont_exist(data_store.get_full_file_path(cpjoin(*fle['path'].split('/')[:-1]) + '/'))
+                data_store.fs_put(fle['path'], req_result)
 
     # Files which have been deleted on server and need deleting on client
     if changes['to_delete_on_client'] != []:
@@ -200,14 +203,18 @@ def update(session_token):
                         'repository'    : config['repository'],
                         'path'          : fle['path']}, True)
 
-                    if headers['status'] != 'ok': raise SystemExit('Error pulling file')
+                    if headers['status'] != 'ok':
+                        errors.append(fle['path'])
 
-                    make_dirs_if_dont_exist(cpjoin(conflict_comparison_file_dest, *fle['path'].split('/')[:-1]) + '/')
-                    result(cpjoin(conflict_comparison_file_dest, fle['path']))
+                    else:
+                        make_dirs_if_dont_exist(cpjoin(conflict_comparison_file_dest, *fle['path'].split('/')[:-1]) + '/')
+                        result(cpjoin(conflict_comparison_file_dest, fle['path']))
 
                 print 'Server versions of conflicting files written to .shttpfs/conflict_files\n'
 
         # ====================
+        pprint(errors)
+
         file_put_contents(conflict_resolution_path, json.dumps(out, indent=4, sort_keys=True))
         raise SystemExit("Conflict resolution file written to .shttpfs/conflict_resolution.json\n" +
                          "Please edit this file removing 'client', or 'server' to choose which version to retain.")
@@ -225,6 +232,8 @@ def update(session_token):
         #delete the conflicts resolution file and recursively delete any conflict files downloaded for comparison
         ignore(os.remove, conflict_resolution_path)
         ignore(shutil.rmtree, conflict_comparison_file_dest)
+
+        pprint(errors)
 
         if changes['to_delete_on_server'] != [] or changes['client_push_files'] != []:
             print 'There are local changes to commit'
