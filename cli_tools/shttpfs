@@ -59,16 +59,13 @@ def authenticate(previous_token = None):
 
     req_result, headers = server_connection.request_full("begin_auth", {'repository' : config['repository']})
 
-    print headers
-
     if headers['status'] == 'ok':
-        signature = base64.b64encode(pysodium.crypto_sign_detached(headers['auth_token'], config['private_key']))
+        signature = base64.b64encode(pysodium.crypto_sign_detached(headers['auth_token'].decode('utf-8'), config['private_key']))
         req_result, headers = server_connection.request_full("authenticate", {'auth_token' : headers['auth_token'],
                                                                               'signature'  : signature,
                                                                               'user'       : config['user'],
                                                                               'repository' : config['repository']})
 
-        print headers
         if headers['status'] == 'ok': return headers['session_token']
     raise SystemExit('Authentication failed')
 
@@ -114,7 +111,7 @@ def update(session_token):
         else:
             raise SystemExit('Server error')
 
-    result = json_decode(req_result)
+    result = json.loads(req_result)
     changes = result['sorted_changes']
 
     errors = []
@@ -257,7 +254,7 @@ def commit(session_token, commit_message = ''):
         "session_token"     : session_token,
         'repository'        : config['repository'],
         "previous_revision" : manifest['have_revision']})
-    if(headers['status'] != 'ok'): raise Exception('Could not get write lock or need to update')
+    if(headers['status'] != 'ok'): raise SystemExit(headers['msg'])
 
 
     #======================

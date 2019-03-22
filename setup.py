@@ -6,11 +6,11 @@ def readme():
 
 setup(
     name='shttpfs',
-    version='0.2',
+    version='0.3',
     description='Client/server Http File Sync Utility',
     long_description=readme(),
     classifiers=[
-        'Development Status :: 3 - Alpha',
+        'Development Status :: 4 - Beta',
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python :: 2.7',
         'Topic :: File Management :: File Synchronisation',

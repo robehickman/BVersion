@@ -169,8 +169,6 @@ def begin_auth():
                  (time.time() + 30, auth_token, request.environ['REMOTE_ADDR']))
     conn.commit()
 
-    print auth_token
-
     return success({'auth_token' : auth_token})
 
 
@@ -200,31 +198,22 @@ def authenticate():
         auth_token = request.form['auth_token']
         signiture  = request.form['signature']
 
-        print auth_token
-
-
         try:
-            print 'a'
             public_key = config['users'][request.form['user']]['public_key']
 
             # signature
             pysodium.crypto_sign_verify_detached(base64.b64decode(signiture),
                                                  auth_token, base64.b64decode(public_key))
 
-            print 'b'
             res = conn.execute("select * from tokens where token = ? and ip = ? ",
                                (auth_token,request.environ['REMOTE_ADDR'])).fetchall()
 
             # Validate token matches one we sent
             if res == [] or len(res) > 1: return fail(user_auth_fail_msg)
 
-            print 'c'
-
             # Does the user have permission to use this repository?
             if request.form['repository'] not in config['users'][request.form['user']]['uses_repositories']:
                 return fail(user_auth_fail_msg)
-
-            print 'd'
 
             # Everything OK
             conn.execute("delete from tokens where token = ?", (auth_token,)); conn.commit()
@@ -236,7 +225,8 @@ def authenticate():
             conn.commit()
             return success({'session_token'  : session_token})
 
-        except: return fail(user_auth_fail_msg)
+        except:
+            return fail(user_auth_fail_msg)
 
 
 #===============================================================================
