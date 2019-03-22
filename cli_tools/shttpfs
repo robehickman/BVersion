@@ -85,6 +85,8 @@ def update(session_token):
     """ Compare changes on the client to changes on the server and update local files
     which have changed on the server. """
 
+    working_copy_base_path = os.getcwd() + '/'
+
     conflict_comparison_file_dest = cpjoin(config['data_dir'], '.shttpfs', 'conflict_files')
     conflict_resolution_path = cpjoin(config['data_dir'], '.shttpfs', 'conflict_resolution.json')
     conflict_resolutions = file_or_default(conflict_resolution_path, [], json.loads)
