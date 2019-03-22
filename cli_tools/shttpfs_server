@@ -168,6 +168,9 @@ def begin_auth():
     conn.execute("insert into tokens (expires, token, ip) values (?,?,?)",
                  (time.time() + 30, auth_token, request.environ['REMOTE_ADDR']))
     conn.commit()
+
+    print auth_token
+
     return success({'auth_token' : auth_token})
 
 
@@ -196,6 +199,9 @@ def authenticate():
         #================================================
         auth_token = request.form['auth_token']
         signiture  = request.form['signature']
+
+        print auth_token
+
 
         try:
             print 'a'

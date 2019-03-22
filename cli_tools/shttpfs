@@ -227,8 +227,6 @@ def update(session_token):
         data_store.write_local_manifest(manifest)
         data_store.commit()
 
-            
-
         #delete the conflicts resolution file and recursively delete any conflict files downloaded for comparison
         ignore(os.remove, conflict_resolution_path)
         ignore(shutil.rmtree, conflict_comparison_file_dest)
