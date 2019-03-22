@@ -76,7 +76,7 @@ Once you have a new key pair you can set up the server. First you must create a 
     "repositories" : {
         "example" : {
             "path" : "/srv/file_sync/example"
-        },
+        }
     },
     "users" : {
         "test" : {

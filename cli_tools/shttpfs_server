@@ -30,7 +30,7 @@ no_active_commit_msg = "A commit must be started before attempting this operatio
 #===============================================================================
 def server_responce(headers, body):
     response = make_response(body)
-    response.headers += headers
+    for k, v in headers.iteritems(): response.headers[k] = v
     return response
 
 
@@ -44,7 +44,9 @@ def fail(msg = ''):
 def success(headers = {}, data = ''):
     """ Generate success JSON to send to client """
     if isinstance(data, dict): data = json.dumps(data)
-    return server_responce({'status' : 'ok'} + headers, data)
+    ret_headers = {'status' : 'ok'}
+    ret_headers.update(headers)
+    return server_responce(ret_headers, data)
 
 
 #===============================================================================
@@ -185,7 +187,8 @@ def authenticate():
 
     if 'session_token' in request.form:
         conn.execute("delete from session_tokens where expires < ?", (time.time(),)); conn.commit()
-        res = conn.execute("select * from session_tokens where token = ? and ip = ?", (request.form['session_token'], request.environ['REMOTE_ADDR'])).fetchall()
+        res = conn.execute("select * from session_tokens where token = ? and ip = ?",
+                           (request.form['session_token'], request.environ['REMOTE_ADDR'])).fetchall()
         if res != []: return success({'session_token'  : request.form['session_token']})
         else:         return fail(user_auth_fail_msg)
 
@@ -195,20 +198,27 @@ def authenticate():
         signiture  = request.form['signature']
 
         try:
+            print 'a'
             public_key = config['users'][request.form['user']]['public_key']
 
             # signature
             pysodium.crypto_sign_verify_detached(base64.b64decode(signiture),
                                                  auth_token, base64.b64decode(public_key))
+
+            print 'b'
             res = conn.execute("select * from tokens where token = ? and ip = ? ",
                                (auth_token,request.environ['REMOTE_ADDR'])).fetchall()
 
             # Validate token matches one we sent
             if res == [] or len(res) > 1: return fail(user_auth_fail_msg)
 
+            print 'c'
+
             # Does the user have permission to use this repository?
             if request.form['repository'] not in config['users'][request.form['user']]['uses_repositories']:
                 return fail(user_auth_fail_msg)
+
+            print 'd'
 
             # Everything OK
             conn.execute("delete from tokens where token = ?", (auth_token,)); conn.commit()

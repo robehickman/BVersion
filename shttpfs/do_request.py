@@ -17,13 +17,6 @@ class do_request:
         return result
 
 ############################################################################################
-    def request(self, url, data):
-        "Send a HTTP request to the configured server and return the result body"
-        result = self.request_raw(url, data)
-        return result.read()
-
-
-############################################################################################
     def request_full(self, url, data, gen = False):
         "Send a HTTP request to the configured server and return the result body and headers"
         result = self.request_raw(url, data)
