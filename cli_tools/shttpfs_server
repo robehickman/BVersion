@@ -27,6 +27,8 @@ conflict_msg         = 'Please resolve conflicts'
 need_to_update_msg   = "Please update to latest revision"
 no_active_commit_msg = "A commit must be started before attempting this operation."
 
+extend_session_duration = (60 * 60) * 2 # 2 hours
+
 #===============================================================================
 def server_responce(headers, body):
     response = make_response(body)
@@ -221,7 +223,7 @@ def authenticate():
             # generate a session token and send it to the client
             session_token = base64.b64encode(pysodium.randombytes(35))
             conn.execute("insert into session_tokens (token, expires, ip, username) values (?,?,?, ?)",
-                         (session_token, time.time() + (60 * 5), request.environ['REMOTE_ADDR'], request.form['user']))
+                         (session_token, time.time() + extend_session_duration, request.environ['REMOTE_ADDR'], request.form['user']))
             conn.commit()
             return success({'session_token'  : session_token})
 
@@ -249,17 +251,24 @@ def have_authenticated_user(request, session_token):
     user_lock = read_user_lock(repository_path)
     active_commit = user_lock['session_token'] if user_lock != None else None
 
+
     if active_commit != None:
         conn.execute("delete from session_tokens where expires < ? and token != ?", (time.time(), active_commit))
     else:
         conn.execute("delete from session_tokens where expires < ?", (time.time(),))
-    conn.commit()
 
     # Get the session token
     res = conn.execute("select * from session_tokens where token = ? and ip = ?", (session_token, request.environ['REMOTE_ADDR'])).fetchall()
-    
+
     if res != [] and request.form['repository'] in config['users'][res[0]['username']]['uses_repositories']:
+        conn.execute("update session_tokens set expires = ? where token = ? and ip = ?",
+                     (time.time() + extend_session_duration, session_token, request.environ['REMOTE_ADDR']))
+
+        conn.commit() # to make sure the update and delete have the same view
+
         return res[0]
+
+    conn.commit()
     return False
 
 

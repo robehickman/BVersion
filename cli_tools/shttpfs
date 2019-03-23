@@ -114,7 +114,6 @@ def update(session_token):
     result = json.loads(req_result)
     changes = result['sorted_changes']
 
-    errors = []
 
     # Are there any changes?
     if all(v == [] for k,v in changes.iteritems()):
@@ -146,7 +145,7 @@ def update(session_token):
                 'path'          : fle['path']}, True)
 
             if headers['status'] != 'ok':
-                errors.append(fle['path'])
+                raise SystemExit('Failed to pull file')
             else:
                 make_dirs_if_dont_exist(data_store.get_full_file_path(cpjoin(*fle['path'].split('/')[:-1]) + '/'))
                 data_store.fs_put(fle['path'], req_result)
@@ -191,6 +190,7 @@ def update(session_token):
                 choice = raw_input()
                 if choice.lower() in ['y', 'n']: break
 
+            errors = []
             if choice == 'y':
                 for fle in server_versions:
                     print 'Pulling file: ' + fle['path']
@@ -209,8 +209,9 @@ def update(session_token):
 
                 print 'Server versions of conflicting files written to .shttpfs/conflict_files\n'
 
+            pprint(errors)
+
         # ====================
-        pprint(errors)
 
         file_put_contents(conflict_resolution_path, json.dumps(out, indent=4, sort_keys=True))
         raise SystemExit("Conflict resolution file written to .shttpfs/conflict_resolution.json\n" +
@@ -227,8 +228,6 @@ def update(session_token):
         #delete the conflicts resolution file and recursively delete any conflict files downloaded for comparison
         ignore(os.remove, conflict_resolution_path)
         ignore(shutil.rmtree, conflict_comparison_file_dest)
-
-        pprint(errors)
 
         if changes['to_delete_on_server'] != [] or changes['client_push_files'] != []:
             print 'There are local changes to commit'
