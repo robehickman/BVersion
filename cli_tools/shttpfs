@@ -3,7 +3,7 @@ from poster.encode import multipart_encode
 from poster.streaminghttp import register_openers
 import urllib2, os, sys
 register_openers() # Register the streaming http handlers with urllib2
-import uuid, time, random, json, base64, fnmatch, shutil, re, pysodium, fcntl
+import uuid, time, random, json, base64, fnmatch, shutil, re, pysodium, fcntl, urllib
 
 #=================================================
 from shttpfs.common import *
@@ -279,14 +279,17 @@ def commit(session_token, commit_message = ''):
         for fle in changes['client_push_files']:
             print 'Sending: ' + fle['path']
 
-            req_result, headers = server_connection.request_full("push_file", {
+            uurl = "push_file?" + urllib.urlencode({'session_token' : session_token,
+                                                    'repository'    : config['repository'],})
+
+            req_result, headers = server_connection.request_full(uurl, {
                 'session_token' : session_token,
                 'repository'    : config['repository'],
                 'path'          : fle['path'],
                 'file'          : open(cpjoin(config['data_dir'], fle['path']), "rb")})
 
             if headers['status'] == 'ok': changes_made.append({'status' : 'new/changed', 'path' : fle['path']})
-            else:                         errors.append(fle['path'])
+            else:                         errors.append(fle['path']); break
 
     # commit and release the lock. If errors occurred roll back and release the lock
     mode = 'commit' if errors == [] else 'abort'
