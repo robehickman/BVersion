@@ -410,6 +410,8 @@ def begin_commit():
 def push_file():
     """ Push a file to the server """
 
+    #NOTE beware that reading post data in flask causes hang until file upload is complete
+
     current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], request.args['repository'], request.args['session_token'])
     if current_user == False: return fail(user_auth_fail_msg)
 
