@@ -1,5 +1,6 @@
-import os, sys, time, json, base64, fnmatch, shutil, re, fcntl, errno, pysodium
 from pprint import pprint
+import os, sys, time, json, base64, fnmatch, shutil, re, fcntl, errno
+import pysodium
 
 #=================================================
 from shttpfs.common import (cpjoin, get_file_list, find_manifest_changes, make_dirs_if_dont_exist,
@@ -45,24 +46,24 @@ def authenticate(previous_token = None):
 
     # if we already have a session token, try to authenticate with it
     if previous_token != None:
-        req_result, headers = server_connection.request("authenticate", {
+        headers = server_connection.request("authenticate", {
             'session_token' : previous_token,
-            'repository'    : config['repository']})
+            'repository'    : config['repository']})[1] # Only care about headers
 
         if headers['status'] == 'ok':
             return previous_token
 
     # If the session token has expired, or if we don't have one, re-authenticate
 
-    req_result, headers = server_connection.request("begin_auth", {'repository' : config['repository']})
+    headers = server_connection.request("begin_auth", {'repository' : config['repository']})[1] # Only care about headers
 
     if headers['status'] == 'ok':
         signature = base64.b64encode(pysodium.crypto_sign_detached(headers['auth_token'].decode('utf-8'), config['private_key']))
-        req_result, headers = server_connection.request("authenticate", {
+        headers = server_connection.request("authenticate", {
             'auth_token' : headers['auth_token'],
             'signature'  : signature,
             'user'       : config['user'],
-            'repository' : config['repository']})
+            'repository' : config['repository']})[1] # Only care about headers
 
         if headers['status'] == 'ok': return headers['session_token']
     raise SystemExit('Authentication failed')
@@ -97,9 +98,9 @@ def update(session_token):
     manifest, client_changes = find_local_changes()
 
     req_result, headers = server_connection.request("find_changed", {
-            "session_token"        : session_token,
-            'repository'           : config['repository'],
-            "previous_revision"    : manifest['have_revision'],
+        "session_token"        : session_token,
+        'repository'           : config['repository'],
+        "previous_revision"    : manifest['have_revision'],
         }, {
             "client_changes"       : json.dumps(client_changes),
             "conflict_resolutions" : json.dumps(conflict_resolutions)})
@@ -248,10 +249,10 @@ def commit(session_token, commit_message = ''):
         print 'Nothing to commit'; return
 
     # Acquire the commit lock and check we still have the latest revision
-    req_result, headers = server_connection.request("begin_commit", {
+    headers = server_connection.request("begin_commit", {
         "session_token"     : session_token,
         'repository'        : config['repository'],
-        "previous_revision" : manifest['have_revision']}, {})
+        "previous_revision" : manifest['have_revision']}, {})[1] # Only care about headers
 
     if headers['status'] != 'ok': raise SystemExit(headers['msg'])
 
@@ -263,11 +264,11 @@ def commit(session_token, commit_message = ''):
         for fle in changes['to_delete_on_server']:
             print 'Deleting: ' + fle['path']
 
-        req_result, headers = server_connection.request("delete_files", {
-                'session_token' : session_token,
-                'repository'    : config['repository']
+        headers = server_connection.request("delete_files", {
+            'session_token' : session_token,
+            'repository'    : config['repository']
             }, {
-                'files'         : json.dumps(changes['to_delete_on_server'])})
+                'files'         : json.dumps(changes['to_delete_on_server'])})[1] # Only care about headers
 
         if headers['status'] == 'ok': changes_made += [{'status' : 'deleted', 'path' : fle['path']} for fle in changes['to_delete_on_server']]
         else:                         errors.append('Delete failed')
@@ -278,22 +279,22 @@ def commit(session_token, commit_message = ''):
         for fle in changes['client_push_files']:
             print 'Sending: ' + fle['path']
 
-            req_result, headers = server_connection.send_file("push_file", {
+            headers = server_connection.send_file("push_file", {
                 'session_token' : session_token,
                 'repository'    : config['repository'],
                 'path'          : fle['path'],
-            }, cpjoin(config['data_dir'], fle['path']))
+            }, cpjoin(config['data_dir'], fle['path']))[1] # Only care about headers
 
             if headers['status'] == 'ok': changes_made.append({'status' : 'new/changed', 'path' : fle['path']})
             else:                         errors.append(fle['path']); break
 
     # commit and release the lock. If errors occurred roll back and release the lock
     mode = 'commit' if errors == [] else 'abort'
-    req_result, headers = server_connection.request("commit", {
+    headers = server_connection.request("commit", {
         "session_token"  : session_token,
         'repository'     : config['repository'],
         'commit_message' : commit_message,
-        'mode'           : mode})
+        'mode'           : mode})[1] # Only care about headers
 
     if mode == 'abort':
         print 'Something went wrong, errors:'
@@ -332,6 +333,8 @@ def get_if_set_or_default(array, item, default):
 
 #===============================================================================
 def run():
+    global server_connection, config
+
     args = list(sys.argv)[1:]
 
     #----------------------------

@@ -1,6 +1,6 @@
-from flask import Flask, request, send_from_directory, make_response
-import sys, fcntl, os.path, json, time, base64, pysodium, re
 import sqlite3 as db
+import sys, fcntl, os.path, json, time, base64, re, pysodium
+from flask import Flask, request, send_from_directory, make_response
 
 #====
 from shttpfs.common import cpjoin, file_get_contents
@@ -46,7 +46,7 @@ def success(headers = None, data = ''):
     passed_headers = {} if headers is None else headers
     if isinstance(data, dict): data = json.dumps(data)
     ret_headers = {'status' : 'ok'}
-    ret_headers.update(headers)
+    ret_headers.update(passed_headers)
     return server_responce(ret_headers, data)
 
 
@@ -360,8 +360,6 @@ def list_changes():
     if current_user is False: return fail(user_auth_fail_msg)
 
     #===
-    repository_path = config['repositories'][repository]['path']
-
     data_store = versioned_storage(config['repositories'][repository]['path'])
     return success({}, {'changes' : data_store.get_commit_changes(request.headers['version_id'])})
 
@@ -506,7 +504,7 @@ def delete_files():
             # updates the user lock expiry
             update_user_lock(repository_path, session_token)
             return success()
-        except Exception as e: return fail() # pylint: disable=broad-except
+        except Exception: return fail() # pylint: disable=broad-except
     return lock_access(repository_path, with_exclusive_lock)
 
 
