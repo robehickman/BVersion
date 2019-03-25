@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 from flask import Flask, request, send_from_directory, make_response
 import sys, fcntl, os.path, json, time, base64, pysodium, re
 import sqlite3 as db
