@@ -1,8 +1,7 @@
 #!/usr/bin/env python
-from flask import Flask, request, redirect, url_for, send_from_directory, make_response
-import sys, fcntl, os.path, json, time, base64, pysodium, traceback, re
+from flask import Flask, request, send_from_directory, make_response
+import sys, fcntl, os.path, json, time, base64, pysodium, re
 import sqlite3 as db
-from pprint import pprint
 
 #====
 from shttpfs.common import cpjoin, file_get_contents
