@@ -7,7 +7,7 @@ import uuid, time, random, json, base64, fnmatch, shutil, re, pysodium, fcntl, u
 
 #=================================================
 from shttpfs.common import *
-from shttpfs.do_request import do_request
+from shttpfs.client_http_request import client_http_request
 from shttpfs.plain_storage import plain_storage
 import shttpfs.crypto as crypto
 
@@ -40,7 +40,7 @@ def init(unlocked = False):
     config['data_dir'] = working_copy_base_path
     if unlocked == False: config["private_key"] = crypto.unlock_private_key(config["private_key"])
     data_store = plain_storage(config['data_dir'])
-    server_connection = do_request(config['server_domain'])
+    server_connection = client_http_request(config['server_domain'])
 
 
 #===============================================================================
@@ -49,22 +49,24 @@ def authenticate(previous_token = None):
 
     # if we already have a session token, try to authenticate with it
     if previous_token != None:
-        req_result, headers = server_connection.request_full("authenticate", {'session_token' : previous_token,
-                                                                    'repository' : config['repository']})
+        req_result, headers = server_connection.request("authenticate", {
+            'session_token' : previous_token,
+            'repository'    : config['repository']})
 
         if res['status'] == 'ok':
             return previous_token
 
     # If the session token has expired, or if we don't have one, re-authenticate
 
-    req_result, headers = server_connection.request_full("begin_auth", {'repository' : config['repository']})
+    req_result, headers = server_connection.request("begin_auth", {'repository' : config['repository']})
 
     if headers['status'] == 'ok':
         signature = base64.b64encode(pysodium.crypto_sign_detached(headers['auth_token'].decode('utf-8'), config['private_key']))
-        req_result, headers = server_connection.request_full("authenticate", {'auth_token' : headers['auth_token'],
-                                                                              'signature'  : signature,
-                                                                              'user'       : config['user'],
-                                                                              'repository' : config['repository']})
+        req_result, headers = server_connection.request("authenticate", {
+            'auth_token' : headers['auth_token'],
+            'signature'  : signature,
+            'user'       : config['user'],
+            'repository' : config['repository']})
 
         if headers['status'] == 'ok': return headers['session_token']
     raise SystemExit('Authentication failed')
@@ -98,10 +100,11 @@ def update(session_token):
     # Send the changes and the revision of the most recent update to the server to find changes
     manifest, client_changes = find_local_changes()
 
-    req_result, headers = server_connection.request_full("find_changed", {
+    req_result, headers = server_connection.request("find_changed", {
         "session_token"        : session_token,
         'repository'           : config['repository'],
         "previous_revision"    : manifest['have_revision'],
+        }, {
         "client_changes"       : json.dumps(client_changes),
         "conflict_resolutions" : json.dumps(conflict_resolutions)})
 
@@ -139,10 +142,10 @@ def update(session_token):
         for fle in filtered_pull_files:
             print 'Pulling file: ' + fle['path']
 
-            req_result, headers = server_connection.request_full("pull_file", {
+            req_result, headers = server_connection.request("pull_file", {
                 'session_token' : session_token,
                 'repository'    : config['repository'],
-                'path'          : fle['path']}, True)
+                'path'          : fle['path']}, gen = True)
 
             if headers['status'] != 'ok':
                 raise SystemExit('Failed to pull file')
@@ -195,10 +198,10 @@ def update(session_token):
                 for fle in server_versions:
                     print 'Pulling file: ' + fle['path']
 
-                    result, headers = server_connection.request_full("pull_file", {
+                    result, headers = server_connection.request("pull_file", {
                         'session_token' : session_token,
                         'repository'    : config['repository'],
-                        'path'          : fle['path']}, True)
+                        'path'          : fle['path']}, gen = True)
 
                     if headers['status'] != 'ok':
                         errors.append(fle['path'])
@@ -249,12 +252,12 @@ def commit(session_token, commit_message = ''):
         print 'Nothing to commit'; return
 
     # Acquire the commit lock and check we still have the latest revision
-    req_result, headers = server_connection.request_full("begin_commit", {
+    req_result, headers = server_connection.request("begin_commit", {
         "session_token"     : session_token,
         'repository'        : config['repository'],
-        "previous_revision" : manifest['have_revision']})
-    if(headers['status'] != 'ok'): raise SystemExit(headers['msg'])
+        "previous_revision" : manifest['have_revision']}, {})
 
+    if(headers['status'] != 'ok'): raise SystemExit(headers['msg'])
 
     #======================
     errors = []; changes_made = [];
@@ -264,10 +267,10 @@ def commit(session_token, commit_message = ''):
         for fle in changes['to_delete_on_server']:
             print 'Deleting: ' + fle['path']
 
-        req_result, headers = server_connection.request_full("delete_files", {
+        req_result, headers = server_connection.request("delete_files", {
             'session_token' : session_token,
-            'repository'    : config['repository'],
-            'path'          : fle['path'],
+            'repository'    : config['repository']
+            }, {
             'files'         : json.dumps(changes['to_delete_on_server'])})
 
         if headers['status'] == 'ok': changes_made += [{'status' : 'deleted', 'path' : fle['path']} for fle in changes['to_delete_on_server']]
@@ -279,24 +282,22 @@ def commit(session_token, commit_message = ''):
         for fle in changes['client_push_files']:
             print 'Sending: ' + fle['path']
 
-            uurl = "push_file?" + urllib.urlencode({'session_token' : session_token,
-                                                    'repository'    : config['repository'],})
-
-            req_result, headers = server_connection.request_full(uurl, {
+            req_result, headers = server_connection.send_file("push_file", {
                 'session_token' : session_token,
                 'repository'    : config['repository'],
                 'path'          : fle['path'],
-                'file'          : open(cpjoin(config['data_dir'], fle['path']), "rb")})
+            }, cpjoin(config['data_dir'], fle['path']))
 
             if headers['status'] == 'ok': changes_made.append({'status' : 'new/changed', 'path' : fle['path']})
             else:                         errors.append(fle['path']); break
 
     # commit and release the lock. If errors occurred roll back and release the lock
     mode = 'commit' if errors == [] else 'abort'
-    req_result, headers = server_connection.request_full("commit", {"session_token"  : session_token,
-                                                                    'repository'    : config['repository'],
-                                                                    'commit_message' : commit_message,
-                                                                    'mode'           : mode})
+    req_result, headers = server_connection.request("commit", {
+        "session_token"  : session_token,
+        'repository'     : config['repository'],
+        'commit_message' : commit_message,
+        'mode'           : mode})
 
     if mode == 'abort':
         print 'Something went wrong, errors:'
@@ -378,7 +379,7 @@ elif args [0] == 'checkout':
               "private_key"   : private_key}
 
     # Validate info is correct by attempting to authenticate
-    server_connection = do_request(config['server_domain'])
+    server_connection = client_http_request(config['server_domain'])
     unlocked_key = config["private_key"] = crypto.unlock_private_key(config["private_key"])
     session_token = authenticate()
     config["private_key"] = private_key
@@ -425,8 +426,10 @@ elif args [0] == 'autosync':
 #----------------------------
 elif args [0] == 'list_versions':
     init(); session_token = authenticate()
-    req_result, headers = server_connection.request_full("list_versions", {'session_token' : session_token,
-                                                                           'repository'    : config['repository']})
+    req_result, headers = server_connection.request("list_versions", {
+        'session_token' : session_token,
+        'repository'    : config['repository']})
+
     if headers['status'] == 'ok':
         for vers in reversed(json.loads(req_result)['versions']):
             print 'Commit:  ' + vers['id']
@@ -440,9 +443,12 @@ elif args [0] == 'list_changes':
     init(); session_token = authenticate()
     version_id = get_if_set_or_quit(args, 1, 'Please specify a version id')
 
-    req_result, headers = server_connection.request_full("list_changes", {'session_token' : session_token,
-                                                                          'repository'    : config['repository'],
-                                                                          'version_id'    : version_id})
+    req_result, headers = server_connection.request("list_changes", {
+        'session_token' : session_token,
+        'repository'    : config['repository'],
+        'version_id'    : version_id
+        })
+
     if headers['status'] == 'ok':
         for change in json.loads(req_result)['changes']:
             print change['status'] + '     ' + change['path']
@@ -451,9 +457,12 @@ elif args [0] == 'list_changes':
 elif args [0] == 'list_files':
     init(); session_token = authenticate()
     version_id = get_if_set_or_quit(args, 1, 'Please specify a version id')
-    req_result, headers = server_connection.request_full("list_files", {'session_token' : session_token,
-                                                                        'repository'    : config['repository'],
-                                                                        'version_id'    : version_id})
+
+    req_result, headers = server_connection.request("list_files", {
+        'session_token' : session_token,
+        'repository'    : config['repository'],
+        'version_id'    : version_id})
+
     if headers['status'] == 'ok':
         for fle in json.loads(req_result)['files']:
             print fle

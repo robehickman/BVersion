@@ -25,7 +25,6 @@ setup(
     tests_require=['nose'],
     install_requires=[
         'Flask==1.0.2',
-        'poster==0.8.1',
         'pysodium==0.7.0.post0',
         'termcolor==1.1.0',
     ],
