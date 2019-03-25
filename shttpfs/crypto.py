@@ -1,6 +1,4 @@
-import pysodium, base64, getpass
-from binascii import hexlify, unhexlify
-#from common import *
+import  base64, getpass, pysodium
 
 #===============================================================================
 def prompt_for_new_password():

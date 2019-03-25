@@ -1,6 +1,6 @@
 import httplib, os, json
 
-class client_http_request:
+class client_http_request(object):
 ############################################################################################
     def __init__(self, server_base_url):
         "Configure the servers base URL"
@@ -26,13 +26,13 @@ class client_http_request:
         return conn
 
 ############################################################################################
-    def request(self, url, headers, data = {}, gen = False):
-        jsn = json.dumps(data)
+    def request(self, url, headers, data = None, gen = False):
+        jsn = json.dumps(data) if data is not None else '{}'
         conn = self.begin(url, len(jsn), headers, content_type = 'application/json')
         conn.send(jsn)
         res = conn.getresponse()
 
-        if gen == False:
+        if gen is False:
             return res.read(), dict(res.getheaders())
 
         else:

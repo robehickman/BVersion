@@ -1,9 +1,6 @@
-#import os.path as p
-import os, shutil, json, errno
-
-#from storage import *
-from storage import storage
-from common import *
+import json
+from shttpfs.storage import storage
+from shttpfs.common import cpjoin, get_single_file_info, file_or_default
 
 class plain_storage(storage):
     """ Plain (non-versioned) data store used by the client """
@@ -20,9 +17,8 @@ class plain_storage(storage):
         """ Gets last change time for a single file """
 
         f_path = self.get_full_file_path(rel_path)
-        int_path = pfx_path(os.path.normpath(force_unicode(rel_path).strip()))
         return get_single_file_info(f_path, rel_path)
-            
+
 #===============================================================================
     def read_local_manifest(self):
         """ Read the file manifest, or create a new one if there isn't one already """

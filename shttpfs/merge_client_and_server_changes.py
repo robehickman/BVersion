@@ -53,7 +53,7 @@ def merge_client_and_server_changes(server, client):
                 result['to_delete_on_client'].append(server_file_info)
 
     # Secondly deal with any files left over from the client
-    for key, value in client_copy.iteritems():
+    for value in client_copy.itervalues():
         # If file new on server or changed by another client and does not exist on the client, get client to pull it
         if value['status'] in ['new', 'changed']:
             result['client_push_files'].append(value)

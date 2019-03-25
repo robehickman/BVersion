@@ -1,12 +1,11 @@
-import os.path, json, hashlib, errno, copy
+import os.path, hashlib, errno, copy
 from termcolor import colored
-from pprint import pprint
 
 ############################################################################
 def ignore(*args):
     """ Calls function passed as argument zero and ignores any exceptions raised by it """
     try: return args[0](*args[1:])
-    except: pass
+    except Exception: pass # pylint: disable=broad-except
 
 ############################################################################################
 def force_unicode(text):
@@ -26,8 +25,8 @@ def display_list(prefix, l, color):
 ############################################################################################
 def pfx_path(path):
     """ Prefix a path with the OS path separator if it is not already """
-    if(path[0] != os.path.sep): return os.path.sep + path
-    return path
+    if path[0] != os.path.sep: return os.path.sep + path
+    else:                      return path
 
 
 ############################################################################################
@@ -63,21 +62,13 @@ def make_dirs_if_dont_exist(path):
         except OSError: pass
 
 ############################################################################################
-def allowed_path(path):
-    """ Block '..' from occurring in file paths, this should not happen under normal operation. """
-
-    split = path.split('/')
-    if any(True for x in split if x in ['..', '.']):
-        raise Exception(e)
-
-############################################################################################
 def cpjoin(*args):
     """ custom path join """
     rooted = True if args[0].startswith('/') else False
     def deslash(a): return a[1:] if a.startswith('/') else a
     newargs = [deslash(arg) for arg in args]
     path = os.path.join(*newargs)
-    if rooted == True: path = os.path.sep + path 
+    if rooted: path = os.path.sep + path
     return path
 
 ############################################################################################
@@ -105,7 +96,7 @@ def get_file_list(path):
     """ Recursively lists all files in a file system below 'path'. """
     f_list = []
     def recur_dir(path, newpath = os.path.sep):
-        files = os.listdir(path) 
+        files = os.listdir(path)
         for fle in files:
             f_path = cpjoin(path, fle)
             if os.path.isdir(f_path): recur_dir(f_path, cpjoin(newpath, fle))
@@ -124,7 +115,7 @@ def find_manifest_changes(new_file_state, old_file_state):
     for itm in new_file_state:
         if itm['path'] in prev_state_dict:
             d_itm = prev_state_dict.pop(itm['path'])
-            
+
             # If the file has been modified
             if itm['last_mod'] != d_itm['last_mod']:
                 n_itm = itm.copy()
@@ -139,7 +130,7 @@ def find_manifest_changes(new_file_state, old_file_state):
             changed_files[itm['path']] = n_itm
 
     # any files remaining in the old file state have been deleted locally
-    for key, itm in prev_state_dict.iteritems():
+    for itm in prev_state_dict.itervalues():
         n_itm = itm.copy()
         n_itm['status'] = 'deleted'
         changed_files[itm['path']] = n_itm

@@ -4,6 +4,7 @@
 *.swo
 *.swn
 server.ini
+lint.txt
 
 shttpfs.egg-info
 build

@@ -1,8 +1,8 @@
 import os.path as p
-import os, shutil, json, errno, fcntl
+import os, shutil, json, errno
 from collections import deque
 
-from common import cpjoin, ignore, file_or_default, file_put_contents
+from shttpfs.common import cpjoin, ignore, file_or_default, file_put_contents
 
 ############################################################################################
 # Journaling file storage subsystem, only use one instance at any time, not thread safe
@@ -32,7 +32,7 @@ class storage(object):
         """ Create a new temp file allocation """
 
         self.tmp_idx += 1
-        return p.join(self.tmp_dir, 'tmp_' + str(self.tmp_idx)) 
+        return p.join(self.tmp_dir, 'tmp_' + str(self.tmp_idx))
 
 ############################################################################################
     def new_backup(self, src):
@@ -65,7 +65,7 @@ class storage(object):
 
         cmd = 0; src = 1; path = 1; data = 2; dst = 2
 
-        if journal == True:
+        if journal is True:
             self.journal.write(json.dumps(command['undo']) + "\n")
             self.journal.flush()
 
@@ -100,11 +100,11 @@ class storage(object):
             # As each item is completed remove it from the journal file, in case
             # something fails during the rollback we can pick up where it stopped.
             journ_subtract.popleft()
-            with open(self.j_file, 'w') as f: 
+            with open(self.j_file, 'w') as f:
                 for data in list(journ_subtract):
                     f.write(json.dumps(data) + "\n")
                 f.flush()
-            
+
         # Rollback is complete so delete the journal file
         os.remove(self.j_file)
 
@@ -118,9 +118,8 @@ class storage(object):
 
         for itm in os.listdir(self.tmp_dir): os.remove(cpjoin(self.tmp_dir, itm))
 
-        if(cont == True):
-            self.begin()
-            
+        if cont is True: self.begin()
+
 ############################################################################################
     def file_get_contents(self, path):
         """ Returns contents of file located at 'path', not changing FS so does
@@ -135,7 +134,7 @@ class storage(object):
         path = self.get_full_file_path(path)
 
         # if file exists, create a temp copy to allow rollback
-        if os.path.isfile(path):  
+        if os.path.isfile(path):
             tmp_path = self.new_tmp()
             self.do_action({
                 'do'   : ['copy', path, tmp_path],
@@ -152,9 +151,9 @@ class storage(object):
         src = self.get_full_file_path(src); dst = self.get_full_file_path(dst)
 
         # record where file moved
-        if os.path.isfile(src):  
+        if os.path.isfile(src):
             # if destination file exists, copy it to tmp first
-            if os.path.isfile(dst):  
+            if os.path.isfile(dst):
                 tmp_path = self.new_tmp()
                 self.do_action({
                     'do'   : ['copy', dst, tmp_path],
@@ -171,7 +170,7 @@ class storage(object):
         path = self.get_full_file_path(path)
 
         # if file exists, create a temp copy to allow rollback
-        if os.path.isfile(path):  
+        if os.path.isfile(path):
             tmp_path = self.new_tmp()
             self.do_action({
                 'do'   : ['move', path, tmp_path],
