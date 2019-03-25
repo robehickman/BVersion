@@ -4,28 +4,29 @@ import pysodium
 
 #=================================================
 from shttpfs.common import (cpjoin, get_file_list, find_manifest_changes, make_dirs_if_dont_exist,
-                            get_single_file_info, file_or_default, file_put_contents, ignore)
+                            get_single_file_info, file_or_default, file_put_contents, file_get_contents, ignore)
 from shttpfs.client_http_request import client_http_request
 from shttpfs.plain_storage import plain_storage
 import shttpfs.crypto as crypto
 
 #===============================================================================
 config = data_store = server_connection = None
-
+working_copy_base_path = os.getcwd() + '/'
 
 #===============================================================================
 def init(unlocked = False):
+    print working_copy_base_path
+
     global data_store, server_connection, config
-    working_copy_base_path = os.getcwd() + '/'
     try: config = json.loads(file_get_contents(cpjoin(working_copy_base_path, '.shttpfs', 'client_configuration.json')))
-    except: raise SystemExit('No shttpfs configuration found')
+    except IOError:    raise SystemExit('No shttpfs configuration found')
+    except ValueError: raise SystemExit('Configuration file syntax error')
 
     # Lock for sanity check, only one client can use the working copy at any time
     try:
         lockfile = open(cpjoin(working_copy_base_path, '.shttpfs', 'lock_file'), 'w')
         fcntl.flock(lockfile, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except IOError: raise SystemExit('Could not lock working copy')
-
 
     #-----------
     ignore_filters = file_or_default(cpjoin(working_copy_base_path, '.shttpfs_ignore'), '')
@@ -86,8 +87,6 @@ def find_local_changes():
 def update(session_token):
     """ Compare changes on the client to changes on the server and update local files
     which have changed on the server. """
-
-    working_copy_base_path = os.getcwd() + '/'
 
     conflict_comparison_file_dest = cpjoin(config['data_dir'], '.shttpfs', 'conflict_files')
     conflict_resolution_path = cpjoin(config['data_dir'], '.shttpfs', 'conflict_resolution.json')
@@ -252,7 +251,7 @@ def commit(session_token, commit_message = ''):
     headers = server_connection.request("begin_commit", {
         "session_token"     : session_token,
         'repository'        : config['repository'],
-        "previous_revision" : manifest['have_revision']}, {})[1] # Only care about headers
+        "previous_revision" : manifest['have_revision']})[1] # Only care about headers
 
     if headers['status'] != 'ok': raise SystemExit(headers['msg'])
 
@@ -315,7 +314,7 @@ def commit(session_token, commit_message = ''):
                 manifest['files'][change['path']] = get_single_file_info(cpjoin(config['data_dir'], change['path']), change['path'])
 
         data_store.write_local_manifest(manifest)
-        data_store.commit()
+        return data_store.commit()
 
 
 #===============================================================================
