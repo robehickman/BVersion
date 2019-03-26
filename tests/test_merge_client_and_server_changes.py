@@ -15,7 +15,7 @@ class TestMerge(TestCase):
         sdel  = 'to_delete_on_server'
         cflt  = 'conflict_files'
 
-        #   server            client           should be occupied, everything else should be empty
+        #        server            client           should be occupied, everything else should be empty
         tests = [(item('new'),     {},              cpull),
                  (item('changed'), {},              cpull),
                  (item('deleted'), {},              cdel),

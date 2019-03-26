@@ -15,8 +15,6 @@ working_copy_base_path = os.getcwd() + '/'
 
 #===============================================================================
 def init(unlocked = False):
-    print working_copy_base_path
-
     global data_store, server_connection, config
     try: config = json.loads(file_get_contents(cpjoin(working_copy_base_path, '.shttpfs', 'client_configuration.json')))
     except IOError:    raise SystemExit('No shttpfs configuration found')
@@ -84,7 +82,7 @@ def find_local_changes():
 
 
 #===============================================================================
-def update(session_token):
+def update(session_token, testing = False):
     """ Compare changes on the client to changes on the server and update local files
     which have changed on the server. """
 
@@ -184,10 +182,12 @@ def update(session_token):
         #===============
         if server_versions != []:
             choice = None
-            while True:
-                print 'Download server versions for comparison? (Y/N)'
-                choice = raw_input()
-                if choice.lower() in ['y', 'n']: break
+            if not testing:
+                while True:
+                    print 'Download server versions for comparison? (Y/N)'
+                    choice = raw_input()
+                    if choice.lower() in ['y', 'n']: break
+            else: choice = 'y'
 
             errors = []
             if choice == 'y':
@@ -298,6 +298,7 @@ def commit(session_token, commit_message = ''):
     if mode == 'abort':
         print 'Something went wrong, errors:'
         pprint(errors)
+        return None
 
     elif headers['status'] == 'ok':
         print 'Commit ok'
@@ -314,7 +315,31 @@ def commit(session_token, commit_message = ''):
                 manifest['files'][change['path']] = get_single_file_info(cpjoin(config['data_dir'], change['path']), change['path'])
 
         data_store.write_local_manifest(manifest)
-        return data_store.commit()
+        data_store.commit()
+        return headers['head']
+
+#===============================================================================
+def get_versions(session_token):
+    req_result, headers = server_connection.request("list_versions", {
+        'session_token' : session_token,
+        'repository'    : config['repository']})
+    return req_result, headers
+
+#===============================================================================
+def get_changes_in_version(session_token, version_id):
+    req_result, headers = server_connection.request("list_changes", {
+        'session_token' : session_token,
+        'repository'    : config['repository'],
+        'version_id'    : version_id })
+    return req_result, headers
+
+#===============================================================================
+def get_files_in_version(session_token, version_id):
+    req_result, headers = server_connection.request("list_files", {
+        'session_token' : session_token,
+        'repository'    : config['repository'],
+        'version_id'    : version_id})
+    return req_result, headers
 
 
 #===============================================================================
@@ -425,9 +450,7 @@ def run():
     #----------------------------
     elif args [0] == 'list_versions':
         init(); session_token = authenticate()
-        req_result, headers = server_connection.request("list_versions", {
-            'session_token' : session_token,
-            'repository'    : config['repository']})
+        req_result, headers = get_versions(session_token)
 
         if headers['status'] == 'ok':
             for vers in reversed(json.loads(req_result)['versions']):
@@ -441,12 +464,7 @@ def run():
     elif args [0] == 'list_changes':
         init(); session_token = authenticate()
         version_id = get_if_set_or_quit(args, 1, 'Please specify a version id')
-
-        req_result, headers = server_connection.request("list_changes", {
-            'session_token' : session_token,
-            'repository'    : config['repository'],
-            'version_id'    : version_id
-            })
+        req_result, headers = get_changes_in_version(session_token, version_id)
 
         if headers['status'] == 'ok':
             for change in json.loads(req_result)['changes']:
@@ -456,11 +474,7 @@ def run():
     elif args [0] == 'list_files':
         init(); session_token = authenticate()
         version_id = get_if_set_or_quit(args, 1, 'Please specify a version id')
-
-        req_result, headers = server_connection.request("list_files", {
-            'session_token' : session_token,
-            'repository'    : config['repository'],
-            'version_id'    : version_id})
+        req_result, headers = get_files_in_version(session_token, version_id)
 
         if headers['status'] == 'ok':
             for fle in json.loads(req_result)['files']:

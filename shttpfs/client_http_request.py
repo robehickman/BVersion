@@ -46,12 +46,12 @@ class client_http_request(object):
             return writer, dict(res.getheaders())
 
 ############################################################################################
-    def send_file(self, url, headers, fle):
-        size = os.stat(fle).st_size
+    def send_file(self, url, headers, file_path):
+        size = os.stat(file_path).st_size
 
         conn = self.begin(url, size, headers, content_type = 'application/octet-stream')
 
-        with open(fle, 'rb') as f:
+        with open(file_path, 'rb') as f:
             while True:
                 chunk = f.read(1000 * 1000)
                 if chunk == b'': break

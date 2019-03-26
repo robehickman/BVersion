@@ -1,14 +1,17 @@
+# -*- coding: utf-8 -*-
 #from helpers import *
-import shutil, os, json
+import shutil, os, json, struct, hashlib
 from unittest import TestCase
 from shttpfs.common import cpjoin, file_get_contents, file_put_contents, make_dirs_if_dont_exist
 
+from helpers import *
 import shttpfs.client as client
 import shttpfs.server as server
 
 DATA_DIR           = os.path.dirname(__file__) + '/filesystem_tests/'
 private_key = "bkUg07WLoxKcsWaupuVIyyMrVyWMdX8q8Zvta+wwKi6kmF7pCyklcIoNAOkfo1YR7O/Fb/Z0bJJ1j/lATtkKQ6c="
 public_key  = "mF7pCyklcIoNAOkfo1YR7O/Fb/Z0bJJ1j/lATtkKQ6c="
+repo_name   = 'test_repo'
 
 ############################################################################################
 def setup():
@@ -18,7 +21,7 @@ def setup():
         file_put_contents(DATA_DIR +  name + '/.shttpfs/client_configuration.json', json.dumps({
             "server_domain"  : "none",
             "user"           : "test",
-            "repository"     : "test",
+            "repository"     : repo_name,
             "private_key"    : private_key}))
 
     make_client('client1')
@@ -34,14 +37,14 @@ def setup_client(name):
     # requests directly to server code
     server.config = {
         "repositories" : {
-            "test" : {
+            repo_name : {
                 "path" : DATA_DIR + 'server'
             }
         },
         "users" : {
             "test" : {
                 "public_key" : public_key,
-                "uses_repositories" : ["test"]
+                "uses_repositories" : [repo_name]
             }
         }
     }
@@ -50,75 +53,186 @@ def setup_client(name):
     server_app = server.app.test_client()
 
     class test_connection(object):
-        def request(self, url, headers):
-            res = server_app.post(url, headers=headers, json={})
-            return res.get_json(), dict(res.headers)
+        def request(self, url, headers, data = None, gen=False):
+            if data is None: data = {}
+            res = server_app.post(url, headers=headers, json=data)
+            if gen:
+                def writer(path):
+                    with open(path, 'wb') as f:
+                        f.write(res.get_data())
+                return writer, dict(res.headers)
 
-        def send_file(self, url, headers, fle):
-            res = server_app.post(url, headers=headers, data='test', content_type = 'application/octet-stream')
-            return res.get_json(), dict(res.headers)
+            else:
+                return res.get_data(), dict(res.headers)
+
+        def send_file(self, url, headers, file_path):
+            res = server_app.post(url, headers=headers, data=file_get_contents(file_path), content_type = 'application/octet-stream')
+            return res.get_data(), dict(res.headers)
 
     client.server_connection = test_connection()
 
 
+def get_server_file_name(content):
+    object_hash = hashlib.sha256(content).hexdigest()
+    return object_hash[:2] + '/' + object_hash[2:]
+
 class TestSystem(TestCase):
 ############################################################################################
     def test_system(self):
+        test_content_1   = 'test file jhgrtelkj'
+        test_content_2   = b''.join([struct.pack('B', i) for i in range(256)]) # binary string with all byte values
+        test_content_2_2 = test_content_2[::-1]
+        test_content_3   = 'test content 3 sdavcxreiltlj'
+        test_content_4   = 'test content 4 fsdwqtruytuyt'
+        test_content_5   = 'test content 5 .,myuitouys'
+
+        #=========
         setup()
         setup_client('client1')
-        cpath = client.working_copy_base_path
 
         #==================================================
         # test_initial commit
         #==================================================
-        test_content = 'test file'
-        file_put_contents(cpath + '/test', test_content)
+        file_put_contents(DATA_DIR +  'client1/test1',        test_content_1)
+        file_put_contents(DATA_DIR +  'client1/test2',        test_content_2) # test with a binary blob
+        #file_put_contents(DATA_DIR + u'client1/GȞƇØzǠ☸k😒♭',  test_content_2) # test unicode file name
 
         # commit the files
         session_token = client.authenticate()
         version_id = client.commit(session_token, 'test commit')
-        print version_id #TODO this should be vers id not none
+        self.assertNotEqual(version_id, None)
+
+        # commit message should be in log
+        req_result, headers = client.get_versions(session_token)
+        self.assertEqual('test commit', json.loads(req_result)['versions'][0]['commit_message'])
 
         # file should show up in list_changes
-        req_result, headers = client.server_connection.request("list_files", {
-            'session_token' : session_token,
-            'repository'    : 'test',
-            'version_id'    : version_id })
-
-        print 'should contain the new file'
-        print req_result
+        req_result, headers = client.get_files_in_version(session_token, version_id)
+        self.assertTrue('/test1' in json.loads(req_result)['files'])
+        self.assertTrue('/test2' in json.loads(req_result)['files'])
 
         # file should exist in server fs
-        self.assertEqual(test_content, file_get_contents(DATA_DIR + 'server/files/9f/86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08'))
+        self.assertEqual(test_content_1, file_get_contents(DATA_DIR + 'server/files/' + get_server_file_name(test_content_1)))
+        self.assertEqual(test_content_2, file_get_contents(DATA_DIR + 'server/files/' + get_server_file_name(test_content_2)))
 
         #==================================================
         # test update
         #==================================================
         setup_client('client2')
-        cpath = client.working_copy_base_path
-        client.update()
-
-        # TODO test item shows up
+        session_token = client.authenticate()
+        client.update(session_token)
+        self.assertEqual(test_content_1, file_get_contents(DATA_DIR + 'client2/test1'))
+        self.assertEqual(test_content_2, file_get_contents(DATA_DIR + 'client2/test2'))
 
         #==================================================
         # test delete and add
         #==================================================
-        # TODO
-        # delete a file in second repo
-        # add a file to second repo
-        # commit
+        os.unlink(DATA_DIR + 'client2/test1')
+        file_put_contents(DATA_DIR + 'client2/test2', test_content_2_2) # test changing an existing file
+        file_put_contents(DATA_DIR + 'client2/test3', test_content_3)
+        file_put_contents(DATA_DIR + 'client2/test4', test_content_4)
+
+        setup_client('client2')
+        session_token = client.authenticate()
+        version_id = client.commit(session_token, 'create and delete some files')
+
+        # check change is reflected correctly in the commit log
+        req_result, headers = client.get_changes_in_version(session_token, version_id)
+        res_index = { v['path'] : v for v in json.loads(req_result)['changes']}
+        self.assertEqual('deleted', res_index['/test1']['status'])
+        self.assertEqual('new'    , res_index['/test2']['status'])
+        self.assertEqual('new'    , res_index['/test3']['status'])
+        self.assertEqual('new'    , res_index['/test4']['status'])
+
         # update first repo, file should be deleted and new file added
+        setup_client('client1')
+        session_token = client.authenticate()
+        client.update(session_token)
+
+        # Verify changes are reflected in FS
+        self.assertFalse(os.path.isfile(DATA_DIR + 'client1/test1'))
+        self.assertEqual(test_content_2_2, file_get_contents(DATA_DIR + 'client1/test2'))
+        self.assertEqual(test_content_3,   file_get_contents(DATA_DIR + 'client1/test3'))
+        self.assertEqual(test_content_4,   file_get_contents(DATA_DIR + 'client1/test4'))
 
         #==================================================
-        # test conflict resolution
+        # setup for next test
         #==================================================
-        # TODO
-        # make the same change on two clients
-        # commit both
-        # second to commit should error 
+        file_put_contents(DATA_DIR +  'client1/test1',        test_content_1)
+        setup_client('client1')
+        client.commit(client.authenticate(), 'test setup')
+
+        setup_client('client2')
+        client.update(client.authenticate())
+
+        #==================================================
+        # test conflict resolution, both to the server
+        # and client version
+        #==================================================
+        # Delete resolution
+        file_put_contents(DATA_DIR + 'client1/test1', test_content_5 + '11')
+        os.unlink(        DATA_DIR + 'client2/test1')
+
+        file_put_contents(DATA_DIR + 'client1/test2', test_content_5 + '00')
+        os.unlink(        DATA_DIR + 'client2/test2')
+
+        # Double change resolution
+        file_put_contents(DATA_DIR + 'client1/test3', test_content_5 + 'aa')
+        file_put_contents(DATA_DIR + 'client2/test3', test_content_5 + 'bb')
+
+        file_put_contents(DATA_DIR + 'client1/test4', test_content_5 + 'cc')
+        file_put_contents(DATA_DIR + 'client2/test4', test_content_5 + 'dd')
+
+
+        # commit both clients second to commit should error
+        setup_client('client1')
+        session_token = client.authenticate()
+        version_id = client.commit(session_token, 'initial commit for conflict test')
+
+        setup_client('client2')
+        session_token = client.authenticate()
+        try:
+            version_id = client.commit(session_token, 'this should conflict')
+            self.fail()
+        except SystemExit: pass
+
+        # Update should begin conflict resolution process 
+        try:
+            client.update(session_token, testing=True)
+            self.fail()
+        except SystemExit: pass
+
+        # test server versions of conflict files downloaded correctly
+        self.assertEqual(file_get_contents(DATA_DIR + 'client1/test2'), test_content_5 + '00')
+        self.assertEqual(file_get_contents(DATA_DIR + 'client1/test3'), test_content_5 + 'aa')
+        self.assertEqual(file_get_contents(DATA_DIR + 'client1/test4'), test_content_5 + 'cc')
+
+
         #test resolving it
+        path = DATA_DIR + 'client2/.shttpfs/conflict_resolution.json'
+        resolve = json.loads(file_get_contents(path))
+        resolve_index = {v['1_path'] : v for v in resolve}
+        resolve_index['/test1']['4_resolution'] = ['client']
+        resolve_index['/test2']['4_resolution'] = ['server']
+        resolve_index['/test3']['4_resolution'] = ['client']
+        resolve_index['/test4']['4_resolution'] = ['server'] # TODO seems to be a bug where this dosn't appear in file
+        file_put_contents(path, json.dumps([v for v in resolve_index.values()]))
 
+        # perform update and test resolve as expected
+        client.update(session_token)
+        self.assertEqual(test_content_5 + '11', file_get_contents(DATA_DIR + 'client2/test1'))
+        self.assertFalse(                          os.path.isfile(DATA_DIR + 'client2/test2'))
+        self.assertEqual(test_content_5 + 'bb', file_get_contents(DATA_DIR + 'client2/test3'))
+        self.assertEqual(test_content_5 + 'cc', file_get_contents(DATA_DIR + 'client2/test4'))
+
+        # This should now commit
+        version_id = client.commit(session_token, 'this should be ok')
+        self.assertNotEqual(None, version_id)
+
+        req_result, headers = client.get_changes_in_version(session_token, version_id)
+        res_index = { v['path'] : v for v in json.loads(req_result)['changes']}
+        self.assertEqual('new', res_index['/test3']['status'])
 
         #==================================================
-        # TODO clean up test files
+        delete_data_dir()
 
