@@ -159,6 +159,8 @@ class TestSystem(TestCase):
         # setup for next test
         #==================================================
         file_put_contents(DATA_DIR +  'client1/test1',        test_content_1)
+        file_put_contents(DATA_DIR +  'client1/test5',        test_content_1)
+        file_put_contents(DATA_DIR +  'client1/test6',        test_content_1)
         setup_client('client1')
         client.commit(client.authenticate(), 'test setup')
 
@@ -169,12 +171,19 @@ class TestSystem(TestCase):
         # test conflict resolution, both to the server
         # and client version
         #==================================================
-        # Delete resolution
+        # Delete on client, change on server resolution
         file_put_contents(DATA_DIR + 'client1/test1', test_content_5 + '11')
         os.unlink(        DATA_DIR + 'client2/test1')
 
         file_put_contents(DATA_DIR + 'client1/test2', test_content_5 + '00')
         os.unlink(        DATA_DIR + 'client2/test2')
+
+        # Delete on server, change on client resolution
+        os.unlink(        DATA_DIR + 'client1/test5')
+        file_put_contents(DATA_DIR + 'client2/test5', test_content_5 + 'ee')
+
+        os.unlink(        DATA_DIR + 'client1/test6')
+        file_put_contents(DATA_DIR + 'client2/test6', test_content_5 + 'ff')
 
         # Double change resolution
         file_put_contents(DATA_DIR + 'client1/test3', test_content_5 + 'aa')
@@ -203,10 +212,11 @@ class TestSystem(TestCase):
         except SystemExit: pass
 
         # test server versions of conflict files downloaded correctly
+        self.assertEqual(file_get_contents(DATA_DIR + 'client1/test1'), test_content_5 + '11')
         self.assertEqual(file_get_contents(DATA_DIR + 'client1/test2'), test_content_5 + '00')
         self.assertEqual(file_get_contents(DATA_DIR + 'client1/test3'), test_content_5 + 'aa')
         self.assertEqual(file_get_contents(DATA_DIR + 'client1/test4'), test_content_5 + 'cc')
-
+        # NOTE nothing to download in delete on server case
 
         #test resolving it
         path = DATA_DIR + 'client2/.shttpfs/conflict_resolution.json'
@@ -215,13 +225,15 @@ class TestSystem(TestCase):
         resolve_index['/test1']['4_resolution'] = ['client']
         resolve_index['/test2']['4_resolution'] = ['server']
         resolve_index['/test3']['4_resolution'] = ['client']
-        resolve_index['/test4']['4_resolution'] = ['server'] # TODO seems to be a bug where this dosn't appear in file
+        resolve_index['/test4']['4_resolution'] = ['server']
+        resolve_index['/test5']['4_resolution'] = ['client']
+        resolve_index['/test6']['4_resolution'] = ['server']
         file_put_contents(path, json.dumps([v for v in resolve_index.values()]))
 
         # perform update and test resolve as expected
         client.update(session_token)
-        self.assertEqual(test_content_5 + '11', file_get_contents(DATA_DIR + 'client2/test1'))
-        self.assertFalse(                          os.path.isfile(DATA_DIR + 'client2/test2'))
+        self.assertFalse(                          os.path.isfile(DATA_DIR + 'client2/test1'))
+        self.assertEqual(test_content_5 + '00', file_get_contents(DATA_DIR + 'client2/test2'))
         self.assertEqual(test_content_5 + 'bb', file_get_contents(DATA_DIR + 'client2/test3'))
         self.assertEqual(test_content_5 + 'cc', file_get_contents(DATA_DIR + 'client2/test4'))
 

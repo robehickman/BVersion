@@ -111,7 +111,6 @@ def update(session_token, testing = False):
     result = json.loads(req_result)
     changes = result['sorted_changes']
 
-
     # Are there any changes?
     if all(v == [] for k,v in changes.iteritems()):
         print 'Nothing to update'
