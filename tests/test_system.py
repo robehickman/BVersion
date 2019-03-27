@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #from helpers import *
-import shutil, os, json, struct, hashlib
+import shutil, os, json, struct, hashlib, time
 from unittest import TestCase
 from shttpfs.common import cpjoin, file_get_contents, file_put_contents, make_dirs_if_dont_exist
 
@@ -115,6 +115,10 @@ class TestSystem(TestCase):
         self.assertEqual(test_content_1, file_get_contents(DATA_DIR + 'server/files/' + get_server_file_name(test_content_1)))
         self.assertEqual(test_content_2, file_get_contents(DATA_DIR + 'server/files/' + get_server_file_name(test_content_2)))
 
+        # NOTE As change detection is done using access timestamps, need a
+        # delay between tests to make sure changes are detected correctly
+        time.sleep(0.5)
+
         #==================================================
         # test update
         #==================================================
@@ -123,6 +127,8 @@ class TestSystem(TestCase):
         client.update(session_token)
         self.assertEqual(test_content_1, file_get_contents(DATA_DIR + 'client2/test1'))
         self.assertEqual(test_content_2, file_get_contents(DATA_DIR + 'client2/test2'))
+
+        time.sleep(0.5) # See above
 
         #==================================================
         # test delete and add
@@ -155,17 +161,22 @@ class TestSystem(TestCase):
         self.assertEqual(test_content_3,   file_get_contents(DATA_DIR + 'client1/test3'))
         self.assertEqual(test_content_4,   file_get_contents(DATA_DIR + 'client1/test4'))
 
+        time.sleep(0.5) # See above
+
         #==================================================
         # setup for next test
         #==================================================
         file_put_contents(DATA_DIR +  'client1/test1',        test_content_1)
         file_put_contents(DATA_DIR +  'client1/test5',        test_content_1)
         file_put_contents(DATA_DIR +  'client1/test6',        test_content_1)
+
         setup_client('client1')
         client.commit(client.authenticate(), 'test setup')
 
         setup_client('client2')
         client.update(client.authenticate())
+
+        time.sleep(0.5) # See above
 
         #==================================================
         # test conflict resolution, both to the server
@@ -180,10 +191,10 @@ class TestSystem(TestCase):
 
         # Delete on server, change on client resolution
         os.unlink(        DATA_DIR + 'client1/test5')
-        file_put_contents(DATA_DIR + 'client2/test5', test_content_5 + 'ee')
+        file_put_contents(DATA_DIR + 'client2/test5', test_content_5 + 'ff')
 
         os.unlink(        DATA_DIR + 'client1/test6')
-        file_put_contents(DATA_DIR + 'client2/test6', test_content_5 + 'ff')
+        file_put_contents(DATA_DIR + 'client2/test6', test_content_5 + 'gg')
 
         # Double change resolution
         file_put_contents(DATA_DIR + 'client1/test3', test_content_5 + 'aa')
@@ -222,13 +233,16 @@ class TestSystem(TestCase):
         path = DATA_DIR + 'client2/.shttpfs/conflict_resolution.json'
         resolve = json.loads(file_get_contents(path))
         resolve_index = {v['1_path'] : v for v in resolve}
+
         resolve_index['/test1']['4_resolution'] = ['client']
         resolve_index['/test2']['4_resolution'] = ['server']
         resolve_index['/test3']['4_resolution'] = ['client']
         resolve_index['/test4']['4_resolution'] = ['server']
         resolve_index['/test5']['4_resolution'] = ['client']
         resolve_index['/test6']['4_resolution'] = ['server']
+
         file_put_contents(path, json.dumps([v for v in resolve_index.values()]))
+
 
         # perform update and test resolve as expected
         client.update(session_token)
@@ -236,6 +250,8 @@ class TestSystem(TestCase):
         self.assertEqual(test_content_5 + '00', file_get_contents(DATA_DIR + 'client2/test2'))
         self.assertEqual(test_content_5 + 'bb', file_get_contents(DATA_DIR + 'client2/test3'))
         self.assertEqual(test_content_5 + 'cc', file_get_contents(DATA_DIR + 'client2/test4'))
+        self.assertEqual(test_content_5 + 'ff', file_get_contents(DATA_DIR + 'client2/test5'))
+        self.assertFalse(                          os.path.isfile(DATA_DIR + 'client2/test6'))
 
         # This should now commit
         version_id = client.commit(session_token, 'this should be ok')
@@ -243,7 +259,13 @@ class TestSystem(TestCase):
 
         req_result, headers = client.get_changes_in_version(session_token, version_id)
         res_index = { v['path'] : v for v in json.loads(req_result)['changes']}
+
+        self.assertEqual('deleted', res_index['/test1']['status'])
+        self.assertTrue('/test2' not in res_index)
         self.assertEqual('new', res_index['/test3']['status'])
+        self.assertTrue('/test4' not in res_index)
+        self.assertEqual('new', res_index['/test5']['status'])
+        self.assertTrue('/test6' not in res_index)
 
         #==================================================
         delete_data_dir()

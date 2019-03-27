@@ -294,7 +294,6 @@ def find_changed():
     head = data_store.get_head()
     if head == 'root': return success({}, {'head' : 'root', 'sorted_changes' : {'none' : []}})
 
-
     # Find changed items
     client_changes = json.loads(body_data['client_changes'])
     server_changes = data_store.get_changes_since(request.headers["previous_revision"], head)
