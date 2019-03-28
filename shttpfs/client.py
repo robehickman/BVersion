@@ -1,5 +1,5 @@
 from pprint import pprint
-import os, sys, time, json, base64, fnmatch, shutil, re, fcntl, errno
+import os, sys, time, json, base64, fnmatch, shutil, re, fcntl, errno, urlparse
 import pysodium
 
 #=================================================
@@ -379,11 +379,13 @@ def run():
 
     #----------------------------
     elif args [0] == 'checkout':
-        server_domain = get_if_set_or_quit(args, 1, 'URL is missing')
-        result = re.match(r"^((http:\/\/|https:\/\/)[a-zA-Z0-9]+(:[0-9]+|\/)\/)(.+)$", server_domain) # TODO not very reliable
-        if result is None: raise SystemExit("Invalid URL, usage: http(s)//:domain:optional port/[repo name]")
-        server_domain = result.groups()[0]; repository_name   = result.groups()[-1]
-        if '/' in repository_name: raise SystemExit("Repository names cannot contain '/'")
+        plain_input = get_if_set_or_quit(args, 1, 'URL is missing')
+
+        result = urlparse.urlparse(plain_input) 
+        repository_name = list(filter(None, result.path.split('/')))
+        server_domain = result.scheme + '://' + result.netloc
+        if result.scheme not in ['http', 'https'] or result.netloc == '' or len(repository_name) != 1:
+            raise SystemExit ("Invalid URL, usage: http(s)//:domain:optional port/[repository name]. Repository names cannot contain '/'.")
 
         # get user
         print 'Please enter the user name for this repository, then press enter.'
@@ -397,7 +399,7 @@ def run():
 
         #---------------
         config = {"server_domain" : server_domain,
-                  "repository"    : repository_name,
+                  "repository"    : repository_name[0],
                   "user"          : "test",
                   "private_key"   : private_key}
 
