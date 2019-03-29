@@ -1,5 +1,5 @@
 from pprint import pprint
-import os, sys, time, json, base64, fnmatch, shutil, re, fcntl, errno, urlparse
+import os, sys, time, json, base64, fnmatch, shutil, fcntl, errno, urlparse
 import pysodium
 
 #=================================================
@@ -89,7 +89,9 @@ def update(session_token, testing = False):
     conflict_comparison_file_dest = cpjoin(config['data_dir'], '.shttpfs', 'conflict_files')
     conflict_resolution_path = cpjoin(config['data_dir'], '.shttpfs', 'conflict_resolution.json')
     conflict_resolutions = file_or_default(conflict_resolution_path, [], json.loads)
-    if not all(len(c['4_resolution']) == 1 for c in conflict_resolutions): conflict_resolution = [] # TODO unused var
+
+    # Make sure that all conflicts have been resolved, reject if not
+    if not all(len(c['4_resolution']) == 1 for c in conflict_resolutions): conflict_resolutions = []
 
     # Send the changes and the revision of the most recent update to the server to find changes
     manifest, client_changes = find_local_changes()
@@ -381,8 +383,8 @@ def run():
     elif args [0] == 'checkout':
         plain_input = get_if_set_or_quit(args, 1, 'URL is missing')
 
-        result = urlparse.urlparse(plain_input) 
-        repository_name = list(filter(None, result.path.split('/')))
+        result = urlparse.urlparse(plain_input)
+        repository_name = [f for f in result.path.split('/') if f != ""]
         server_domain = result.scheme + '://' + result.netloc
         if result.scheme not in ['http', 'https'] or result.netloc == '' or len(repository_name) != 1:
             raise SystemExit ("Invalid URL, usage: http(s)//:domain:optional port/[repository name]. Repository names cannot contain '/'.")

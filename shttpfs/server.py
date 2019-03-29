@@ -1,5 +1,5 @@
 import sqlite3 as db
-import sys, fcntl, os.path, json, time, base64, re, pysodium
+import fcntl, os, json, time, base64, re, pysodium
 from flask import Flask, request, send_from_directory, make_response
 
 #====
@@ -11,11 +11,7 @@ app = Flask(__name__)
 app.debug = True
 
 #===============================================================================
-#conf_path = '/etc/shttpfs/server.json'
-#if len(sys.argv) > 1 and sys.argv[1] == '-c':
-#    conf_path = sys.argv[2]
-#
-#config = json.loads(file_get_contents(conf_path))
+# NOTE to use this must be replaced with a valid configuration, see 'shttpfs_server'
 config = {}
 
 #===============================================================================

@@ -1,6 +1,15 @@
 #!/usr/bin/env python
-from shttpfs.server import app
+import sys, json
+import shttpfs.server as server
+from   shttpfs.common import file_get_contents
 
+#===============================================================================
+conf_path = '/etc/shttpfs/server.json'
+if len(sys.argv) > 1 and sys.argv[1] == '-c':
+    conf_path = sys.argv[2]
+server.config = json.loads(file_get_contents(conf_path))
+
+#===============================================================================
 if __name__ == "__main__":
-    app.run('0.0.0.0', port=8090)
+    server.app.run('0.0.0.0', port=8090)
 

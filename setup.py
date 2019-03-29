@@ -26,7 +26,7 @@ setup(
     install_requires=[
         'Flask==1.0.2',
         'pysodium==0.7.0.post0',
-        'termcolor==1.1.0',
+        'termcolor==1.1.0'
     ],
     scripts=['cli_tools/shttpfs', 'cli_tools/shttpfs_server'],
     zip_safe=False)

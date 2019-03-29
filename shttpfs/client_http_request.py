@@ -1,10 +1,13 @@
-import httplib, os, json
+import httplib, os, json, urlparse
 
 class client_http_request(object):
 ############################################################################################
     def __init__(self, server_base_url):
         "Configure the servers base URL"
-        self.server_base_url = server_base_url
+
+        res = urlparse.urlparse(server_base_url)
+        self.scheme          = res.scheme.lower()
+        self.server_base_url = res.netloc
 
 ############################################################################################
     def begin(self, url, body_length, add_headers, content_type):
@@ -19,7 +22,10 @@ class client_http_request(object):
         for k, v in add_headers.iteritems(): headers[k] = v
 
         # ==
-        conn = httplib.HTTPConnection(self.server_base_url)
+        if   self.scheme == 'http':  conn = httplib.HTTPConnection (self.server_base_url)
+        elif self.scheme == 'https': conn = httplib.HTTPSConnection(self.server_base_url) # pylint: disable=redefined-variable-type
+        else: raise SystemExit('unknown protocol: ' + self.scheme)
+
         conn.putrequest('POST', '/' + url)
         for k, v in headers.iteritems(): conn.putheader(k, v)
         conn.endheaders()

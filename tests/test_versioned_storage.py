@@ -1,8 +1,9 @@
-from helpers import *
+import os
 from unittest import TestCase
-from shttpfs.versioned_storage import *
-from shttpfs.common import *
-from pprint import pprint
+
+from tests.helpers import DATA_DIR, make_data_dir, delete_data_dir
+from shttpfs.common import cpjoin, file_put_contents
+from shttpfs.versioned_storage import versioned_storage
 
 CONF_DIR   = 'shttpfs'
 BACKUP_DIR = 'back'
@@ -35,7 +36,7 @@ class TestVersionedStorage(TestCase):
         data_store.begin()
         data_store.fs_put_from_file(cpjoin(DATA_DIR, 'test 2'), {'path' : '/another/path'})
         data_store.fs_put_from_file(cpjoin(DATA_DIR, 'test 3'), {'path' : '/yet/another/path'})
-        id2 = data_store.commit('test msg', 'test user')
+        data_store.commit('test msg', 'test user')
 
         changes = data_store.get_changes_since(id1, data_store.get_head())
 
@@ -60,12 +61,12 @@ class TestVersionedStorage(TestCase):
         data_store = versioned_storage(DATA_DIR)
         data_store.begin()
         data_store.fs_put_from_file(cpjoin(DATA_DIR, 'test 1'), {'path' : '/test/path'})
-        id1 = data_store.commit('test msg', 'test user')
+        data_store.commit('test msg', 'test user')
 
         data_store.begin()
         data_store.fs_put_from_file(cpjoin(DATA_DIR, 'test 2'), {'path' : '/another/path'})
         data_store.fs_put_from_file(cpjoin(DATA_DIR, 'test 3'), {'path' : '/yet/another/path'})
-        id2 = data_store.rollback()
+        data_store.rollback()
 
         self.assertEqual(os.listdir(cpjoin(DATA_DIR, 'files')), ['9f'])
         self.assertEqual(os.listdir(cpjoin(DATA_DIR, 'files', '9f')), ['86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08'])

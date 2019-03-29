@@ -1,7 +1,8 @@
-from helpers import *
-from shttpfs.common import *
-from unittest import TestCase
 import subprocess
+from unittest import TestCase
+
+from tests.helpers import DATA_DIR, make_data_dir, delete_data_dir
+from shttpfs.common import cpjoin, file_put_contents, hash_file, find_manifest_changes
 
 def get_state(path, last_mod):
     return {'path'     : path, 'last_mod' : last_mod}
@@ -20,8 +21,7 @@ class TestCommon(TestCase):
         result1= p1.communicate()[0].split(' ')[0]
         result2 = hash_file(file_path)
 
-        self.assertEqual(result1, result2,
-            msg = 'Hashes are not the same')
+        self.assertEqual(result1, result2, msg = 'Hashes are not the same')
 
         delete_data_dir()
 

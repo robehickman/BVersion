@@ -1,7 +1,10 @@
-from helpers import *
+import os
 from unittest import TestCase
-from shttpfs.storage import *
+from tests.helpers import DATA_DIR, make_data_dir, delete_data_dir
 from shttpfs.common import cpjoin
+
+from shttpfs.storage import storage
+
 
 CONF_DIR   = 'shttpfs'
 BACKUP_DIR = 'back'
@@ -21,10 +24,10 @@ class TestStorage(TestCase):
         s.rollback()
 
         self.assertFalse( os.path.isfile(cpjoin(DATA_DIR, 'hello')),
-            msg = 'File "hello" still exists, put rollback failed')  
+                          msg = 'File "hello" still exists, put rollback failed')
 
         self.assertTrue( os.path.isfile(cpjoin(DATA_DIR, CONF_DIR, BACKUP_DIR, '1_hello')),
-            msg = 'Backup file "1_hello" does not exist, put rollback failed')  
+                         msg = 'Backup file "1_hello" does not exist, put rollback failed')
 
         delete_data_dir()
 
@@ -43,7 +46,7 @@ class TestStorage(TestCase):
         s.rollback()
 
         self.assertFalse( os.path.isfile(cpjoin(DATA_DIR, 'hello2')),
-            msg = 'File "hello2" still exists, move rollback failed')  
+                          msg = 'File "hello2" still exists, move rollback failed')
 
         delete_data_dir()
 
@@ -63,10 +66,10 @@ class TestStorage(TestCase):
         s.rollback()
 
         self.assertTrue( os.path.isfile(cpjoin(DATA_DIR, 'hello')),
-            msg = 'File "hello" does not exist, move overwrite rollback failed') 
+                         msg = 'File "hello" does not exist, move overwrite rollback failed')
 
         self.assertTrue( os.path.isfile(cpjoin(DATA_DIR, 'hello2')),
-            msg = 'File "hello2" does not exist, move overwrite rollback failed')  
+                         msg = 'File "hello2" does not exist, move overwrite rollback failed')
 
         delete_data_dir()
 
@@ -85,7 +88,7 @@ class TestStorage(TestCase):
         s.rollback()
 
         self.assertTrue( os.path.isfile(cpjoin(DATA_DIR, 'hello')),
-            msg = 'error, file "hello" does not exist, delete rollback failed')  
+                         msg = 'error, file "hello" does not exist, delete rollback failed')
 
         delete_data_dir()
 
@@ -109,22 +112,22 @@ class TestStorage(TestCase):
         s.rollback()
 
         self.assertTrue( os.path.isfile(cpjoin(DATA_DIR, 'hello')),
-            msg = 'File "hello" does not exist, multiple rollback failed')  
+                         msg = 'File "hello" does not exist, multiple rollback failed')
 
         self.assertFalse( os.path.isfile(cpjoin(DATA_DIR, 'hello3')),
-            msg = 'File "hello3" still exists, multiple rollback failed')  
+                          msg = 'File "hello3" still exists, multiple rollback failed')
 
         self.assertFalse( os.path.isfile(cpjoin(DATA_DIR, 'goodbye')),
-            msg = 'File "goodbye" still exists, multiple rollback failed')  
+                          msg = 'File "goodbye" still exists, multiple rollback failed')
 
-        self.assertTrue(os.path.isfile(cpjoin(DATA_DIR, CONF_DIR, BACKUP_DIR, '1_hello3')),
-            msg = 'Backup file "1_hello3" does not exist, multiple rollback failed')  
+        self.assertTrue( os.path.isfile(cpjoin(DATA_DIR, CONF_DIR, BACKUP_DIR, '1_hello3')),
+                         msg = 'Backup file "1_hello3" does not exist, multiple rollback failed')
 
         self.assertTrue( os.path.isfile(cpjoin(DATA_DIR, CONF_DIR, BACKUP_DIR, '2_hello3')),
-            msg = 'Backup file "2_hello3" does not exist, multiple rollback failed')  
+                         msg = 'Backup file "2_hello3" does not exist, multiple rollback failed')
 
         self.assertTrue( os.path.isfile(cpjoin(DATA_DIR, CONF_DIR, BACKUP_DIR, '3_hello2')),
-            msg = 'Backup file "3_hello2" does not exist, multiple rollback failed')  
+                         msg = 'Backup file "3_hello2" does not exist, multiple rollback failed')
 
         delete_data_dir()
 

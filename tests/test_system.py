@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 #from helpers import *
-import shutil, os, json, struct, hashlib, time
+import os, json, struct, hashlib, time
 from unittest import TestCase
-from shttpfs.common import cpjoin, file_get_contents, file_put_contents, make_dirs_if_dont_exist
+from tests.helpers import DATA_DIR, delete_data_dir
 
-from helpers import *
+from shttpfs.common import file_get_contents, file_put_contents, make_dirs_if_dont_exist
 import shttpfs.client as client
 import shttpfs.server as server
 
-DATA_DIR           = os.path.dirname(__file__) + '/filesystem_tests/'
 private_key = "bkUg07WLoxKcsWaupuVIyyMrVyWMdX8q8Zvta+wwKi6kmF7pCyklcIoNAOkfo1YR7O/Fb/Z0bJJ1j/lATtkKQ6c="
 public_key  = "mF7pCyklcIoNAOkfo1YR7O/Fb/Z0bJJ1j/lATtkKQ6c="
 repo_name   = 'test_repo'
@@ -30,7 +29,7 @@ def setup():
 
 ############################################################################################
 def setup_client(name):
-    client.working_copy_base_path = cpath = DATA_DIR + name
+    client.working_copy_base_path = DATA_DIR + name
     client.init()
 
     # Override the server connection with a test implementation that passes
@@ -103,11 +102,11 @@ class TestSystem(TestCase):
         self.assertNotEqual(version_id, None)
 
         # commit message should be in log
-        req_result, headers = client.get_versions(session_token)
+        req_result = client.get_versions(session_token)[0]
         self.assertEqual('test commit', json.loads(req_result)['versions'][0]['commit_message'])
 
         # file should show up in list_changes
-        req_result, headers = client.get_files_in_version(session_token, version_id)
+        req_result = client.get_files_in_version(session_token, version_id)[0]
         self.assertTrue('/test1' in json.loads(req_result)['files'])
         self.assertTrue('/test2' in json.loads(req_result)['files'])
 
@@ -143,7 +142,7 @@ class TestSystem(TestCase):
         version_id = client.commit(session_token, 'create and delete some files')
 
         # check change is reflected correctly in the commit log
-        req_result, headers = client.get_changes_in_version(session_token, version_id)
+        req_result = client.get_changes_in_version(session_token, version_id)[0]
         res_index = { v['path'] : v for v in json.loads(req_result)['changes']}
         self.assertEqual('deleted', res_index['/test1']['status'])
         self.assertEqual('new'    , res_index['/test2']['status'])
@@ -216,7 +215,7 @@ class TestSystem(TestCase):
             self.fail()
         except SystemExit: pass
 
-        # Update should begin conflict resolution process 
+        # Update should begin conflict resolution process
         try:
             client.update(session_token, testing=True)
             self.fail()
@@ -257,7 +256,7 @@ class TestSystem(TestCase):
         version_id = client.commit(session_token, 'this should be ok')
         self.assertNotEqual(None, version_id)
 
-        req_result, headers = client.get_changes_in_version(session_token, version_id)
+        req_result = client.get_changes_in_version(session_token, version_id)[0]
         res_index = { v['path'] : v for v in json.loads(req_result)['changes']}
 
         self.assertEqual('deleted', res_index['/test1']['status'])
