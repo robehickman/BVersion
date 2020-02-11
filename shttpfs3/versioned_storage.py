@@ -22,7 +22,7 @@ class versioned_storage(object):
         new_object = {'type' : object_type}
         new_object.update(contents)
         serialised = json.dumps(new_object)
-        object_hash = hashlib.sha256(serialised).hexdigest()
+        object_hash = hashlib.sha256(bytes(serialised, encoding='utf8')).hexdigest()
         target_base = sfs.cpjoin(self.base_path, 'index',object_hash[:2])
         if os.path.isfile(sfs.cpjoin(target_base, object_hash[2:])): return object_hash
 
@@ -31,7 +31,7 @@ class versioned_storage(object):
 
         #----
         sfs.make_dirs_if_dont_exist(target_base)
-        sfs.file_put_contents(sfs.cpjoin(target_base, object_hash[2:]), serialised)
+        sfs.file_put_contents(sfs.cpjoin(target_base, object_hash[2:]), bytes(serialised, encoding='utf8'))
         return object_hash
 
 
@@ -140,21 +140,21 @@ class versioned_storage(object):
 
         # Active commit files stores all of the files which will be in this revision,
         # including ones carried over from the previous revision
-        sfs.file_put_contents(sfs.cpjoin(self.base_path, 'active_commit_files'), json.dumps(active_files))
+        sfs.file_put_contents(sfs.cpjoin(self.base_path, 'active_commit_files'), bytes(json.dumps(active_files), encoding='utf8'))
 
         # Active commit changes stores a log of files which have been added, changed
         # or deleted in this revision
-        sfs.file_put_contents(sfs.cpjoin(self.base_path, 'active_commit_changes'), json.dumps([]))
+        sfs.file_put_contents(sfs.cpjoin(self.base_path, 'active_commit_changes'), bytes(json.dumps([]), encoding='utf8'))
 
-        # The id of the user doing the commit
-        sfs.file_put_contents(sfs.cpjoin(self.base_path, 'active_commit'), 'true')
+        # Store that there is an active commit
+        sfs.file_put_contents(sfs.cpjoin(self.base_path, 'active_commit'), b'true')
 
 
 #===============================================================================
     def update_system_file(self, file_name, callback):
         contents = json.loads(sfs.file_get_contents(sfs.cpjoin(self.base_path, file_name)))
         contents = callback(contents)
-        sfs.file_put_contents(sfs.cpjoin(self.base_path, file_name), json.dumps(contents))
+        sfs.file_put_contents(sfs.cpjoin(self.base_path, file_name), bytes(json.dumps(contents), encoding='utf8'))
 
 
 #===============================================================================
@@ -248,7 +248,7 @@ class versioned_storage(object):
                                                                 'changes'        : current_changes})
 
         #update head, write plus move for atomicity
-        sfs.file_put_contents(sfs.cpjoin(self.base_path, 'new_head'), commit_object_hash)
+        sfs.file_put_contents(sfs.cpjoin(self.base_path, 'new_head'), bytes(commit_object_hash, encoding='utf8'))
         os.rename(sfs.cpjoin(self.base_path, 'new_head'), sfs.cpjoin(self.base_path, 'head'))
 
         #and clean up working state

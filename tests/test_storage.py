@@ -12,12 +12,17 @@ MANIFEST_FILE      = 'manifest_xzf.json'
 
 class TestStorage(TestCase):
 ############################################################################################
+    def setUp(self):
+        delete_data_dir() # Ensure clean start
+        make_data_dir()
+
+############################################################################################
+    def tearDown(self):
+        delete_data_dir()
+
+############################################################################################
     def test_storage_put_rollback(self):
         """ Test that file put rolls back correctly """
-
-        return True
-
-        make_data_dir()
 
         s = storage(DATA_DIR, CONF_DIR)
         s.begin()
@@ -30,16 +35,10 @@ class TestStorage(TestCase):
         self.assertTrue( os.path.isfile(cpjoin(DATA_DIR, CONF_DIR, BACKUP_DIR, '1_hello')),
                          msg = 'Backup file "1_hello" does not exist, put rollback failed')
 
-        delete_data_dir()
-
 
 ############################################################################################
     def test_storage_move_rollback(self):
         """ Test file move rolls back correctly """
-
-        return True
-
-        make_data_dir()
 
         s = storage(DATA_DIR, CONF_DIR)
         s.begin()
@@ -51,14 +50,10 @@ class TestStorage(TestCase):
         self.assertFalse( os.path.isfile(cpjoin(DATA_DIR, 'hello2')),
                           msg = 'File "hello2" still exists, move rollback failed')
 
-        delete_data_dir()
-
 
 ############################################################################################
     def test_storage_move_overwrite_rollback(self):
         """ Test file move rolls back correctly when move overwrites another file """
-
-        make_data_dir()
 
         s = storage(DATA_DIR, CONF_DIR)
         s.begin()
@@ -74,14 +69,10 @@ class TestStorage(TestCase):
         self.assertTrue( os.path.isfile(cpjoin(DATA_DIR, 'hello2')),
                          msg = 'File "hello2" does not exist, move overwrite rollback failed')
 
-        delete_data_dir()
-
 
 ############################################################################################
     def test_storage_delete_rollback(self):
         """ Test file delete rolls back correctly """
-
-        make_data_dir()
 
         s = storage(DATA_DIR, CONF_DIR)
         s.begin()
@@ -93,14 +84,10 @@ class TestStorage(TestCase):
         self.assertTrue( os.path.isfile(cpjoin(DATA_DIR, 'hello')),
                          msg = 'error, file "hello" does not exist, delete rollback failed')
 
-        delete_data_dir()
-
 
 ############################################################################################
     def test_storage_multiple_rollback(self):
         """ Test rollback of multiple things at once """
-
-        make_data_dir()
 
         s = storage(DATA_DIR, CONF_DIR)
         s.begin()
@@ -132,4 +119,3 @@ class TestStorage(TestCase):
         self.assertTrue( os.path.isfile(cpjoin(DATA_DIR, CONF_DIR, BACKUP_DIR, '3_hello2')),
                          msg = 'Backup file "3_hello2" does not exist, multiple rollback failed')
 
-        delete_data_dir()

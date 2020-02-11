@@ -27,7 +27,7 @@ class plain_storage(storage):
             'format_version' : 2,
             'root'           : '/',
             'have_revision'  : 'root',
-            'files'          : {}}""")
+            'files'          : {}}"""))
 
         if 'format_version' not in manifest or manifest['format_version'] < 2:
             raise SystemExit('Please update the client manifest format')

@@ -46,7 +46,7 @@ def file_put_contents(path: str, data: bytes) -> None:
 def file_or_default(path: str, default: bytes) -> bytes:
     """ Return a default value if a file does not exist """
     try:
-        result = file_get_contents(path)
+        return file_get_contents(path)
     except IOError as e:
         if e.errno == errno.ENOENT: return default
         raise

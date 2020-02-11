@@ -39,6 +39,7 @@ class storage(object):
         """ Create a new backup file allocation """
 
         backup_id_file = p.join(self.backup_dir, '.bk_idx')
+
         backup_num = int(file_or_default(backup_id_file, '1'))
         backup_name = str(backup_num) + "_" + os.path.basename(src)
         backup_num += 1
