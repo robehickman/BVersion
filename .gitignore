@@ -9,3 +9,4 @@ shttpfs.egg-info
 build
 dist
 shttpfs/tests/vers_test
+tests/filesystem_tests

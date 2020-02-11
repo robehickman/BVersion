@@ -1,6 +1,4 @@
-import pysodium, base64, getpass
-from binascii import hexlify, unhexlify
-#from common import *
+import  base64, getpass, pysodium
 
 #===============================================================================
 def prompt_for_new_password():
@@ -9,7 +7,7 @@ def prompt_for_new_password():
         passw = getpass.getpass()
         passw2 = getpass.getpass()
         if passw == passw2: return passw
-        print 'Passwords do not match'
+        print('Passwords do not match')
 
 #===============================================================================
 def hash_password(password, salt):
@@ -21,8 +19,8 @@ def hash_password(password, salt):
 #===============================================================================
 def make_keypair():
     public_key, private_key = pysodium.crypto_sign_keypair()
-    print 'Do you wish to encrypt the private key under a password? (y/n)'
-    answer = raw_input().lower()
+    print('Do you wish to encrypt the private key under a password? (y/n)')
+    answer = input().lower()
     if answer not in ['y', 'n']: raise SystemExit('Invalid answer')
     if answer == 'y':
         salt = pysodium.randombytes(pysodium.crypto_pwhash_SALTBYTES)

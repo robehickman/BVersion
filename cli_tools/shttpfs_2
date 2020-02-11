@@ -1,0 +1,3 @@
+#!/usr/bin/env python
+from shttpfs.client_2 import run
+run()

@@ -1,23 +1,15 @@
-#!/usr/bin/env python
-from flask import Flask, request, redirect, url_for, send_from_directory, make_response
-import sys, fcntl, os.path, json, time, base64, pysodium, traceback, re
 import sqlite3 as db
-from pprint import pprint
+import fcntl, os, json, time, base64, re, pysodium
+import pprint
 
 #====
 from shttpfs.common import cpjoin, file_get_contents
 from shttpfs.versioned_storage import versioned_storage
-from shttpfs.merge_client_and_server_changes import *
-
-app = Flask(__name__)
-app.debug = True
+from shttpfs.merge_client_and_server_changes import merge_client_and_server_changes
 
 #===============================================================================
-conf_path = '/etc/shttpfs/server.json'
-if len(sys.argv) > 1 and sys.argv[1] == '-c':
-    conf_path = sys.argv[2]
-
-config = json.loads(file_get_contents(conf_path))
+# NOTE to use this must be replaced with a valid configuration, see 'shttpfs_server'
+config = {}
 
 #===============================================================================
 lock_fail_msg        = 'Could not acquire exclusive lock'
@@ -29,11 +21,94 @@ no_active_commit_msg = "A commit must be started before attempting this operatio
 
 extend_session_duration = (60 * 60) * 2 # 2 hours
 
+#=====================
+class Request:
+    def __init__ (self, environ, headers, body):
+        self.environ = environ
+        self.headers = headers
+        self.body    = body
+
+    def get_json(self):
+        return json.loads(self.body.read())
+
+#=====================
+class Responce:
+    def __init__ (self, headers = None, body = " ", file = None):
+        if headers is None: headers = {}
+        self.headers = headers
+        self.body    = body
+        self.file    = file
+
+#===============================================================================
+# Decorator to make defining routes easy
+#===============================================================================
+routes = {}
+def route(path):
+    def route_wrapper(func): routes[path] = func
+    return route_wrapper
+
+#===============================================================================
+# The main WSGI endpoint
+#===============================================================================
+def wsgi_application(environ, start_response):
+    # Validate and prepare request data
+    if environ['REQUEST_METHOD'].lower() != 'post': raise Exception('Unsupported request')
+    request_action = environ['PATH_INFO'].split('/')[1]
+    if request_action not in routes: raise Exception('Unsupported request')
+
+    print('hit')
+    print(request_action)
+
+    headers = {k[5:].lower().replace('_', '-') : v.decode('utf-8') for k, v in environ.items() if k[0:4] == 'HTTP'}
+
+    pprint.pprint(headers)
+
+    # Run the route handler
+    request = Request(environ, headers, environ['wsgi.input'])
+    responce = routes[request_action](request)
+    
+    # Create response
+    status = '200 OK'
+
+    if responce.file is None:
+        res_headers = {k.lower() : v for k, v in responce.headers.items()}
+        if 'content-type' not in res_headers :   res_headers['content-type']   = 'application/octet-stream'
+        if 'content-length' not in res_headers : res_headers['content-length'] = str(len(responce.body.encode('utf-8')))
+
+        res_headers_2 = []
+        for k, v in res_headers.items():
+            if isinstance(v, str):
+                v = v.encode('utf-8')
+            res_headers_2.append( (k,v) )
+        res_headers = res_headers_2
+
+        pprint.pprint(res_headers)
+
+        start_response(status, res_headers)
+
+        return responce.body
+
+    else: 
+        file_handle    = open(responce.file, 'rb')
+        file_size      = os.path.getsize(responce.file)
+        block_size     = 20000
+        
+        # ----------
+        status = '200 OK'
+        response_headers = [('Content-type', 'image/jpeg'),
+                            ('Content-Length', str(file_size))]
+
+        start_response(status, response_headers)
+        return environ['wsgi.file_wrapper'](file_handle, block_size)
+
+
 #===============================================================================
 def server_responce(headers, body):
-    response = make_response(body)
-    for k, v in headers.iteritems(): response.headers[k] = v
-    return response
+    return Responce(headers = headers, body = body)
+
+    #response = make_response(body)
+    #for k, v in headers.iteritems(): response.headers[k] = v
+    #return response
 
 
 #===============================================================================
@@ -43,11 +118,12 @@ def fail(msg = ''):
 
 
 #===============================================================================
-def success(headers = {}, data = ''):
+def success(headers = None, data = ''):
     """ Generate success JSON to send to client """
+    passed_headers = {} if headers is None else headers
     if isinstance(data, dict): data = json.dumps(data)
     ret_headers = {'status' : 'ok'}
-    ret_headers.update(headers)
+    ret_headers.update(passed_headers)
     return server_responce(ret_headers, data)
 
 
@@ -83,7 +159,7 @@ def update_user_lock(repository_path, session_token):
     tmp_path  = cpjoin(repository_path, 'new_user_file')
 
     with open(tmp_path, 'w') as fd2:
-        if session_token == None: fd2.write('')
+        if session_token is None: fd2.write('')
         else: fd2.write(json.dumps({'session_token' : session_token, 'expires' : int(time.time()) + 30}))
         fd2.flush()
     os.rename(tmp_path, real_path)
@@ -103,7 +179,7 @@ def can_aquire_user_lock(repository_path, session_token):
         try: res = json.loads(content)
         except ValueError: return True
         if res['expires'] < int(time.time()): return True
-        elif res['session_token'] == request.form['session_token']: return True
+        elif res['session_token'] == session_token: return True
     return False
 
 #===============================================================================
@@ -140,7 +216,7 @@ def auth_db_connect(db_path):
     def dict_factory(cursor, row): return {col[0] : row[idx] for idx,col in enumerate(cursor.description)}
     conn = db.connect(db_path)
     conn.row_factory = dict_factory
-    if auth_db_connect.init == False:
+    if not auth_db_connect.init:
         conn.execute('create table if not exists tokens (expires int, token text, ip text)')
         conn.execute('create table if not exists session_tokens (expires int, token text, ip text, username text)')
         auth_db_connect.init = True
@@ -155,67 +231,70 @@ def gc_tokens(conn):
     conn.commit()
 
 #===============================================================================
-@app.route('/begin_auth', methods=['POST'])
-def begin_auth():
+@route('begin_auth')
+def begin_auth(request):
     """ Request authentication token to sign """
 
-    if request.form['repository'] not in config['repositories']:
-        return fail(no_such_repo_msg)
+    repository    = request.headers['repository']
+    if repository not in config['repositories']: return fail(no_such_repo_msg)
 
-    repository_path = config['repositories'][request.form['repository']]['path']
+    # ==
+    repository_path = config['repositories'][repository]['path']
     conn = auth_db_connect(cpjoin(repository_path, 'auth_transient.db')); gc_tokens(conn)
 
-# Issue a new token if the server is not locked
+    # Issue a new token
     auth_token = base64.b64encode(pysodium.randombytes(35)).decode('utf-8')
     conn.execute("insert into tokens (expires, token, ip) values (?,?,?)",
                  (time.time() + 30, auth_token, request.environ['REMOTE_ADDR']))
     conn.commit()
 
-    return success({'auth_token' : auth_token})
+    return success({'auth-token' : auth_token.encode('utf-8')})
 
 
 #===============================================================================
-@app.route('/authenticate', methods=['POST'])
-def authenticate():
+@route('authenticate')
+def authenticate(request):
     """ This does two things, either validate a pre-existing session token
     or create a new one from a signed authentication token. """
 
-    if request.form['repository'] not in config['repositories']:
-        return fail(no_such_repo_msg)
+    client_ip     = request.environ['REMOTE_ADDR']
+    repository    = request.headers['repository']
+    if repository not in config['repositories']: return fail(no_such_repo_msg)
 
-    repository_path = config['repositories'][request.form['repository']]['path']
+    # ==
+    repository_path = config['repositories'][repository]['path']
     conn = auth_db_connect(cpjoin(repository_path, 'auth_transient.db')); gc_tokens(conn)
-
     gc_tokens(conn)
 
-    if 'session_token' in request.form:
+    # Allow resume of an existing session
+    if 'session-token' in request.headers:
+        session_token = request.headers['session-token']
+
         conn.execute("delete from session_tokens where expires < ?", (time.time(),)); conn.commit()
-        res = conn.execute("select * from session_tokens where token = ? and ip = ?",
-                           (request.form['session_token'], request.environ['REMOTE_ADDR'])).fetchall()
-        if res != []: return success({'session_token'  : request.form['session_token']})
+        res = conn.execute("select * from session_tokens where token = ? and ip = ?", (session_token, client_ip)).fetchall()
+        if res != []: return success({'session-token'  : session_token})
         else:         return fail(user_auth_fail_msg)
 
+    # Create a new session
     else:
-        #================================================
-        auth_token = request.form['auth_token']
-        signiture  = request.form['signature']
+        user       = request.headers['user']
+        auth_token = request.headers['auth-token']
+        signiture  = request.headers['signature']
 
         try:
-            public_key = config['users'][request.form['user']]['public_key']
+            public_key = config['users'][user]['public_key']
 
             # signature
-            pysodium.crypto_sign_verify_detached(base64.b64decode(signiture),
-                                                 auth_token, base64.b64decode(public_key))
+            pysodium.crypto_sign_verify_detached(base64.b64decode(signiture), auth_token, base64.b64decode(public_key))
 
-            res = conn.execute("select * from tokens where token = ? and ip = ? ",
-                               (auth_token,request.environ['REMOTE_ADDR'])).fetchall()
+            # check token was previously issued by this system and is still valid
+            res = conn.execute("select * from tokens where token = ? and ip = ? ", (auth_token, client_ip)).fetchall()
 
             # Validate token matches one we sent
             if res == [] or len(res) > 1: return fail(user_auth_fail_msg)
 
             # Does the user have permission to use this repository?
-            if request.form['repository'] not in config['users'][request.form['user']]['uses_repositories']:
-                return fail(user_auth_fail_msg)
+            if repository not in config['users'][user]['uses_repositories']: return fail(user_auth_fail_msg)
 
             # Everything OK
             conn.execute("delete from tokens where token = ?", (auth_token,)); conn.commit()
@@ -223,11 +302,11 @@ def authenticate():
             # generate a session token and send it to the client
             session_token = base64.b64encode(pysodium.randombytes(35))
             conn.execute("insert into session_tokens (token, expires, ip, username) values (?,?,?, ?)",
-                         (session_token, time.time() + extend_session_duration, request.environ['REMOTE_ADDR'], request.form['user']))
+                         (session_token, time.time() + extend_session_duration, client_ip, user))
             conn.commit()
-            return success({'session_token'  : session_token})
+            return success({'session-token'  : session_token})
 
-        except:
+        except Exception: # pylint: disable=broad-except
             return fail(user_auth_fail_msg)
 
 
@@ -250,10 +329,8 @@ def have_authenticated_user(client_ip, repository, session_token):
     user_lock = read_user_lock(repository_path)
     active_commit = user_lock['session_token'] if user_lock != None else None
 
-    if active_commit != None:
-        conn.execute("delete from session_tokens where expires < ? and token != ?", (time.time(), active_commit))
-    else:
-        conn.execute("delete from session_tokens where expires < ?", (time.time(),))
+    if active_commit != None: conn.execute("delete from session_tokens where expires < ? and token != ?", (time.time(), active_commit))
+    else:                     conn.execute("delete from session_tokens where expires < ?", (time.time(),))
 
     # Get the session token
     res = conn.execute("select * from session_tokens where token = ? and ip = ?", (session_token, client_ip)).fetchall()
@@ -273,100 +350,127 @@ def have_authenticated_user(client_ip, repository, session_token):
 #===============================================================================
 # Main System
 #===============================================================================
-@app.route('/find_changed', methods=['POST'])
-def find_changed():
+@route('find_changed')
+def find_changed(request):
     """ Find changes since the revision it is currently holding """
 
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], request.form['repository'], request.form['session_token'])
-    if current_user == False: return fail(user_auth_fail_msg)
+    session_token = request.headers['session-token']
+    repository    = request.headers['repository']
 
-    repository_path = config['repositories'][request.form['repository']]['path']
+    #===
+    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    if current_user is False: return fail(user_auth_fail_msg)
 
+    #===
+    repository_path = config['repositories'][repository]['path']
+    body_data = request.get_json()
+
+    #===
     data_store = versioned_storage(repository_path)
     head = data_store.get_head()
     if head == 'root': return success({}, {'head' : 'root', 'sorted_changes' : {'none' : []}})
 
     # Find changed items
-    client_changes = json.loads(request.form['client_changes'])
-    server_changes = data_store.get_changes_since(request.form["previous_revision"], head)
+    client_changes = json.loads(body_data['client_changes'])
+    server_changes = data_store.get_changes_since(request.headers["previous-revision"], head)
 
     # Resolve conflicts
-    conflict_resolutions = json.loads(request.form['conflict_resolutions'])
+    conflict_resolutions = json.loads(body_data['conflict_resolutions'])
     if conflict_resolutions != []:
         resolutions = {'server' : {},'client' : {}}
         for r in conflict_resolutions:
             if len(r['4_resolution']) != 1 or r['4_resolution'][0] not in ['client', 'server']: return fail(conflict_msg)
             resolutions[r['4_resolution'][0]][r['1_path']] = None
 
-        client_changes = {k : v for k,v in client_changes.iteritems() if v['path'] not in resolutions['server']}
-        server_changes = {k : v for k,v in server_changes.iteritems() if v['path'] not in resolutions['client']}
+        client_changes = {k : v for k,v in client_changes.items() if v['path'] not in resolutions['server']}
+        server_changes = {k : v for k,v in server_changes.items() if v['path'] not in resolutions['client']}
 
     sorted_changes = merge_client_and_server_changes(server_changes, client_changes)
     return success({}, {'head' : head, 'sorted_changes': sorted_changes})
 
 
 #===============================================================================
-@app.route('/pull_file', methods=['POST'])
-def pull_file():
+@route('pull_file')
+def pull_file(request):
     """ Get a file from the server """
 
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], request.form['repository'], request.form['session_token'])
-    if current_user == False: return fail(user_auth_fail_msg)
+    session_token = request.headers['session-token']
+    repository    = request.headers['repository']
 
-    repository_path = config['repositories'][request.form['repository']]['path']
+    #===
+    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    if current_user is False: return fail(user_auth_fail_msg)
 
-    data_store = versioned_storage(repository_path)
-    file_info = data_store.get_file_info_from_path(request.form['path'])
 
-    return success({'file_info_json' : json.dumps(file_info)},
+    #===
+    data_store = versioned_storage(config['repositories'][repository]['path'])
+    file_info = data_store.get_file_info_from_path(request.headers['path'])
+
+    return success({'file-info-json' : json.dumps(file_info)},
                    send_from_directory(data_store.get_file_directory_path(file_info['hash']), file_info['hash'][2:]))
 
 
 #===============================================================================
-@app.route('/list_versions', methods=['POST'])
-def list_versions():
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], request.form['repository'], request.form['session_token'])
-    if current_user == False: return fail(user_auth_fail_msg)
+@route('list_versions')
+def list_versions(request):
+    session_token = request.headers['session-token']
+    repository    = request.headers['repository']
 
-    repository_path = config['repositories'][request.form['repository']]['path']
+    #===
+    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    if current_user is False: return fail(user_auth_fail_msg)
 
-    data_store = versioned_storage(repository_path)
+    #===
+    data_store = versioned_storage(config['repositories'][repository]['path'])
     return success({}, {'versions' : data_store.get_commit_chain()})
 
 
 #===============================================================================
-@app.route('/list_changes', methods=['POST'])
-def list_changes():
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], request.form['repository'], request.form['session_token'])
-    if current_user == False: return fail(user_auth_fail_msg)
+@route('list_changes')
+def list_changes(request):
+    session_token = request.headers['session-token']
+    repository    = request.headers['repository']
 
-    repository_path = config['repositories'][request.form['repository']]['path']
+    #===
+    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    if current_user is False: return fail(user_auth_fail_msg)
 
-    data_store = versioned_storage(repository_path)
-    return success({}, {'changes' : data_store.get_commit_changes(request.form['version_id'])})
-
-
-#===============================================================================
-@app.route('/list_files', methods=['POST'])
-def list_files():
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], request.form['repository'], request.form['session_token'])
-    if current_user == False: return fail(user_auth_fail_msg)
-
-    repository_path = config['repositories'][request.form['repository']]['path']
-
-    data_store = versioned_storage(repository_path)
-    return success({}, {'files' : data_store.get_commit_files(request.form['version_id'])})
+    #===
+    data_store = versioned_storage(config['repositories'][repository]['path'])
+    return success({}, {'changes' : data_store.get_commit_changes(request.headers['version-id'])})
 
 
 #===============================================================================
-@app.route('/begin_commit', methods=['POST'])
-def begin_commit():
+@route('list_files')
+def list_files(request):
+    session_token = request.headers['session-token']
+    repository    = request.headers['repository']
+
+    #===
+    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    if current_user is False: return fail(user_auth_fail_msg)
+
+    #===
+    data_store = versioned_storage(config['repositories'][repository]['path'])
+    return success({}, {'files' : data_store.get_commit_files(request.headers['version-id'])})
+
+
+#===============================================================================
+@route('begin_commit')
+def begin_commit(request):
     """ Allow a client to begin a commit and acquire the write lock """
 
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], request.form['repository'], request.form['session_token'])
-    if current_user == False: return fail(user_auth_fail_msg)
+    raise Exception('disabled');
 
-    repository_path = config['repositories'][request.form['repository']]['path']
+    session_token = request.headers['session-token']
+    repository    = request.headers['repository']
+
+    #===
+    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    if current_user is False: return fail(user_auth_fail_msg)
+
+    #===
+    repository_path = config['repositories'][repository]['path']
 
     def with_exclusive_lock():
         # The commit is locked for a given time period to a given session token,
@@ -376,15 +480,14 @@ def begin_commit():
         # operation and thus cannot be stolen by another client. It is updated to be in
         # the future before returning to the client. The lock only needs to survive until
         # the client owning the lock sends another request and re acquires the flock.
-        if not can_aquire_user_lock(repository_path, request.form['session_token']):
-            return fail(lock_fail_msg)
+        if not can_aquire_user_lock(repository_path, session_token): return fail(lock_fail_msg)
 
         # Commits can only take place if the committing user has the latest revision,
         # as committing from an outdated state could cause unexpected results, and may
         # have conflicts. Conflicts are resolved during a client update so they are
         # handled by the client, and a server interface for this is not needed.
         data_store = versioned_storage(repository_path)
-        if data_store.get_head() != request.form["previous_revision"]: return fail(need_to_update_msg)
+        if data_store.get_head() != request.headers["previous-revision"]: return fail(need_to_update_msg)
 
 
         # Should the lock expire, the client which had the lock previously will be unable
@@ -398,7 +501,7 @@ def begin_commit():
 
         #------------
         data_store.begin()
-        update_user_lock(repository_path, request.form['session_token'])
+        update_user_lock(repository_path, session_token)
 
         return success()
     return lock_access(repository_path, with_exclusive_lock)
@@ -406,96 +509,114 @@ def begin_commit():
 
 
 #===============================================================================
-@app.route('/push_file', methods=['POST'])
-def push_file():
-    """ Push a file to the server """
+@route('push_file')
+def push_file(request):
+    """ Push a file to the server """ #NOTE beware that reading post data in flask causes hang until file upload is complete
 
-    #NOTE beware that reading post data in flask causes hang until file upload is complete
+    raise Exception('disabled');
 
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], request.args['repository'], request.args['session_token'])
-    if current_user == False: return fail(user_auth_fail_msg)
+    session_token = request.headers['session-token']
+    repository    = request.headers['repository']
 
-    repository_path = config['repositories'][request.args['repository']]['path']
+    #===
+    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    if current_user is False: return fail(user_auth_fail_msg)
+
+    #===
+    repository_path = config['repositories'][repository]['path']
 
     def with_exclusive_lock():
-        if not varify_user_lock(repository_path, request.args['session_token']):
-            return fail(lock_fail_msg)
+        if not varify_user_lock(repository_path, session_token): return fail(lock_fail_msg)
 
+        #===
         data_store = versioned_storage(repository_path)
-        if not data_store.have_active_commit():
-            return fail(no_active_commit_msg)
+        if not data_store.have_active_commit(): return fail(no_active_commit_msg)
 
         # There is no valid reason for path traversal characters to be in a file path within this system
-        if any(True for item in re.split(r'\\|/', request.form['path']) if item in ['..', '.']):
-            return fail()
+        file_path = request.headers['path']
+        if any(True for item in re.split(r'\\|/', file_path) if item in ['..', '.']): return fail()
 
-        #-------------
+        #===
         tmp_path = cpjoin(repository_path, 'tmp_file')
-        request.files['file'].save(tmp_path)
+        with open(tmp_path, 'wb') as f:
+            while True:
+                chunk = request.stream.read(1000 * 1000)
+                if chunk == b'': break
+                f.write(chunk)
 
-        #-------------
-        data_store.fs_put_from_file(tmp_path, {'path' : request.form['path']})
+        #===
+        data_store.fs_put_from_file(tmp_path, {'path' : file_path})
 
         # updates the user lock expiry
-        update_user_lock(repository_path, request.args['session_token'])
-
+        update_user_lock(repository_path, session_token)
         return success()
-
 
     return lock_access(repository_path, with_exclusive_lock)
 
 
 #===============================================================================
-@app.route('/delete_files', methods=['POST'])
-def delete_files():
+@route('delete_files')
+def delete_files(request):
     """ Delete one or more files from the server """
 
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], request.form['repository'], request.form['session_token'])
-    if current_user == False: return fail(user_auth_fail_msg)
+    raise Exception('disabled');
 
-    repository_path = config['repositories'][request.form['repository']]['path']
+    session_token = request.headers['session-token']
+    repository    = request.headers['repository']
+
+    #===
+    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    if current_user is False: return fail(user_auth_fail_msg)
+
+    #===
+    repository_path = config['repositories'][repository]['path']
+    body_data = request.get_json()
 
     def with_exclusive_lock():
-        try:
-            if not varify_user_lock(repository_path, request.form['session_token']):
-                return fail(lock_fail_msg)
+        if not varify_user_lock(repository_path, session_token): return fail(lock_fail_msg)
 
+        try:
             data_store = versioned_storage(repository_path)
-            if not data_store.have_active_commit():
-                return fail(no_active_commit_msg)
+            if not data_store.have_active_commit(): return fail(no_active_commit_msg)
 
             #-------------
-            for fle in json.loads(request.form['files']):
+            for fle in json.loads(body_data['files']):
                 data_store.fs_delete(fle)
 
             # updates the user lock expiry
-            update_user_lock(repository_path, request.form['session_token'])
+            update_user_lock(repository_path, session_token)
             return success()
-        except Exception as e: return fail()
+        except Exception: return fail() # pylint: disable=broad-except
     return lock_access(repository_path, with_exclusive_lock)
 
 
 #===============================================================================
-@app.route('/commit', methods=['POST'])
-def commit():
+@route('commit')
+def commit(request):
     """ Commit changes and release the write lock """
 
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], request.form['repository'], request.form['session_token'])
-    if current_user == False: return fail(user_auth_fail_msg)
+    raise Exception('disabled');
 
-    repository_path = config['repositories'][request.form['repository']]['path']
+    session_token = request.headers['session-token']
+    repository    = request.headers['repository']
+
+    #===
+    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    if current_user is False: return fail(user_auth_fail_msg)
+
+    #===
+    repository_path = config['repositories'][repository]['path']
 
     def with_exclusive_lock():
-        if not varify_user_lock(repository_path, request.form['session_token']):
-            return fail(lock_fail_msg)
+        if not varify_user_lock(repository_path, session_token): return fail(lock_fail_msg)
 
+        #===
         data_store = versioned_storage(repository_path)
-        if not data_store.have_active_commit():
-            return fail(no_active_commit_msg)
+        if not data_store.have_active_commit(): return fail(no_active_commit_msg)
 
         result = {}
-        if request.form['mode'] == 'commit':
-            new_head = data_store.commit(request.form['commit_message'], current_user['username'])
+        if request.headers['mode'] == 'commit':
+            new_head = data_store.commit(request.headers['commit-message'], current_user['username'])
             result = {'head' : new_head}
         else:
             data_store.rollback()
@@ -504,9 +625,4 @@ def commit():
         update_user_lock(repository_path, None)
         return success(result)
     return lock_access(repository_path, with_exclusive_lock)
-
-
-#############################################################
-if __name__ == "__main__":
-    app.run('0.0.0.0', port=8090)
 

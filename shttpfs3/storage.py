@@ -1,8 +1,8 @@
 import os.path as p
-import os, shutil, json, errno, fcntl
+import os, shutil, json, errno
 from collections import deque
 
-from common import cpjoin, ignore, file_or_default, file_put_contents
+from shttpfs3.common import cpjoin, ignore, file_or_default, file_put_contents
 
 ############################################################################################
 # Journaling file storage subsystem, only use one instance at any time, not thread safe
@@ -10,7 +10,7 @@ from common import cpjoin, ignore, file_or_default, file_put_contents
 class storage(object):
 
 ############################################################################################
-    def __init__(self, data_dir, conf_dir):
+    def __init__(self, data_dir: str, conf_dir: str):
         self.data_dir    = data_dir if data_dir[-1] == '/' else data_dir + '/'
         self.j_file      = self.get_full_file_path(conf_dir, 'journal.json')
         self.tmp_dir     = self.get_full_file_path(conf_dir, 'tmp')
@@ -32,18 +32,18 @@ class storage(object):
         """ Create a new temp file allocation """
 
         self.tmp_idx += 1
-        return p.join(self.tmp_dir, 'tmp_' + str(self.tmp_idx)) 
+        return p.join(self.tmp_dir, 'tmp_' + str(self.tmp_idx))
 
 ############################################################################################
-    def new_backup(self, src):
+    def new_backup(self, src: str):
         """ Create a new backup file allocation """
 
         backup_id_file = p.join(self.backup_dir, '.bk_idx')
-        backup_num = file_or_default(backup_id_file, 1, int)
+        backup_num = int(file_or_default(backup_id_file, '1'))
         backup_name = str(backup_num) + "_" + os.path.basename(src)
         backup_num += 1
 
-        file_put_contents(backup_id_file, str(backup_num))
+        file_put_contents(backup_id_file, bytes(str(backup_num), encoding='utf8'))
         return p.join(self.backup_dir, backup_name)
 
 ############################################################################################
@@ -60,12 +60,12 @@ class storage(object):
         self.journal = open(self.j_file, 'w')
 
 ############################################################################################
-    def do_action(self, command, journal = True):
+    def do_action(self, command: dict, journal: bool = True):
         """ Implementation for declarative file operations. """
 
         cmd = 0; src = 1; path = 1; data = 2; dst = 2
 
-        if journal == True:
+        if journal is True:
             self.journal.write(json.dumps(command['undo']) + "\n")
             self.journal.flush()
 
@@ -100,16 +100,16 @@ class storage(object):
             # As each item is completed remove it from the journal file, in case
             # something fails during the rollback we can pick up where it stopped.
             journ_subtract.popleft()
-            with open(self.j_file, 'w') as f: 
+            with open(self.j_file, 'w') as f:
                 for data in list(journ_subtract):
                     f.write(json.dumps(data) + "\n")
                 f.flush()
-            
+
         # Rollback is complete so delete the journal file
         os.remove(self.j_file)
 
 ############################################################################################
-    def commit(self, cont = False):
+    def commit(self, cont: bool = False):
         """ Finish a transaction """
 
         self.journal.close()
@@ -118,24 +118,23 @@ class storage(object):
 
         for itm in os.listdir(self.tmp_dir): os.remove(cpjoin(self.tmp_dir, itm))
 
-        if(cont == True):
-            self.begin()
-            
+        if cont is True: self.begin()
+
 ############################################################################################
-    def file_get_contents(self, path):
+    def file_get_contents(self, path: str) -> bytes:
         """ Returns contents of file located at 'path', not changing FS so does
         not require journaling """
 
         with open(self.get_full_file_path(path), 'r') as f: return  f.read()
 
 ############################################################################################
-    def file_put_contents(self, path, data):
+    def file_put_contents(self, path: str, data: bytes):
         """ Put passed contents into file located at 'path' """
 
         path = self.get_full_file_path(path)
 
         # if file exists, create a temp copy to allow rollback
-        if os.path.isfile(path):  
+        if os.path.isfile(path):
             tmp_path = self.new_tmp()
             self.do_action({
                 'do'   : ['copy', path, tmp_path],
@@ -146,15 +145,15 @@ class storage(object):
              'undo' : ['backup', path]})
 
 ############################################################################################
-    def move_file(self, src, dst):
+    def move_file(self, src: str, dst: str):
         """ Move file from src to dst """
 
         src = self.get_full_file_path(src); dst = self.get_full_file_path(dst)
 
         # record where file moved
-        if os.path.isfile(src):  
+        if os.path.isfile(src):
             # if destination file exists, copy it to tmp first
-            if os.path.isfile(dst):  
+            if os.path.isfile(dst):
                 tmp_path = self.new_tmp()
                 self.do_action({
                     'do'   : ['copy', dst, tmp_path],
@@ -165,13 +164,13 @@ class storage(object):
              'undo' : ['move', dst, src]})
 
 ############################################################################################
-    def delete_file(self, path):
+    def delete_file(self, path: str):
         """ delete a file """
 
         path = self.get_full_file_path(path)
 
         # if file exists, create a temp copy to allow rollback
-        if os.path.isfile(path):  
+        if os.path.isfile(path):
             tmp_path = self.new_tmp()
             self.do_action({
                 'do'   : ['move', path, tmp_path],

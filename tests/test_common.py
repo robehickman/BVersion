@@ -1,7 +1,8 @@
-from helpers import *
-from shttpfs.common import *
-from unittest import TestCase
 import subprocess
+from unittest import TestCase
+
+from tests.helpers import DATA_DIR, make_data_dir, delete_data_dir
+from shttpfs3.common import cpjoin, file_put_contents, hash_file, find_manifest_changes
 
 def get_state(path, last_mod):
     return {'path'     : path, 'last_mod' : last_mod}
@@ -14,14 +15,12 @@ class TestCommon(TestCase):
         make_data_dir()
 
         file_path = cpjoin(DATA_DIR, 'test')
-        file_put_contents(file_path, 'some file contents')
+        file_put_contents(file_path, b'some file contents')
 
-        p1 = subprocess.Popen (['sha256sum', file_path], stdout=subprocess.PIPE)
-        result1= p1.communicate()[0].split(' ')[0]
-        result2 = hash_file(file_path)
+        expected_result = 'cf57fcf9d6d7fb8fd7d8c30527c8f51026aa1d99ad77cc769dd0c757d4fe8667' 
+        result = hash_file(file_path)
 
-        self.assertEqual(result1, result2,
-            msg = 'Hashes are not the same')
+        self.assertEqual(expected_result, result, msg = 'Hashes are not the same')
 
         delete_data_dir()
 

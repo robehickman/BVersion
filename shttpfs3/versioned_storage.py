@@ -1,10 +1,10 @@
-import common as sfs
+import json, hashlib, os, os.path, shutil
 from  collections import defaultdict
 from datetime import datetime
-import json, hashlib, os, os.path, shutil
-from pprint import pprint
 
-class versioned_storage:
+import shttpfs3.common as sfs
+
+class versioned_storage(object):
     def __init__(self, base_path):
         self.base_path = base_path
         sfs.make_dirs_if_dont_exist(sfs.cpjoin(base_path, 'index') + '/')
@@ -44,7 +44,7 @@ class versioned_storage:
 
 #===============================================================================
     def build_dir_tree(self, files):
-        """ Convert a flat file dict into the tree format used for storage """ 
+        """ Convert a flat file dict into the tree format used for storage """
 
         def helper(split_files):
             this_dir = {'files' : {}, 'dirs' : {}}
@@ -58,25 +58,25 @@ class versioned_storage:
                 elif len(index) > 1:
                     dirs[index[0]].append((index[1:], fileinfo))
 
-            for name,info in dirs.iteritems():
+            for name,info in dirs.items():
                 this_dir['dirs'][name] = helper(info)
             return this_dir
-        return helper([(name.split('/')[1:], file_info) for name, file_info in files.iteritems()])
+        return helper([(name.split('/')[1:], file_info) for name, file_info in files.items()])
 
 
 #===============================================================================
     def flatten_dir_tree(self, tree):
-        """ Convert a file tree back into a flat dict """ 
+        """ Convert a file tree back into a flat dict """
 
         result = {}
 
         def helper(tree, leading_path = ''):
             dirs  = tree['dirs']; files = tree['files']
-            for name, file_info in files.iteritems():
+            for name, file_info in files.items():
                 file_info['path'] = leading_path + '/'  + name
                 result[file_info['path']] = file_info
 
-            for name, contents in dirs.iteritems():
+            for name, contents in dirs.items():
                 helper(contents, leading_path +'/'+ name)
         helper(tree); return result
 
@@ -84,9 +84,9 @@ class versioned_storage:
 #===============================================================================
     def print_dir_tree(self, tree, indent = ''):
         dirs  = tree['dirs']; files = tree['files']
-        for name in files.keys(): print indent + name
-        for name, contents in dirs.iteritems():
-            print indent + name + '/'
+        for name in list(files.keys()): print(indent + name)
+        for name, contents in dirs.items():
+            print(indent + name + '/')
             self.print_dir_tree(contents, indent + '---')
 
 
@@ -96,7 +96,7 @@ class versioned_storage:
 
         json_d = self.read_index_object(file_hash, 'tree')
         node = {'files' : json_d['files'], 'dirs' : {}}
-        for name, hsh in json_d['dirs'].iteritems(): node['dirs'][name] = self.read_dir_tree(hsh)
+        for name, hsh in json_d['dirs'].items(): node['dirs'][name] = self.read_dir_tree(hsh)
         return node
 
 
@@ -105,7 +105,7 @@ class versioned_storage:
         """ Recur through dir tree data structure and write it as a set of objects """
 
         dirs  = tree['dirs']; files = tree['files']
-        child_dirs = {name : self.write_dir_tree(contents) for name, contents in dirs.iteritems()}
+        child_dirs = {name : self.write_dir_tree(contents) for name, contents in dirs.items()}
         return self.write_index_object('tree', {'files' : files, 'dirs': child_dirs})
 
 
@@ -116,7 +116,7 @@ class versioned_storage:
         commit_state = sfs.file_or_default(sfs.cpjoin(self.base_path, 'active_commit'), None)
         if commit_state != None: return True
         return False
-        
+
 
 #===============================================================================
     def get_head(self):
@@ -126,13 +126,13 @@ class versioned_storage:
 
 
 #===============================================================================
-# NOTE Everything below here must not be called concurrently, either from 
+# NOTE Everything below here must not be called concurrently, either from
 # threads in a single process or from multiple processes
 #===============================================================================
     def begin(self):
         if self.have_active_commit(): raise Exception()
 
-        active_files = {} 
+        active_files = {}
         head = self.get_head()
         if head != 'root':
             commit = self.read_index_object(head, 'commit')
@@ -160,7 +160,7 @@ class versioned_storage:
 #===============================================================================
     def fs_put_from_file(self, source_file, file_info):
         if not self.have_active_commit(): raise Exception()
-        file_info['hash'] = file_hash = sfs.hash_file(source_file) 
+        file_info['hash'] = file_hash = sfs.hash_file(source_file)
 
         target_base = sfs.cpjoin(self.base_path, 'files',file_hash[:2])
         target = sfs.cpjoin(target_base, file_hash[2:])
@@ -186,10 +186,10 @@ class versioned_storage:
         #=======================================================
         # Update commit files
         #=======================================================
-        def helper(contents):
+        def helper2(contents):
             contents[file_info['path']] = file_info
             return contents
-        self.update_system_file('active_commit_files', helper)
+        self.update_system_file('active_commit_files', helper2)
 
 
 #===============================================================================
@@ -207,10 +207,10 @@ class versioned_storage:
         #=======================================================
         # Update commit files
         #=======================================================
-        def helper(contents):
+        def helper2(contents):
             del contents[file_info['path']]
             return contents
-        self.update_system_file('active_commit_files', helper)
+        self.update_system_file('active_commit_files', helper2)
 
 
 #===============================================================================
@@ -236,7 +236,7 @@ class versioned_storage:
             if len(current_changes) > 2: commit_message += '...'
 
         # Commit timestamp
-        commit_datetime = datetime.utcnow() if commit_datetime == None else commit_datetime
+        commit_datetime = datetime.utcnow() if commit_datetime is None else commit_datetime
         commit_timestamp = commit_datetime.strftime("%d-%m-%Y %H:%M:%S:%f")
 
         # Create commit
@@ -277,7 +277,7 @@ class versioned_storage:
             else:# commit not ok
                 for item in gc_log_items:
                     # delete the object for this file, noting that it may not exist
-                    print item
+                    print(item)
                     object_dir = 'files' if item[0] == 'file' else 'index'
                     target_base = sfs.cpjoin(self.base_path, object_dir, item[1][:2])
                     sfs.ignore(os.remove, sfs.cpjoin(target_base, item[1][2:]))
@@ -293,7 +293,7 @@ class versioned_storage:
     def get_changes_since(self, version_id, head):
         pointer = head
         if pointer == version_id: return {}
-        
+
         change_logs = []
         seen_pointers = {}
 
@@ -358,7 +358,7 @@ class versioned_storage:
             elif len(path) == 1:
                 if path[0] not in tree_contents['files']: raise IOError('No such file or directory')
                 return tree_contents['files'][path[0]]
-            else: 
+            else:
                 raise IOError('No such file or directory')
 
         split_path = file_path.split('/')

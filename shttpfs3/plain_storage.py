@@ -1,9 +1,6 @@
-#import os.path as p
-import os, shutil, json, errno
-
-#from storage import *
-from storage import storage
-from common import *
+import json
+from shttpfs3.storage import storage
+from shttpfs3.common import cpjoin, get_single_file_info, file_or_default
 
 class plain_storage(storage):
     """ Plain (non-versioned) data store used by the client """
@@ -20,18 +17,17 @@ class plain_storage(storage):
         """ Gets last change time for a single file """
 
         f_path = self.get_full_file_path(rel_path)
-        int_path = pfx_path(os.path.normpath(force_unicode(rel_path).strip()))
         return get_single_file_info(f_path, rel_path)
-            
+
 #===============================================================================
     def read_local_manifest(self):
         """ Read the file manifest, or create a new one if there isn't one already """
 
-        manifest = file_or_default(self.get_full_file_path(self.manifest_file), {
+        manifest = json.loads(file_or_default(self.get_full_file_path(self.manifest_file), """{
             'format_version' : 2,
             'root'           : '/',
             'have_revision'  : 'root',
-            'files'          : {}}, json.loads)
+            'files'          : {}}""")
 
         if 'format_version' not in manifest or manifest['format_version'] < 2:
             raise SystemExit('Please update the client manifest format')
