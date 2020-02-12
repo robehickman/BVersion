@@ -1,9 +1,9 @@
 import os.path, hashlib, errno, copy
-from typing import List, Dict
+from typing import List, Dict, Any
 from termcolor import colored
 
 ############################################################################
-def ignore(*args: List[any]) -> any:
+def ignore(*args):
     """ Calls function passed as argument zero and ignores any exceptions raised by it """
     try: return args[0](*args[1:])
     except Exception: pass # pylint: disable=broad-except
@@ -61,7 +61,7 @@ def make_dirs_if_dont_exist(path: str) -> None:
         except OSError: pass
 
 ############################################################################################
-def cpjoin(*args: List[str]) -> str:
+def cpjoin(*args: str) -> str:
     """ custom path join """
     rooted = True if args[0].startswith('/') else False
     def deslash(a): return a[1:] if a.startswith('/') else a
@@ -86,7 +86,6 @@ def hash_file(file_path: str, block_size: int = 65536) -> str:
     with open(file_path, 'rb') as h_file:
         while True:
             file_buffer = h_file.read(block_size)
-            print(file_buffer)
             if len(file_buffer) == 0: break
             sha.update(file_buffer)
     return sha.hexdigest()

@@ -1,6 +1,7 @@
 import os.path as p
 import os, shutil, json, errno
 from collections import deque
+from typing import Union, TextIO
 
 from shttpfs3.common import cpjoin, ignore, file_or_default, file_put_contents
 
@@ -15,7 +16,7 @@ class storage(object):
         self.j_file      = self.get_full_file_path(conf_dir, 'journal.json')
         self.tmp_dir     = self.get_full_file_path(conf_dir, 'tmp')
         self.backup_dir  = self.get_full_file_path(conf_dir, 'back')
-        self.journal     = None
+        self.journal: Union[None, TextIO] = None
         self.tmp_idx     = 0
 
         ignore(os.makedirs, self.tmp_dir)    # Make sure tmp dir exists
@@ -40,7 +41,7 @@ class storage(object):
 
         backup_id_file = p.join(self.backup_dir, '.bk_idx')
 
-        backup_num = int(file_or_default(backup_id_file, '1'))
+        backup_num = int(file_or_default(backup_id_file, b'1'))
         backup_name = str(backup_num) + "_" + os.path.basename(src)
         backup_num += 1
 
@@ -52,7 +53,7 @@ class storage(object):
         """ Begin a transaction """
 
         if self.journal != None:
-            raise Exception('Storage is already active, nested begin not supported')
+            raise 
 
         # under normal operation journal is deleted at end of transaction
         # if it does exist we need to roll back
@@ -64,11 +65,13 @@ class storage(object):
     def do_action(self, command: dict, journal: bool = True):
         """ Implementation for declarative file operations. """
 
+        if self.journal is None: Exception('Must call begin first')
+
         cmd = 0; src = 1; path = 1; data = 2; dst = 2
 
         if journal is True:
-            self.journal.write(json.dumps(command['undo']) + "\n")
-            self.journal.flush()
+            self.journal.write(json.dumps(command['undo']) + "\n") # type: ignore
+            self.journal.flush()                                   # type: ignore
 
         d = command['do']
         if   d[cmd] == 'copy':   shutil.copy(d[src], d[dst])
@@ -113,7 +116,9 @@ class storage(object):
     def commit(self, cont: bool = False):
         """ Finish a transaction """
 
-        self.journal.close()
+        if self.journal is None: Exception('Must call begin first')
+
+        self.journal.close() # type: ignore
         self.journal = None
         os.remove(self.j_file)
 

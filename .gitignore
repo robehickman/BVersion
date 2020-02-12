@@ -10,3 +10,4 @@ build
 dist
 shttpfs/tests/vers_test
 tests/filesystem_tests
+.mypy_cache

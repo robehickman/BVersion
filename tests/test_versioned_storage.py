@@ -61,6 +61,7 @@ class TestVersionedStorage(TestCase):
 
         #==================
         data_store = versioned_storage(DATA_DIR)
+
         data_store.begin()
         data_store.fs_put_from_file(cpjoin(DATA_DIR, 'test 1'), {'path' : '/test/path'})
         data_store.commit('test msg', 'test user')
