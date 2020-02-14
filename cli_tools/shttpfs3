@@ -1,3 +1,3 @@
-#!/usr/bin/env python
-from shttpfs.client import run
+#!/usr/bin/env python3
+from shttpfs3.client import run
 run()

@@ -17,11 +17,11 @@ def setup():
     """ create test dirs with two clients and a server """
     def make_client(name):
         make_dirs_if_dont_exist(DATA_DIR + name + '/.shttpfs')
-        file_put_contents(DATA_DIR +  name + '/.shttpfs/client_configuration.json', json.dumps({
+        file_put_contents(DATA_DIR +  name + '/.shttpfs/client_configuration.json', bytes(json.dumps({
             "server_domain"  : "none",
             "user"           : "test",
             "repository"     : repo_name,
-            "private_key"    : private_key}))
+            "private_key"    : private_key}),  encoding='utf8'))
 
     make_client('client1')
     make_client('client2')
@@ -78,12 +78,12 @@ def get_server_file_name(content):
 class TestSystem(TestCase):
 ############################################################################################
     def test_system(self):
-        test_content_1   = 'test file jhgrtelkj'
+        test_content_1   = b'test file jhgrtelkj'
         test_content_2   = b''.join([struct.pack('B', i) for i in range(256)]) # binary string with all byte values
         test_content_2_2 = test_content_2[::-1]
-        test_content_3   = 'test content 3 sdavcxreiltlj'
-        test_content_4   = 'test content 4 fsdwqtruytuyt'
-        test_content_5   = 'test content 5 .,myuitouys'
+        test_content_3   = b'test content 3 sdavcxreiltlj'
+        test_content_4   = b'test content 4 fsdwqtruytuyt'
+        test_content_5   = b'test content 5 .,myuitouys'
 
         #=========
         setup()
@@ -98,7 +98,10 @@ class TestSystem(TestCase):
 
         # commit the files
         session_token = client.authenticate()
+        print(session_token)
         version_id = client.commit(session_token, 'test commit')
+        return True
+
         self.assertNotEqual(version_id, None)
 
         # commit message should be in log

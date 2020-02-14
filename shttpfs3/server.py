@@ -69,7 +69,7 @@ def lock_access(repository_path, callback):
 
 
 #===============================================================================
-def update_user_lock(repository_path, session_token):
+def update_user_lock(repository_path: str, session_token: bytes):
     """ Write or clear the user lock file """ # NOTE ALWAYS use within lock access callback
 
     # While the user lock file should ALWAYS be written only within a lock_access
@@ -80,7 +80,7 @@ def update_user_lock(repository_path, session_token):
 
     with open(tmp_path, 'w') as fd2:
         if session_token is None: fd2.write('')
-        else: fd2.write(json.dumps({'session_token' : session_token, 'expires' : int(time.time()) + 30}))
+        else: fd2.write(json.dumps({'session_token' : session_token.decode('utf8'), 'expires' : int(time.time()) + 30}))
         fd2.flush()
     os.rename(tmp_path, real_path)
 
@@ -224,6 +224,7 @@ def authenticate():
             conn.execute("insert into session_tokens (token, expires, ip, username) values (?,?,?, ?)",
                          (session_token, time.time() + extend_session_duration, client_ip, user))
             conn.commit()
+
             return success({'session_token'  : session_token})
 
         except Exception: # pylint: disable=broad-except
@@ -274,7 +275,7 @@ def have_authenticated_user(client_ip, repository, session_token):
 def find_changed():
     """ Find changes since the revision it is currently holding """
 
-    session_token = request.headers['session_token']
+    session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===
@@ -314,7 +315,7 @@ def find_changed():
 def pull_file():
     """ Get a file from the server """
 
-    session_token = request.headers['session_token']
+    session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===
@@ -333,7 +334,7 @@ def pull_file():
 #===============================================================================
 @app.route('/list_versions', methods=['POST'])
 def list_versions():
-    session_token = request.headers['session_token']
+    session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===
@@ -348,7 +349,7 @@ def list_versions():
 #===============================================================================
 @app.route('/list_changes', methods=['POST'])
 def list_changes():
-    session_token = request.headers['session_token']
+    session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===
@@ -363,7 +364,7 @@ def list_changes():
 #===============================================================================
 @app.route('/list_files', methods=['POST'])
 def list_files():
-    session_token = request.headers['session_token']
+    session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===
@@ -380,7 +381,7 @@ def list_files():
 def begin_commit():
     """ Allow a client to begin a commit and acquire the write lock """
 
-    session_token = request.headers['session_token']
+    session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===
@@ -431,7 +432,7 @@ def begin_commit():
 def push_file():
     """ Push a file to the server """ #NOTE beware that reading post data in flask causes hang until file upload is complete
 
-    session_token = request.headers['session_token']
+    session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===
@@ -475,7 +476,7 @@ def push_file():
 def delete_files():
     """ Delete one or more files from the server """
 
-    session_token = request.headers['session_token']
+    session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===
@@ -509,7 +510,7 @@ def delete_files():
 def commit():
     """ Commit changes and release the write lock """
 
-    session_token = request.headers['session_token']
+    session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===

@@ -24,10 +24,10 @@ class plain_storage(storage):
         """ Read the file manifest, or create a new one if there isn't one already """
 
         manifest = json.loads(file_or_default(self.get_full_file_path(self.manifest_file), """{
-            'format_version' : 2,
-            'root'           : '/',
-            'have_revision'  : 'root',
-            'files'          : {}}"""))
+            "format_version" : 2,
+            "root"           : "/",
+            "have_revision"  : "root",
+            "files"          : {}}"""))
 
         if 'format_version' not in manifest or manifest['format_version'] < 2:
             raise SystemExit('Please update the client manifest format')

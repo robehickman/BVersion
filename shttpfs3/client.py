@@ -57,7 +57,7 @@ def authenticate(previous_token = None):
     headers = server_connection.request("begin_auth", {'repository' : config['repository']})[1] # Only care about headers
 
     if headers['status'] == 'ok':
-        signature = base64.b64encode(pysodium.crypto_sign_detached(headers['auth_token'].decode('utf-8'), config['private_key']))
+        signature = base64.b64encode(pysodium.crypto_sign_detached(headers['auth_token'], config['private_key']))
         headers = server_connection.request("authenticate", {
             'auth_token' : headers['auth_token'],
             'signature'  : signature,
