@@ -1,14 +1,13 @@
 import sqlite3 as db
 import fcntl, os, json, time, base64, re, pysodium
-from flask import Flask, request, send_from_directory, make_response
 
 #====
+from shttpfs3.http_server import Request, Responce
 from shttpfs3.common import cpjoin, file_get_contents
 from shttpfs3.versioned_storage import versioned_storage
 from shttpfs3.merge_client_and_server_changes import merge_client_and_server_changes
 
-app = Flask(__name__)
-app.debug = True
+from pprint import pprint
 
 #===============================================================================
 # NOTE to use this must be replaced with a valid configuration, see 'shttpfs_server'
@@ -25,10 +24,33 @@ no_active_commit_msg = "A commit must be started before attempting this operatio
 extend_session_duration = (60 * 60) * 2 # 2 hours
 
 #===============================================================================
+# Decorator to make defining routes easy
+#===============================================================================
+routes = {}
+def route(path):
+    def route_wrapper(func): routes[path] = func
+    return route_wrapper
+
+#===============================================================================
+# Main HTTP endpoint
+#===============================================================================
+def endpoint(request: Request):
+
+
+    request_action: str = request.uri.split('/')[1]
+    print(request.remote_addr)
+    print(request_action)
+
+    if request_action not in routes:
+        raise Exception('request error')
+    
+    responce: Responce = routes[request_action](request) 
+    return responce
+
+
+#===============================================================================
 def server_responce(headers, body):
-    response = make_response(body)
-    for k, v in headers.items(): response.headers[k] = v
-    return response
+    return Responce(headers, body)
 
 
 #===============================================================================
@@ -151,8 +173,8 @@ def gc_tokens(conn):
     conn.commit()
 
 #===============================================================================
-@app.route('/begin_auth', methods=['POST'])
-def begin_auth():
+@route('begin_auth')
+def begin_auth(request: Request):
     """ Request authentication token to sign """
 
     repository    = request.headers['repository']
@@ -165,19 +187,19 @@ def begin_auth():
     # Issue a new token
     auth_token = base64.b64encode(pysodium.randombytes(35)).decode('utf-8')
     conn.execute("insert into tokens (expires, token, ip) values (?,?,?)",
-                 (time.time() + 30, auth_token, request.environ['REMOTE_ADDR']))
+                 (time.time() + 30, auth_token, request.remote_addr))
     conn.commit()
 
     return success({'auth_token' : auth_token})
 
 
 #===============================================================================
-@app.route('/authenticate', methods=['POST'])
-def authenticate():
+@route('authenticate')
+def authenticate(request: Request):
     """ This does two things, either validate a pre-existing session token
     or create a new one from a signed authentication token. """
 
-    client_ip     = request.environ['REMOTE_ADDR']
+    client_ip     = request.remote_addr
     repository    = request.headers['repository']
     if repository not in config['repositories']: return fail(no_such_repo_msg)
 
@@ -271,15 +293,15 @@ def have_authenticated_user(client_ip, repository, session_token):
 #===============================================================================
 # Main System
 #===============================================================================
-@app.route('/find_changed', methods=['POST'])
-def find_changed():
+@route('find_changed')
+def find_changed(request: Request):
     """ Find changes since the revision it is currently holding """
 
     session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    current_user = have_authenticated_user(request.remote_addr, repository, session_token)
     if current_user is False: return fail(user_auth_fail_msg)
 
     #===
@@ -311,15 +333,15 @@ def find_changed():
 
 
 #===============================================================================
-@app.route('/pull_file', methods=['POST'])
-def pull_file():
+@route('pull_file')
+def pull_file(request: Request):
     """ Get a file from the server """
 
     session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    current_user = have_authenticated_user(request.remote_addr, repository, session_token)
     if current_user is False: return fail(user_auth_fail_msg)
 
 
@@ -332,13 +354,13 @@ def pull_file():
 
 
 #===============================================================================
-@app.route('/list_versions', methods=['POST'])
-def list_versions():
+@route('list_versions')
+def list_versions(request: Request):
     session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    current_user = have_authenticated_user(request.remote_addr, repository, session_token)
     if current_user is False: return fail(user_auth_fail_msg)
 
     #===
@@ -347,13 +369,13 @@ def list_versions():
 
 
 #===============================================================================
-@app.route('/list_changes', methods=['POST'])
-def list_changes():
+@route('list_changes')
+def list_changes(request: Request):
     session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    current_user = have_authenticated_user(request.remote_addr, repository, session_token)
     if current_user is False: return fail(user_auth_fail_msg)
 
     #===
@@ -362,13 +384,13 @@ def list_changes():
 
 
 #===============================================================================
-@app.route('/list_files', methods=['POST'])
-def list_files():
+@route('list_files')
+def list_files(request: Request):
     session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    current_user = have_authenticated_user(request.remote_addr, repository, session_token)
     if current_user is False: return fail(user_auth_fail_msg)
 
     #===
@@ -377,15 +399,15 @@ def list_files():
 
 
 #===============================================================================
-@app.route('/begin_commit', methods=['POST'])
-def begin_commit():
+@route('begin_commit')
+def begin_commit(request: Request):
     """ Allow a client to begin a commit and acquire the write lock """
 
     session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    current_user = have_authenticated_user(request.remote_addr, repository, session_token)
     if current_user is False: return fail(user_auth_fail_msg)
 
     #===
@@ -428,15 +450,15 @@ def begin_commit():
 
 
 #===============================================================================
-@app.route('/push_file', methods=['POST'])
-def push_file():
+@route('push_file')
+def push_file(request: Request):
     """ Push a file to the server """ #NOTE beware that reading post data in flask causes hang until file upload is complete
 
     session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    current_user = have_authenticated_user(request.remote_addr, repository, session_token)
     if current_user is False: return fail(user_auth_fail_msg)
 
     #===
@@ -472,15 +494,15 @@ def push_file():
 
 
 #===============================================================================
-@app.route('/delete_files', methods=['POST'])
-def delete_files():
+@route('delete_files')
+def delete_files(request: Request):
     """ Delete one or more files from the server """
 
     session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    current_user = have_authenticated_user(request.remote_addr, repository, session_token)
     if current_user is False: return fail(user_auth_fail_msg)
 
     #===
@@ -506,15 +528,15 @@ def delete_files():
 
 
 #===============================================================================
-@app.route('/commit', methods=['POST'])
-def commit():
+@route('commit')
+def commit(request: Request):
     """ Commit changes and release the write lock """
 
     session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
     #===
-    current_user = have_authenticated_user(request.environ['REMOTE_ADDR'], repository, session_token)
+    current_user = have_authenticated_user(request.remote_addr, repository, session_token)
     if current_user is False: return fail(user_auth_fail_msg)
 
     #===

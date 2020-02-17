@@ -376,8 +376,8 @@ def run():
     #----------------------------
     elif args[0] == 'keygen':
         private_key, public_key = crypto.make_keypair()
-        print('\nPrivate key:\n' + private_key)
-        print('\nPublic key: \n' + public_key + '\n')
+        print('\nPrivate key:\n' + private_key.decode('utf8'))
+        print('\nPublic key: \n' + public_key.decode('utf8') + '\n')
 
     #----------------------------
     elif args [0] == 'checkout':

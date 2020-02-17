@@ -35,7 +35,7 @@ class client_http_request(object):
     def request(self, url, headers, data = None, gen = False):
         jsn = json.dumps(data) if data is not None else '{}'
         conn = self.begin(url, len(jsn), headers, content_type = 'application/json')
-        conn.send(jsn)
+        conn.send(jsn.encode('utf8'))
         res = conn.getresponse()
 
         if gen is False:
