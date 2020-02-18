@@ -35,7 +35,7 @@ class plain_storage(storage):
 
 #===============================================================================
     def write_local_manifest(self, manifest):
-        self.file_put_contents(self.manifest_file, json.dumps(manifest))
+        self.file_put_contents(self.manifest_file, json.dumps(manifest).encode('utf8'))
 
 #===============================================================================
     def remove_from_manifest(self, manifest, rpath):

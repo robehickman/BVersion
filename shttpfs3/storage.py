@@ -131,7 +131,7 @@ class storage(object):
         """ Returns contents of file located at 'path', not changing FS so does
         not require journaling """
 
-        with open(self.get_full_file_path(path), 'r') as f: return  f.read()
+        with open(self.get_full_file_path(path), 'rb') as f: return  f.read()
 
 ############################################################################################
     def file_put_contents(self, path: str, data: bytes):

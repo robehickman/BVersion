@@ -1,6 +1,8 @@
-import socket, _thread, threading
+import os, socket, _thread, threading, json, time
 from http.server import BaseHTTPRequestHandler
-from io import BytesIO, TextIOWrapper
+from io import BytesIO, BufferedWriter
+from typing import Union
+
 #=============================================
 class HTTPRequest(BaseHTTPRequestHandler):
     def __init__(self, request_text):
@@ -12,25 +14,6 @@ class HTTPRequest(BaseHTTPRequestHandler):
     def send_error(self, code, message):
         self.error_code = code
         self.error_message = message
-
-#=====================
-class Request:
-    def __init__ (self, remote_addr: str, remote_port: int, uri: str, headers, body):
-        self.remote_addr = remote_addr
-        self.remote_port = remote_port
-        self.uri = uri
-        self.headers = headers
-        self.body    = body
-
-    def get_json(self):
-        return json.loads(self.body.read())
-
-#=====================
-class Responce:
-    def __init__ (self, headers = None, body = " "):
-        if headers is None: headers = {}
-        self.headers = headers
-        self.body    = body
 
 #=====================
 class read_body:
@@ -46,12 +29,41 @@ class read_body:
         left_to_read = self.body_length - self.have_read
         if left_to_read < length: length = left_to_read
         if len(self.body_partial) < length:
-            self.body_partial += self.reader(length - len(self.body_partial))          
+            print(len(self.body_partial))
+            read_buffer = self.reader(length - len(self.body_partial))
+            print('reading chunk')
+            print(length - len(self.body_partial))
+            print(len(read_buffer))
+            self.body_partial += read_buffer          
         retbuffer = self.body_partial[0:length]
         self.body_partial = self.body_partial[length:]
         self.have_read += length
+        print(self.have_read)
         return retbuffer
 
+#=====================
+class Request:
+    def __init__ (self, remote_addr: str, remote_port: int, uri: str, headers: dict, body: read_body):
+        self.remote_addr = remote_addr
+        self.remote_port = remote_port
+        self.uri = uri
+        self.headers = headers
+        self.body    = body
+
+    def get_json(self):
+        return json.loads(self.body())
+
+#=====================
+class ServeFile:
+    def __init__ (self, path: str):
+        self.path = path
+
+#=====================
+class Responce:
+    def __init__ (self, headers = None, body: Union[bytes, ServeFile] = b""):
+        if headers is None: headers = {}
+        self.headers = headers
+        self.body    = body
 
 #=============================================
 def HTTPServer(host, port, connection_handler):
@@ -78,6 +90,7 @@ def HTTPServer(host, port, connection_handler):
                     break
                     
                 request_headers = {k.lower() : v for k,v in dict(request.headers).items()}
+                print(request_headers)
 
                 # handle the request
                 body_length = int(request_headers['content-length'])
@@ -88,8 +101,19 @@ def HTTPServer(host, port, connection_handler):
                 # generate client responce
                 responce_headers =  b"HTTP/1.1 200 OK\r\n"
                 responce_headers += b"Connection: Keep-Alive\r\n"
-                responce_headers += b"Content-Length: 0\r\n"
-                
+
+                responce_content_length: int
+
+                if isinstance(rsp.body, ServeFile):
+                    responce_content_length = os.stat(rsp.body.path).st_size
+                else:
+                    responce_content_length = len(rsp.body)
+
+                print('--------------')
+                print(responce_content_length)
+
+                responce_headers += b"Content-Length: " + bytes(str(responce_content_length), encoding='utf8') + b'\r\n'                
+
                 for k, v in rsp.headers.items():
                     if isinstance(k, str): k=k.encode('utf8')
                     if isinstance(v, str): v=v.encode('utf8')
@@ -98,18 +122,16 @@ def HTTPServer(host, port, connection_handler):
                 responce_headers += b"\r\n"
                 c.send(responce_headers)
 
-                if isinstance(rsp.body, TextIOWrapper):
-                    client_socket.sendfile(rsp.body, 0)
+                if isinstance(rsp.body, ServeFile):
+                    c.sendfile(open(rsp.body.path, 'rb'), 0)
                 else:
-                    pass
-                    #c.send(rsp.body)
+                    c.send(rsp.body)
                 
                 break
         except:
             c.close()
             raise
 
-        # connection closed 
         c.close() 
 
     #============

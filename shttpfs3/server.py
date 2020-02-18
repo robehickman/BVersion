@@ -1,8 +1,9 @@
 import sqlite3 as db
 import fcntl, os, json, time, base64, re, pysodium
+from typing import Dict, Callable, Union, Optional, BinaryIO
 
 #====
-from shttpfs3.http_server import Request, Responce
+from shttpfs3.http_server import Request, Responce, ServeFile
 from shttpfs3.common import cpjoin, file_get_contents
 from shttpfs3.versioned_storage import versioned_storage
 from shttpfs3.merge_client_and_server_changes import merge_client_and_server_changes
@@ -11,7 +12,7 @@ from pprint import pprint
 
 #===============================================================================
 # NOTE to use this must be replaced with a valid configuration, see 'shttpfs_server'
-config = {}
+config = {} # type: ignore
 
 #===============================================================================
 lock_fail_msg        = 'Could not acquire exclusive lock'
@@ -26,8 +27,8 @@ extend_session_duration = (60 * 60) * 2 # 2 hours
 #===============================================================================
 # Decorator to make defining routes easy
 #===============================================================================
-routes = {}
-def route(path):
+routes: Dict[str, Callable[[Request], Responce]] = {}
+def route(path: str):
     def route_wrapper(func): routes[path] = func
     return route_wrapper
 
@@ -35,8 +36,6 @@ def route(path):
 # Main HTTP endpoint
 #===============================================================================
 def endpoint(request: Request):
-
-
     request_action: str = request.uri.split('/')[1]
     print(request.remote_addr)
     print(request_action)
@@ -45,25 +44,27 @@ def endpoint(request: Request):
         raise Exception('request error')
     
     responce: Responce = routes[request_action](request) 
+
+    print(responce.headers)
     return responce
 
 
 #===============================================================================
-def server_responce(headers, body):
+def server_responce(headers: Dict[str, str], body: Union[bytes, ServeFile]):
     return Responce(headers, body)
 
 
 #===============================================================================
-def fail(msg = ''):
+def fail(msg: str = ''):
     """ Generate fail JSON to send to client """
-    return server_responce({'status' : 'fail', 'msg' : msg}, '')
+    return server_responce({'status' : 'fail', 'msg' : msg}, b'')
 
 
 #===============================================================================
-def success(headers = None, data = ''):
+def success(headers: Optional[Dict[str, str]] = None, data: Union[dict, bytes, ServeFile] = b''):
     """ Generate success JSON to send to client """
-    passed_headers = {} if headers is None else headers
-    if isinstance(data, dict): data = json.dumps(data)
+    passed_headers: Dict[str, str] = {} if headers is None else headers
+    if isinstance(data, dict): data = json.dumps(data).encode('utf8')
     ret_headers = {'status' : 'ok'}
     ret_headers.update(passed_headers)
     return server_responce(ret_headers, data)
@@ -76,7 +77,7 @@ def success(headers = None, data = ''):
 # while a commit is in progress and this updates atomically. This uses flock
 # as a convenient way to synchronise across multiple processes.
 #===============================================================================
-def lock_access(repository_path, callback):
+def lock_access(repository_path: str, callback: Callable[[], Responce]):
     """ Synchronise access to the user file between processes, this specifies
     which user is allowed write access at the current time """
 
@@ -97,8 +98,8 @@ def update_user_lock(repository_path: str, session_token: bytes):
     # While the user lock file should ALWAYS be written only within a lock_access
     # callback, it is sometimes read asynchronously. Because of this updates to
     # the file must be atomic. Write plus move is used to achieve this.
-    real_path = cpjoin(repository_path, 'user_file')
-    tmp_path  = cpjoin(repository_path, 'new_user_file')
+    real_path: str = cpjoin(repository_path, 'user_file')
+    tmp_path:  str = cpjoin(repository_path, 'new_user_file')
 
     with open(tmp_path, 'w') as fd2:
         if session_token is None: fd2.write('')
@@ -108,15 +109,15 @@ def update_user_lock(repository_path: str, session_token: bytes):
 
 
 #===============================================================================
-def can_aquire_user_lock(repository_path, session_token):
+def can_aquire_user_lock(repository_path: str, session_token: bytes):
     """ Allow a user to acquire the lock if no other user is currently using it, if the original
     user is returning, presumably after a network error, or if the lock has expired.  """
     # NOTE ALWAYS use within lock access callback
 
-    user_file_path = cpjoin(repository_path, 'user_file')
+    user_file_path: str = cpjoin(repository_path, 'user_file')
     if not os.path.isfile(user_file_path): return True
     with open(user_file_path, 'r') as fd2:
-        content = fd2.read()
+        content: str = fd2.read()
         if len(content) == 0: return True
         try: res = json.loads(content)
         except ValueError: return True
@@ -125,7 +126,7 @@ def can_aquire_user_lock(repository_path, session_token):
     return False
 
 #===============================================================================
-def read_user_lock(repository_path):
+def read_user_lock(repository_path: str):
     try:
         user_lock = file_get_contents(cpjoin(repository_path, 'user_file'))
         if user_lock == '': return None
@@ -135,7 +136,7 @@ def read_user_lock(repository_path):
 
 
 #===============================================================================
-def varify_user_lock(repository_path, session_token):
+def varify_user_lock(repository_path: str, session_token: bytes):
     """ Verify that a returning user has a valid token and their lock has not expired """
 
     with open(cpjoin(repository_path, 'user_file'), 'r') as fd2:
@@ -143,27 +144,30 @@ def varify_user_lock(repository_path, session_token):
         if len(content) == 0: return False
         try: res = json.loads(content)
         except ValueError: return False
-        return res['session_token'] == session_token and int(time.time()) < int(res['expires'])
+        return res['session_token'].encode('utf8') == session_token and int(time.time()) < int(res['expires'])
     return False
 
 
 #===============================================================================
 # Authentication
 #===============================================================================
-def auth_db_connect(db_path):
+auth_db_initilised = False
+def auth_db_connect(db_path: str) -> db.Connection:
     """ An SQLite database is used to store authentication transient data,
     this is tokens, strings of random data which are signed by the client,
     and session_tokens which identify authenticated users """
 
+    global auth_db_initilised
+
     def dict_factory(cursor, row): return {col[0] : row[idx] for idx,col in enumerate(cursor.description)}
-    conn = db.connect(db_path)
+    conn = db.connect(db_path) 
     conn.row_factory = dict_factory
-    if not auth_db_connect.init:
+    if not auth_db_initilised:
         conn.execute('create table if not exists tokens (expires int, token text, ip text)')
         conn.execute('create table if not exists session_tokens (expires int, token text, ip text, username text)')
-        auth_db_connect.init = True
+        auth_db_initilised = True
     return conn
-auth_db_connect.init = False
+
 
 #===============================================================================
 def gc_tokens(conn):
@@ -174,7 +178,7 @@ def gc_tokens(conn):
 
 #===============================================================================
 @route('begin_auth')
-def begin_auth(request: Request):
+def begin_auth(request: Request) -> Responce:
     """ Request authentication token to sign """
 
     repository    = request.headers['repository']
@@ -195,7 +199,7 @@ def begin_auth(request: Request):
 
 #===============================================================================
 @route('authenticate')
-def authenticate(request: Request):
+def authenticate(request: Request) -> Responce:
     """ This does two things, either validate a pre-existing session token
     or create a new one from a signed authentication token. """
 
@@ -254,7 +258,7 @@ def authenticate(request: Request):
 
 
 #===============================================================================
-def have_authenticated_user(client_ip, repository, session_token):
+def have_authenticated_user(client_ip: str, repository: str, session_token: bytes):
     """ check user submitted session token against the db and that ip has not changed """
 
     if repository not in config['repositories']: return False
@@ -294,7 +298,7 @@ def have_authenticated_user(client_ip, repository, session_token):
 # Main System
 #===============================================================================
 @route('find_changed')
-def find_changed(request: Request):
+def find_changed(request: Request) -> Responce:
     """ Find changes since the revision it is currently holding """
 
     session_token = request.headers['session_token'].encode('utf8')
@@ -320,7 +324,7 @@ def find_changed(request: Request):
     # Resolve conflicts
     conflict_resolutions = json.loads(body_data['conflict_resolutions'])
     if conflict_resolutions != []:
-        resolutions = {'server' : {},'client' : {}}
+        resolutions = {'server' : {},'client' : {}} # type: ignore
         for r in conflict_resolutions:
             if len(r['4_resolution']) != 1 or r['4_resolution'][0] not in ['client', 'server']: return fail(conflict_msg)
             resolutions[r['4_resolution'][0]][r['1_path']] = None
@@ -334,7 +338,7 @@ def find_changed(request: Request):
 
 #===============================================================================
 @route('pull_file')
-def pull_file(request: Request):
+def pull_file(request: Request) -> Responce:
     """ Get a file from the server """
 
     session_token = request.headers['session_token'].encode('utf8')
@@ -349,13 +353,13 @@ def pull_file(request: Request):
     data_store = versioned_storage(config['repositories'][repository]['path'])
     file_info = data_store.get_file_info_from_path(request.headers['path'])
 
-    return success({'file_info_json' : json.dumps(file_info)},
-                   send_from_directory(data_store.get_file_directory_path(file_info['hash']), file_info['hash'][2:]))
+    full_file_path: str = cpjoin(data_store.get_file_directory_path(file_info['hash']), file_info['hash'][2:])
+    return success({'file_info_json' : json.dumps(file_info)}, ServeFile(full_file_path))
 
 
 #===============================================================================
 @route('list_versions')
-def list_versions(request: Request):
+def list_versions(request: Request) -> Responce:
     session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
@@ -370,7 +374,7 @@ def list_versions(request: Request):
 
 #===============================================================================
 @route('list_changes')
-def list_changes(request: Request):
+def list_changes(request: Request) -> Responce:
     session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
@@ -385,7 +389,7 @@ def list_changes(request: Request):
 
 #===============================================================================
 @route('list_files')
-def list_files(request: Request):
+def list_files(request: Request) -> Responce:
     session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']
 
@@ -400,7 +404,7 @@ def list_files(request: Request):
 
 #===============================================================================
 @route('begin_commit')
-def begin_commit(request: Request):
+def begin_commit(request: Request) -> Responce:
     """ Allow a client to begin a commit and acquire the write lock """
 
     session_token = request.headers['session_token'].encode('utf8')
@@ -451,7 +455,7 @@ def begin_commit(request: Request):
 
 #===============================================================================
 @route('push_file')
-def push_file(request: Request):
+def push_file(request: Request) -> Responce:
     """ Push a file to the server """ #NOTE beware that reading post data in flask causes hang until file upload is complete
 
     session_token = request.headers['session_token'].encode('utf8')
@@ -479,8 +483,8 @@ def push_file(request: Request):
         tmp_path = cpjoin(repository_path, 'tmp_file')
         with open(tmp_path, 'wb') as f:
             while True:
-                chunk = request.stream.read(1000 * 1000)
-                if chunk == b'': break
+                chunk = request.body(1000 * 1000)
+                if chunk is None: break
                 f.write(chunk)
 
         #===
@@ -495,7 +499,7 @@ def push_file(request: Request):
 
 #===============================================================================
 @route('delete_files')
-def delete_files(request: Request):
+def delete_files(request: Request) -> Responce:
     """ Delete one or more files from the server """
 
     session_token = request.headers['session_token'].encode('utf8')
@@ -529,7 +533,7 @@ def delete_files(request: Request):
 
 #===============================================================================
 @route('commit')
-def commit(request: Request):
+def commit(request: Request) -> Responce:
     """ Commit changes and release the write lock """
 
     session_token = request.headers['session_token'].encode('utf8')
@@ -560,4 +564,3 @@ def commit(request: Request):
         update_user_lock(repository_path, None)
         return success(result)
     return lock_access(repository_path, with_exclusive_lock)
-

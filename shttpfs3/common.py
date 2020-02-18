@@ -1,5 +1,5 @@
 import os.path, hashlib, errno, copy
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from termcolor import colored
 
 ############################################################################
@@ -43,7 +43,7 @@ def file_put_contents(path: str, data: bytes) -> None:
         f.write(data); f.flush()
 
 ############################################################################################
-def file_or_default(path: str, default: bytes) -> bytes:
+def file_or_default(path: str, default: Optional[bytes]) -> bytes:
     """ Return a default value if a file does not exist """
     try:
         return file_get_contents(path)
@@ -105,7 +105,7 @@ def get_file_list(path: str) -> List[str]:
     return f_list
 
 ############################################################################################
-def find_manifest_changes(new_file_state : List[dict], old_file_state : List[dict]) -> List[Dict]:
+def find_manifest_changes(new_file_state : List[dict], old_file_state : dict) -> dict:
     """ Find what has changed between two sets of files """
     prev_state_dict = copy.deepcopy(old_file_state)
     changed_files = {}
