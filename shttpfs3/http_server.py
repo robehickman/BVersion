@@ -1,6 +1,6 @@
 import os, socket, _thread, threading, json, time
 from http.server import BaseHTTPRequestHandler
-from io import BytesIO, BufferedWriter
+from io import BytesIO
 from typing import Union
 
 #=============================================
@@ -25,20 +25,13 @@ class read_body:
             
     def __call__(self, length = None):
         if self.have_read >= self.body_length: return None
-        if length is None: length = self.body_length
-        left_to_read = self.body_length - self.have_read
-        if left_to_read < length: length = left_to_read
-        if len(self.body_partial) < length:
-            print(len(self.body_partial))
-            read_buffer = self.reader(length - len(self.body_partial))
-            print('reading chunk')
-            print(length - len(self.body_partial))
-            print(len(read_buffer))
-            self.body_partial += read_buffer          
-        retbuffer = self.body_partial[0:length]
-        self.body_partial = self.body_partial[length:]
-        self.have_read += length
-        print(self.have_read)
+        retbuffer: bytes
+        if len(self.body_partial) > 0:
+            retbuffer = self.body_partial[0:length]
+            self.body_partial = self.body_partial[length:]
+        else:
+            retbuffer = self.reader(length)
+        self.have_read += len(retbuffer)
         return retbuffer
 
 #=====================
@@ -68,15 +61,16 @@ class Responce:
 #=============================================
 def HTTPServer(host, port, connection_handler):
     def handle_connection(c, addr):
+         
         try:
             while True:
-
                 data = b""
         
                 # read request preamble
                 while True:
                     data += c.recv(1024) 
                     if b"\r\n\r\n" in data: break
+
                 preamble, body_partial = data.split(b"\r\n\r\n")
 
                 # parse the header
@@ -90,9 +84,10 @@ def HTTPServer(host, port, connection_handler):
                     break
                     
                 request_headers = {k.lower() : v for k,v in dict(request.headers).items()}
-                print(request_headers)
 
                 # handle the request
+                print('Connecction from:', addr[0], ':', addr[1],' ', request.path)
+
                 body_length = int(request_headers['content-length'])
                 body_reader = read_body(c.recv, body_length, body_partial)
                 rq = Request(addr[0], addr[1], request.path, request_headers, body_reader)
@@ -108,9 +103,6 @@ def HTTPServer(host, port, connection_handler):
                     responce_content_length = os.stat(rsp.body.path).st_size
                 else:
                     responce_content_length = len(rsp.body)
-
-                print('--------------')
-                print(responce_content_length)
 
                 responce_headers += b"Content-Length: " + bytes(str(responce_content_length), encoding='utf8') + b'\r\n'                
 
@@ -146,8 +138,7 @@ def HTTPServer(host, port, connection_handler):
     try:
         while True: 
             c, addr = s.accept() 
-            print('Connected to:', addr[0], ':', addr[1]) 
-    
+            
             # Start a new thread and return its identifier 
             _thread.start_new_thread(handle_connection, (c, addr))
     except:

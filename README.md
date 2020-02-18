@@ -1,16 +1,12 @@
 Simple HTTP File Sync (SHTTPFS) is a file synchroniser and basic version control system designed for managing binary files such as images, it follows a centralised design and has a strong emphasis on code simplicity, being inspired by the 'suckless philosophy'. It is configured using text files and intentionally does not have a web or graphical interface. Note that this has only been tested using linux ext 3 and 4, and that the system currently only works with unix file paths. The server will also only work on a unix style os as it depends on flock.
 
 
-
-
-
-
 SHTTPFS has the following features:
 
 
 ### HTTP(S) based sync protocol.
 
-Uses a simple HTTP(S) based sync protocol and public key authentication. The server is implemented using the flask framework.
+Uses a simple HTTP(S) based sync protocol and public key authentication.
 
 
 ### Automatic or manual syncing:

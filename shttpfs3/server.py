@@ -8,8 +8,6 @@ from shttpfs3.common import cpjoin, file_get_contents
 from shttpfs3.versioned_storage import versioned_storage
 from shttpfs3.merge_client_and_server_changes import merge_client_and_server_changes
 
-from pprint import pprint
-
 #===============================================================================
 # NOTE to use this must be replaced with a valid configuration, see 'shttpfs_server'
 config = {} # type: ignore
@@ -37,15 +35,12 @@ def route(path: str):
 #===============================================================================
 def endpoint(request: Request):
     request_action: str = request.uri.split('/')[1]
-    print(request.remote_addr)
-    print(request_action)
 
     if request_action not in routes:
         raise Exception('request error')
     
     responce: Responce = routes[request_action](request) 
 
-    print(responce.headers)
     return responce
 
 

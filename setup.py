@@ -6,7 +6,7 @@ def readme():
 
 setup(
     name='shttpfs',
-    version='0.4',
+    version='0.5',
     description='Client/server Http File Sync Utility',
     long_description=readme(),
     classifiers=[
@@ -24,7 +24,6 @@ setup(
     test_suite='nose.collector',
     tests_require=['nose'],
     install_requires=[
-        'Flask==1.0.2',
         'pysodium==0.7.0.post0',
         'termcolor==1.1.0'
     ],

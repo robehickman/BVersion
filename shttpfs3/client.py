@@ -213,7 +213,7 @@ def update(session_token, testing = False):
 
         # ====================
 
-        file_put_contents(conflict_resolution_path, json.dumps(out, indent=4, sort_keys=True))
+        file_put_contents(conflict_resolution_path, json.dumps(out, indent=4, sort_keys=True).encode('utf8'))
         raise SystemExit("Conflict resolution file written to .shttpfs/conflict_resolution.json\n" +
                          "Please edit this file removing 'client', or 'server' to choose which version to retain.")
 
