@@ -1,5 +1,6 @@
-import  base64, getpass, pysodium
 from typing import Tuple
+import  base64, getpass
+import pysodium #type: ignore
 
 #===============================================================================
 def prompt_for_new_password() -> str:
@@ -21,7 +22,7 @@ def hash_password(password: str, salt: bytes) -> bytes:
 def make_keypair() -> Tuple[bytes, bytes]:
     public_key, private_key = pysodium.crypto_sign_keypair()
     print('Do you wish to encrypt the private key under a password? (y/n)')
-    
+
     answer: str
     while True:
         answer = input('>').lower()
@@ -54,4 +55,3 @@ def unlock_private_key(private_key_b64: str) -> bytes:
         return private_key
     else:
         return private_key[1:]
-

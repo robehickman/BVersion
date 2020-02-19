@@ -1,10 +1,10 @@
 from pprint import pprint
 import os, sys, time, json, base64, fnmatch, shutil, fcntl, errno, urllib.parse
-import pysodium
+import pysodium #type: ignore
 
 #=================================================
 from shttpfs3.common import (cpjoin, get_file_list, find_manifest_changes, make_dirs_if_dont_exist,
-                            get_single_file_info, file_or_default, file_put_contents, file_get_contents, ignore)
+                             get_single_file_info, file_or_default, file_put_contents, file_get_contents, ignore)
 from shttpfs3.client_http_request import client_http_request
 from shttpfs3.plain_storage import plain_storage
 import shttpfs3.crypto as crypto
@@ -44,7 +44,7 @@ def authenticate(previous_token = None):
     """ Authenticate the client to the server """
 
     # if we already have a session token, try to authenticate with it
-    if previous_token != None:
+    if previous_token is not None:
         headers = server_connection.request("authenticate", {
             'session_token' : previous_token,
             'repository'    : config['repository']})[1] # Only care about headers
@@ -246,7 +246,7 @@ def commit(session_token, commit_message = ''):
         else: raise Exception('Unknown status type')
 
     if all(v == [] for k,v in changes.items()):
-        print('Nothing to commit'); return
+        print('Nothing to commit'); return None
 
     # Acquire the commit lock and check we still have the latest revision
     headers = server_connection.request("begin_commit", {
@@ -482,4 +482,3 @@ def run():
         if headers['status'] == 'ok':
             for fle in json.loads(req_result)['files']:
                 print(fle)
-

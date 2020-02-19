@@ -1,6 +1,6 @@
 import http.client, os, json, urllib.parse
 
-class client_http_request(object):
+class client_http_request:
 ############################################################################################
     def __init__(self, server_base_url):
         "Configure the servers base URL"
@@ -65,4 +65,3 @@ class client_http_request(object):
 
         res = conn.getresponse()
         return res.read(), dict(res.getheaders())
-

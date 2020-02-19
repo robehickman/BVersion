@@ -1,5 +1,5 @@
 from unittest import TestCase
-import base64, pysodium
+import base64, pysodium #type: ignore
 
 from shttpfs3 import crypto
 

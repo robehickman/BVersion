@@ -1,5 +1,5 @@
 import os.path, hashlib, errno, copy
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from termcolor import colored
 
 ############################################################################
@@ -43,7 +43,7 @@ def file_put_contents(path: str, data: bytes) -> None:
         f.write(data); f.flush()
 
 ############################################################################################
-def file_or_default(path: str, default: Optional[bytes]) -> bytes:
+def file_or_default(path: str, default: Any) -> bytes:
     """ Return a default value if a file does not exist """
     try:
         return file_get_contents(path)
@@ -63,7 +63,7 @@ def make_dirs_if_dont_exist(path: str) -> None:
 ############################################################################################
 def cpjoin(*args: str) -> str:
     """ custom path join """
-    rooted = True if args[0].startswith('/') else False
+    rooted = bool(args[0].startswith('/'))
     def deslash(a): return a[1:] if a.startswith('/') else a
     newargs = [deslash(arg) for arg in args]
     path = os.path.join(*newargs)
@@ -135,4 +135,3 @@ def find_manifest_changes(new_file_state : List[dict], old_file_state : dict) ->
         changed_files[itm['path']] = n_itm
 
     return changed_files
-

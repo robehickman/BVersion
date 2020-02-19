@@ -1,28 +1,36 @@
-import os, socket, _thread, threading, json, time
 from http.server import BaseHTTPRequestHandler
 from io import BytesIO
+import json
+import os
+import socket
+
 from typing import Union
+
+import _thread
+
+
 
 #=============================================
 class HTTPRequest(BaseHTTPRequestHandler):
     def __init__(self, request_text):
+        super(HTTPRequest, self).__init__()
         self.rfile = BytesIO(request_text)
         self.raw_requestline = self.rfile.readline()
         self.error_code = self.error_message = None
         self.parse_request()
 
-    def send_error(self, code, message):
+    def send_error(self, code, message): #pylint: ignore
         self.error_code = code
         self.error_message = message
 
 #=====================
 class read_body:
-    def __init__ (self, reader, body_length: int, body_partial: bytes): 
+    def __init__ (self, reader, body_length: int, body_partial: bytes):
         self.reader       = reader
         self.body_length  = body_length
         self.body_partial = body_partial
         self.have_read    = 0
-            
+
     def __call__(self, length = None):
         if self.have_read >= self.body_length: return None
         retbuffer: bytes
@@ -61,14 +69,13 @@ class Responce:
 #=============================================
 def HTTPServer(host, port, connection_handler):
     def handle_connection(c, addr):
-         
         try:
             while True:
                 data = b""
-        
+
                 # read request preamble
                 while True:
-                    data += c.recv(1024) 
+                    data += c.recv(1024)
                     if b"\r\n\r\n" in data: break
 
                 preamble, body_partial = data.split(b"\r\n\r\n")
@@ -82,7 +89,7 @@ def HTTPServer(host, port, connection_handler):
                 if request.command.lower() != 'post':
                     print('error parsing request')
                     break
-                    
+
                 request_headers = {k.lower() : v for k,v in dict(request.headers).items()}
 
                 # handle the request
@@ -104,13 +111,13 @@ def HTTPServer(host, port, connection_handler):
                 else:
                     responce_content_length = len(rsp.body)
 
-                responce_headers += b"Content-Length: " + bytes(str(responce_content_length), encoding='utf8') + b'\r\n'                
+                responce_headers += b"Content-Length: " + bytes(str(responce_content_length), encoding='utf8') + b'\r\n'
 
                 for k, v in rsp.headers.items():
                     if isinstance(k, str): k=k.encode('utf8')
                     if isinstance(v, str): v=v.encode('utf8')
                     responce_headers += k + b':' + v + b'\r\n'
-                    
+
                 responce_headers += b"\r\n"
                 c.send(responce_headers)
 
@@ -118,33 +125,31 @@ def HTTPServer(host, port, connection_handler):
                     c.sendfile(open(rsp.body.path, 'rb'), 0)
                 else:
                     c.send(rsp.body)
-                
+
                 break
         except:
             c.close()
             raise
 
-        c.close() 
+        c.close()
 
     #============
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
-    s.bind((host, port)) 
-    print("socket bound to port", port) 
-    
-    # put the socket into listening mode 
-    s.listen(5) 
-    print("socket is listening") 
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind((host, port))
+    print("socket bound to port", port)
+
+    # put the socket into listening mode
+    s.listen(5)
+    print("socket is listening")
 
     try:
-        while True: 
-            c, addr = s.accept() 
-            
-            # Start a new thread and return its identifier 
+        while True:
+            c, addr = s.accept()
+
+            # Start a new thread and return its identifier
             _thread.start_new_thread(handle_connection, (c, addr))
     except:
         s.close()
         raise
 
-    s.close() 
-
-
+    s.close()

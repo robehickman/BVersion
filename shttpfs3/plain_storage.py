@@ -78,7 +78,7 @@ class plain_storage(storage):
             # Rename the file in the manifest
             manifest = self.read_local_manifest()
             manifest['files'][r_dst] = self.get_single_file_info(r_dst)
-            manifest = self.write_local_manifest(manifest)
+            self.write_local_manifest(manifest)
 
             self.commit()
         except:
@@ -95,9 +95,8 @@ class plain_storage(storage):
             # Rename the file in the manifest
             manifest = self.read_local_manifest()
             del manifest['files'][rpath]
-            manifest = self.write_local_manifest(manifest)
+            self.write_local_manifest(manifest)
 
             self.commit()
         except:
             self.rollback(); raise
-

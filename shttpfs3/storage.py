@@ -8,7 +8,7 @@ from shttpfs3.common import cpjoin, ignore, file_or_default, file_put_contents
 ############################################################################################
 # Journaling file storage subsystem, only use one instance at any time, not thread safe
 ############################################################################################
-class storage(object):
+class storage:
 
 ############################################################################################
     def __init__(self, data_dir: str, conf_dir: str):
@@ -52,8 +52,7 @@ class storage(object):
     def begin(self):
         """ Begin a transaction """
 
-        if self.journal != None:
-            raise 
+        if self.journal is not None: raise Exception('Multiple Begin not allowed')
 
         # under normal operation journal is deleted at end of transaction
         # if it does exist we need to roll back
@@ -65,7 +64,7 @@ class storage(object):
     def do_action(self, command: dict, journal: bool = True):
         """ Implementation for declarative file operations. """
 
-        if self.journal is None: Exception('Must call begin first')
+        # if self.journal is None: raise Exception('Must call begin first')
 
         cmd = 0; src = 1; path = 1; data = 2; dst = 2
 
@@ -87,7 +86,7 @@ class storage(object):
 
         # Close the journal for writing, if this is an automatic rollback following a crash,
         # the file descriptor will not be open, so don't need to do anything.
-        if self.journal != None: self.journal.close()
+        if self.journal is not None: self.journal.close()
         self.journal = None
 
         # Read the journal
@@ -116,7 +115,7 @@ class storage(object):
     def commit(self, cont: bool = False):
         """ Finish a transaction """
 
-        if self.journal is None: Exception('Must call begin first')
+        if self.journal is None: raise Exception('Must call begin first')
 
         self.journal.close() # type: ignore
         self.journal = None
@@ -184,4 +183,3 @@ class storage(object):
 
         else:
             raise OSError(errno.ENOENT, 'No such file or directory', path)
-

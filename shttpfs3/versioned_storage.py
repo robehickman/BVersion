@@ -1,9 +1,9 @@
 import json, hashlib, os, os.path, shutil
-from typing import List, Dict, Any, cast
-from typing_extensions import TypedDict
-
 from  collections import defaultdict
 from datetime import datetime
+
+from typing import List, Dict, Any, cast
+from typing_extensions import TypedDict
 
 import shttpfs3.common as sfs
 
@@ -15,7 +15,7 @@ class indexObject(TypedDict):
 class indexObjectTree(indexObject):
     files: List[Dict[str, str]]
     dirs:  List[Dict[str, str]]
-    
+
 #+++++++++++++++++++++++++++++++++
 class indexObjectCommit(indexObject):
     parent:         str
@@ -28,7 +28,7 @@ class indexObjectCommit(indexObject):
 
 #+++++++++++++++++++++++++++++++++
 #+++++++++++++++++++++++++++++++++
-class versioned_storage(object):
+class versioned_storage:
     def __init__(self, base_path: str):
         self.base_path = base_path
         sfs.make_dirs_if_dont_exist(sfs.cpjoin(base_path, 'index') + '/')
@@ -44,7 +44,7 @@ class versioned_storage(object):
 #===============================================================================
     def write_index_object(self, object_type: str, contents: Dict[str, Any]) -> str:
         new_object: indexObject = {'type' : object_type}
-        new_object.update(contents)
+        new_object.update(contents) #type: ignore
         serialised = json.dumps(new_object)
         object_hash = hashlib.sha256(bytes(serialised, encoding='utf8')).hexdigest()
         target_base = sfs.cpjoin(self.base_path, 'index',object_hash[:2])
@@ -148,7 +148,7 @@ class versioned_storage(object):
         """ Checks if there is an active commit owned by the specified user """
 
         commit_state = sfs.file_or_default(sfs.cpjoin(self.base_path, 'active_commit'), None)
-        if commit_state != None: return True
+        if commit_state is not None: return True
         return False
 
 
@@ -158,7 +158,7 @@ class versioned_storage(object):
 
         contents = sfs.file_or_default(sfs.cpjoin(self.base_path, 'head'), b'root')
         return contents.decode('utf8')
-        
+
 
 #===============================================================================
 # NOTE Everything below here must not be called concurrently, either from
@@ -267,8 +267,8 @@ class versioned_storage(object):
             deleted_item = next((change for change in current_changes if change['status'] == 'deleted'), None)
 
             commit_message   = "(Generated message)\n"
-            if new_item     != None: commit_message += new_item['status']     + '    ' + new_item['path'] + '\n'
-            if deleted_item != None: commit_message += deleted_item['status'] + '    ' + deleted_item['path'] + '\n'
+            if new_item     is not None: commit_message += new_item['status']     + '    ' + new_item['path'] + '\n'
+            if deleted_item is not None: commit_message += deleted_item['status'] + '    ' + deleted_item['path'] + '\n'
             if len(current_changes) > 2: commit_message += '...'
 
         # Commit timestamp
@@ -308,7 +308,7 @@ class versioned_storage(object):
             # If a commit exists and it's hash matches the current head we do not need to do anything
             # The commit succeeded but we failed before deleting the active commit file for some reason
             is_commit = next((item for item in gc_log_items if item[0] == 'commit'), None)
-            if is_commit != None and is_commit[1] == self.get_head():
+            if is_commit is not None and is_commit[1] == self.get_head():
                 pass # commit actually ok
 
             else:# commit not ok
@@ -407,4 +407,3 @@ class versioned_storage(object):
 #===============================================================================
     def get_file_directory_path(self, file_hash: str) -> str:
         return sfs.cpjoin(self.base_path, 'files', file_hash[:2])
-

@@ -1,6 +1,7 @@
 import sqlite3 as db
-import fcntl, os, json, time, base64, re, pysodium
-from typing import Dict, Callable, Union, Optional, BinaryIO
+from typing import Dict, Callable, Union, Optional
+import fcntl, os, json, time, base64, re
+import pysodium # type: ignore
 
 #====
 from shttpfs3.http_server import Request, Responce, ServeFile
@@ -38,8 +39,8 @@ def endpoint(request: Request):
 
     if request_action not in routes:
         raise Exception('request error')
-    
-    responce: Responce = routes[request_action](request) 
+
+    responce: Responce = routes[request_action](request)
 
     return responce
 
@@ -155,7 +156,7 @@ def auth_db_connect(db_path: str) -> db.Connection:
     global auth_db_initilised
 
     def dict_factory(cursor, row): return {col[0] : row[idx] for idx,col in enumerate(cursor.description)}
-    conn = db.connect(db_path) 
+    conn = db.connect(db_path)
     conn.row_factory = dict_factory
     if not auth_db_initilised:
         conn.execute('create table if not exists tokens (expires int, token text, ip text)')
@@ -269,10 +270,10 @@ def have_authenticated_user(client_ip: str, repository: str, session_token: byte
     # the current operation. We exclude any tokens owned by the client which currently owns the user
     # lock for this reason.
     user_lock = read_user_lock(repository_path)
-    active_commit = user_lock['session_token'] if user_lock != None else None
+    active_commit = user_lock['session_token'] if user_lock is not None else None
 
-    if active_commit != None: conn.execute("delete from session_tokens where expires < ? and token != ?", (time.time(), active_commit))
-    else:                     conn.execute("delete from session_tokens where expires < ?", (time.time(),))
+    if active_commit is not None: conn.execute("delete from session_tokens where expires < ? and token != ?", (time.time(), active_commit))
+    else:                         conn.execute("delete from session_tokens where expires < ?", (time.time(),))
 
     # Get the session token
     res = conn.execute("select * from session_tokens where token = ? and ip = ?", (session_token, client_ip)).fetchall()
