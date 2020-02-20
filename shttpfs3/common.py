@@ -1,5 +1,6 @@
 import os.path, hashlib, errno, copy
-from typing import List, Dict, Any
+from typing import List, Dict, Any, cast
+from typing_extensions import TypedDict
 from termcolor import colored
 
 ############################################################################
@@ -71,7 +72,13 @@ def cpjoin(*args: str) -> str:
     return path
 
 ############################################################################################
-def get_single_file_info(f_path: str, int_path: str) -> Dict:
+class fileDetails (TypedDict):
+    path:     str
+    created:  float
+    last_mod: float
+
+############################################################################################
+def get_single_file_info(f_path: str, int_path: str) -> fileDetails:
     """ Gets the creates and last change times for a single file,
     f_path is the path to the file on disk, int_path is an internal
     path relative to a root directory.  """
@@ -91,7 +98,7 @@ def hash_file(file_path: str, block_size: int = 65536) -> str:
     return sha.hexdigest()
 
 ############################################################################################
-def get_file_list(path: str) -> List[str]:
+def get_file_list(path: str) -> List[fileDetails]:
     """ Recursively lists all files in a file system below 'path'. """
     f_list = []
     def recur_dir(path, newpath = os.path.sep):
@@ -105,7 +112,11 @@ def get_file_list(path: str) -> List[str]:
     return f_list
 
 ############################################################################################
-def find_manifest_changes(new_file_state : List[dict], old_file_state : dict) -> dict:
+class manifestFileDetails(fileDetails):
+    status: str
+
+############################################################################################
+def find_manifest_changes(new_file_state : List[fileDetails], old_file_state : Dict[str, manifestFileDetails]) -> Dict[str, manifestFileDetails]:
     """ Find what has changed between two sets of files """
     prev_state_dict = copy.deepcopy(old_file_state)
     changed_files = {}
@@ -117,20 +128,20 @@ def find_manifest_changes(new_file_state : List[dict], old_file_state : dict) ->
 
             # If the file has been modified
             if itm['last_mod'] != d_itm['last_mod']:
-                n_itm = itm.copy()
+                n_itm = cast(manifestFileDetails, itm.copy())
                 n_itm['status'] = 'changed'
                 changed_files[itm['path']] = n_itm
             else:
                 pass # The file has not changed
 
         else:
-            n_itm = itm.copy()
+            n_itm = cast(manifestFileDetails, itm.copy())
             n_itm['status'] = 'new'
             changed_files[itm['path']] = n_itm
 
     # any files remaining in the old file state have been deleted locally
     for itm in prev_state_dict.values():
-        n_itm = itm.copy()
+        n_itm = cast(manifestFileDetails, itm.copy())
         n_itm['status'] = 'deleted'
         changed_files[itm['path']] = n_itm
 

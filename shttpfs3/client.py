@@ -1,17 +1,34 @@
 from pprint import pprint
 import os, sys, time, json, base64, fnmatch, shutil, fcntl, errno, urllib.parse
+
+from typing import List, Dict, Tuple
+from typing_extensions import TypedDict
+
 import pysodium #type: ignore
 
 #=================================================
-from shttpfs3.common import (cpjoin, get_file_list, find_manifest_changes, make_dirs_if_dont_exist,
+from shttpfs3.common import (cpjoin, get_file_list, find_manifest_changes, make_dirs_if_dont_exist, manifestFileDetails,
                              get_single_file_info, file_or_default, file_put_contents, file_get_contents, ignore)
 from shttpfs3.client_http_request import client_http_request
 from shttpfs3.plain_storage import plain_storage
 import shttpfs3.crypto as crypto
 
 #===============================================================================
-config = data_store = server_connection = None
-working_copy_base_path = os.getcwd() + '/'
+class clientConfiguration(TypedDict, total=False):
+    server_domain:       str
+    user:                str
+    repository:          str
+    private_key:         str # base64 encoded private key
+    ignore_filters:      List[str]
+    pull_ignore_filters: List[str]
+    data_dir:            str
+
+#===============================================================================
+config:            clientConfiguration
+data_store:        plain_storage
+server_connection: client_http_request
+
+working_copy_base_path: str = os.getcwd() + '/'
 
 #===============================================================================
 def init(unlocked = False):
@@ -27,20 +44,22 @@ def init(unlocked = False):
     except IOError: raise SystemExit('Could not lock working copy')
 
     #-----------
-    ignore_filters = file_or_default(cpjoin(working_copy_base_path, '.shttpfs_ignore'), '')
-    pull_ignore_filters = file_or_default(cpjoin(working_copy_base_path, '.shttpfs_pull_ignore'), '')
+    ignore_filters:      str = file_or_default(cpjoin(working_copy_base_path, '.shttpfs_ignore'), '')
+    pull_ignore_filters: str = file_or_default(cpjoin(working_copy_base_path, '.shttpfs_pull_ignore'), '')
 
     #-----------
-    config['ignore_filters'] = ['/.shttpfs*'] + ignore_filters.splitlines()
-    config['pull_ignore_filters'] = pull_ignore_filters.splitlines()
-    config['data_dir'] = working_copy_base_path
+    config['ignore_filters']:      List[str] = ['/.shttpfs*'] + ignore_filters.splitlines()
+    config['pull_ignore_filters']: List[str] = pull_ignore_filters.splitlines()
+    config['data_dir']:            str       = working_copy_base_path
+
     if not unlocked: config["private_key"] = crypto.unlock_private_key(config["private_key"])
+
     data_store = plain_storage(config['data_dir'])
     server_connection = client_http_request(config['server_domain'])
 
 
 #===============================================================================
-def authenticate(previous_token = None):
+def authenticate(previous_token: str = None) -> str:
     """ Authenticate the client to the server """
 
     # if we already have a session token, try to authenticate with it
@@ -53,11 +72,10 @@ def authenticate(previous_token = None):
             return previous_token
 
     # If the session token has expired, or if we don't have one, re-authenticate
-
     headers = server_connection.request("begin_auth", {'repository' : config['repository']})[1] # Only care about headers
 
     if headers['status'] == 'ok':
-        signature = base64.b64encode(pysodium.crypto_sign_detached(headers['auth_token'], config['private_key']))
+        signature: bytes = base64.b64encode(pysodium.crypto_sign_detached(headers['auth_token'], config['private_key']))
         headers = server_connection.request("authenticate", {
             'auth_token' : headers['auth_token'],
             'signature'  : signature,
@@ -69,7 +87,7 @@ def authenticate(previous_token = None):
 
 
 #===============================================================================
-def find_local_changes():
+def find_local_changes() -> Tuple[dict, Dict[str, manifestFileDetails]]:
     """ Find things that have changed since the last run, applying ignore filters """
 
     manifest = data_store.read_local_manifest()
@@ -82,7 +100,7 @@ def find_local_changes():
 
 
 #===============================================================================
-def update(session_token, testing = False):
+def update(session_token: str, testing = False):
     """ Compare changes on the client to changes on the server and update local files
     which have changed on the server. """
 
@@ -236,10 +254,10 @@ def update(session_token, testing = False):
 
 
 #===============================================================================
-def commit(session_token, commit_message = ''):
+def commit(session_token: str, commit_message = ''):
     manifest, client_changes = find_local_changes()
 
-    changes = {'to_delete_on_server' : [], 'client_push_files' : []}
+    changes = {'to_delete_on_server' : [], 'client_push_files' : []} # type: ignore
     for change in list(client_changes.values()):
         if change['status'] in ['new', 'changed']: changes['client_push_files'].append(change)
         elif change['status'] == 'deleted':        changes['to_delete_on_server'].append(change)
@@ -257,7 +275,8 @@ def commit(session_token, commit_message = ''):
     if headers['status'] != 'ok': raise SystemExit(headers['msg'])
 
     #======================
-    errors = []; changes_made = []
+    errors: List[str] = []
+    changes_made: List[Dict[str, str]] = []
 
     # Files which have been deleted on the client and need deleting on server
     if changes['to_delete_on_server'] != []:
@@ -320,14 +339,14 @@ def commit(session_token, commit_message = ''):
         return headers['head']
 
 #===============================================================================
-def get_versions(session_token):
+def get_versions(session_token: str):
     req_result, headers = server_connection.request("list_versions", {
         'session_token' : session_token,
         'repository'    : config['repository']})
     return req_result, headers
 
 #===============================================================================
-def get_changes_in_version(session_token, version_id):
+def get_changes_in_version(session_token: str, version_id):
     req_result, headers = server_connection.request("list_changes", {
         'session_token' : session_token,
         'repository'    : config['repository'],
@@ -408,7 +427,7 @@ def run():
         # Validate info is correct by attempting to authenticate
         server_connection = client_http_request(config['server_domain'])
         unlocked_key = config["private_key"] = crypto.unlock_private_key(config["private_key"])
-        session_token = authenticate()
+        session_token: str = authenticate()
         config["private_key"] = private_key
 
         # create repo dir
@@ -433,7 +452,7 @@ def run():
 
     #----------------------------
     elif args [0] == 'sync':
-        init(); session_token = authenticate()
+        init(); session_token: str = authenticate()
 
         commit_message = ''
         if get_if_set_or_default(args, 1, '') == '-m': commit_message = get_if_set_or_quit(args, 2, 'Please specify a commit message after -m')
@@ -443,7 +462,7 @@ def run():
 
     #----------------------------
     elif args [0] == 'autosync':
-        init(); session_token = None
+        init(); session_token: str = None
         while True:
             session_token = authenticate(session_token)
             update(session_token)
@@ -452,7 +471,7 @@ def run():
 
     #----------------------------
     elif args [0] == 'list_versions':
-        init(); session_token = authenticate()
+        init(); session_token: str = authenticate()
         req_result, headers = get_versions(session_token)
 
         if headers['status'] == 'ok':
@@ -465,7 +484,7 @@ def run():
 
     #----------------------------
     elif args [0] == 'list_changes':
-        init(); session_token = authenticate()
+        init(); session_token: str = authenticate()
         version_id = get_if_set_or_quit(args, 1, 'Please specify a version id')
         req_result, headers = get_changes_in_version(session_token, version_id)
 
@@ -475,7 +494,7 @@ def run():
 
     #----------------------------
     elif args [0] == 'list_files':
-        init(); session_token = authenticate()
+        init(); session_token: str = authenticate()
         version_id = get_if_set_or_quit(args, 1, 'Please specify a version id')
         req_result, headers = get_files_in_version(session_token, version_id)
 
