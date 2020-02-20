@@ -25,7 +25,8 @@ setup(
     tests_require=['nose'],
     install_requires=[
         'pysodium==0.7.0.post0',
-        'termcolor==1.1.0'
+        'termcolor==1.1.0',
+        'typing_extensions'
     ],
     scripts=['cli_tools/shttpfs3', 'cli_tools/shttpfs_server3'],
     zip_safe=False)
