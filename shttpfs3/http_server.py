@@ -13,7 +13,6 @@ import _thread
 #=============================================
 class HTTPRequest(BaseHTTPRequestHandler):
     def __init__(self, request_text):
-        super(HTTPRequest, self).__init__()
         self.rfile = BytesIO(request_text)
         self.raw_requestline = self.rfile.readline()
         self.error_code = self.error_message = None
@@ -33,6 +32,9 @@ class read_body:
 
     def __call__(self, length = None):
         if self.have_read >= self.body_length: return None
+
+        if length is None: length = self.body_length - self.have_read
+
         retbuffer: bytes
         if len(self.body_partial) > 0:
             retbuffer = self.body_partial[0:length]

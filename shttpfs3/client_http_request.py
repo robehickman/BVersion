@@ -22,8 +22,8 @@ class client_http_request:
         for k, v in add_headers.items(): headers[k] = v
 
         # ==
-        if   self.scheme == 'http':  conn = http.client.HTTPConnection (self.server_base_url)
-        elif self.scheme == 'https': conn = http.client.HTTPSConnection(self.server_base_url) # pylint: disable=redefined-variable-type
+        if   self.scheme == 'http':  conn = http.client.HTTPConnection (self.server_base_url, timeout=1000)
+        elif self.scheme == 'https': conn = http.client.HTTPSConnection(self.server_base_url, timeout=1000) # pylint: disable=redefined-variable-type
         else: raise SystemExit('unknown protocol: ' + self.scheme)
 
         conn.putrequest('POST', '/' + url)

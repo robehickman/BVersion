@@ -12,5 +12,5 @@ server.config = json.loads(file_get_contents(conf_path))
 
 #===============================================================================
 if __name__ == "__main__":
-    HTTPServer('0.0.0.0', 8090, server.endpoint)
+    HTTPServer('', 8090, server.endpoint)
 
