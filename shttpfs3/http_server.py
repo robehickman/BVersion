@@ -3,12 +3,11 @@ from io import BytesIO
 import json
 import os
 import socket
+import _thread
 
 from typing import Union
 
-import _thread
-
-
+from shttpfs3.http_common import read_body
 
 #=============================================
 class HTTPRequest(BaseHTTPRequestHandler):
@@ -21,28 +20,6 @@ class HTTPRequest(BaseHTTPRequestHandler):
     def send_error(self, code, message): #pylint: ignore
         self.error_code = code
         self.error_message = message
-
-#=====================
-class read_body:
-    def __init__ (self, reader, body_length: int, body_partial: bytes):
-        self.reader       = reader
-        self.body_length  = body_length
-        self.body_partial = body_partial
-        self.have_read    = 0
-
-    def __call__(self, length = None):
-        if self.have_read >= self.body_length: return None
-
-        if length is None: length = self.body_length - self.have_read
-
-        retbuffer: bytes
-        if len(self.body_partial) > 0:
-            retbuffer = self.body_partial[0:length]
-            self.body_partial = self.body_partial[length:]
-        else:
-            retbuffer = self.reader(length)
-        self.have_read += len(retbuffer)
-        return retbuffer
 
 #=====================
 class Request:
@@ -99,8 +76,10 @@ def HTTPServer(host, port, connection_handler):
 
                 body_length = int(request_headers['content-length'])
                 body_reader = read_body(c.recv, body_length, body_partial)
-                rq = Request(addr[0], addr[1], request.path, request_headers, body_reader)
+                rq = Request(addr[0], addr[1], request.path, request_headers, body_reader.read)
                 rsp: Responce = connection_handler(rq)
+                body_reader.dump() # as we are using persistant connections, we need to read any
+                                   # body from the socket 
 
                 # generate client responce
                 responce_headers =  b"HTTP/1.1 200 OK\r\n"
@@ -128,7 +107,6 @@ def HTTPServer(host, port, connection_handler):
                 else:
                     c.send(rsp.body)
 
-                break
         except:
             c.close()
             raise
