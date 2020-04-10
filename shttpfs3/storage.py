@@ -1,21 +1,22 @@
 import os.path as p
 import os, shutil, json, errno
 from collections import deque
+from typing import Union, TextIO
 
-from shttpfs.common import cpjoin, ignore, file_or_default, file_put_contents
+from shttpfs3.common import cpjoin, ignore, file_or_default, file_put_contents
 
 ############################################################################################
 # Journaling file storage subsystem, only use one instance at any time, not thread safe
 ############################################################################################
-class storage(object):
+class storage:
 
 ############################################################################################
-    def __init__(self, data_dir, conf_dir):
+    def __init__(self, data_dir: str, conf_dir: str):
         self.data_dir    = data_dir if data_dir[-1] == '/' else data_dir + '/'
         self.j_file      = self.get_full_file_path(conf_dir, 'journal.json')
         self.tmp_dir     = self.get_full_file_path(conf_dir, 'tmp')
         self.backup_dir  = self.get_full_file_path(conf_dir, 'back')
-        self.journal     = None
+        self.journal: Union[None, TextIO] = None
         self.tmp_idx     = 0
 
         ignore(os.makedirs, self.tmp_dir)    # Make sure tmp dir exists
@@ -35,23 +36,23 @@ class storage(object):
         return p.join(self.tmp_dir, 'tmp_' + str(self.tmp_idx))
 
 ############################################################################################
-    def new_backup(self, src):
+    def new_backup(self, src: str):
         """ Create a new backup file allocation """
 
         backup_id_file = p.join(self.backup_dir, '.bk_idx')
-        backup_num = file_or_default(backup_id_file, 1, int)
+
+        backup_num = int(file_or_default(backup_id_file, b'1'))
         backup_name = str(backup_num) + "_" + os.path.basename(src)
         backup_num += 1
 
-        file_put_contents(backup_id_file, str(backup_num))
+        file_put_contents(backup_id_file, bytes(str(backup_num), encoding='utf8'))
         return p.join(self.backup_dir, backup_name)
 
 ############################################################################################
     def begin(self):
         """ Begin a transaction """
 
-        if self.journal != None:
-            raise Exception('Storage is already active, nested begin not supported')
+        if self.journal is not None: raise Exception('Multiple Begin not allowed')
 
         # under normal operation journal is deleted at end of transaction
         # if it does exist we need to roll back
@@ -60,14 +61,16 @@ class storage(object):
         self.journal = open(self.j_file, 'w')
 
 ############################################################################################
-    def do_action(self, command, journal = True):
+    def do_action(self, command: dict, journal: bool = True):
         """ Implementation for declarative file operations. """
+
+        # if self.journal is None: raise Exception('Must call begin first')
 
         cmd = 0; src = 1; path = 1; data = 2; dst = 2
 
         if journal is True:
-            self.journal.write(json.dumps(command['undo']) + "\n")
-            self.journal.flush()
+            self.journal.write(json.dumps(command['undo']) + "\n") # type: ignore
+            self.journal.flush()                                   # type: ignore
 
         d = command['do']
         if   d[cmd] == 'copy':   shutil.copy(d[src], d[dst])
@@ -83,7 +86,7 @@ class storage(object):
 
         # Close the journal for writing, if this is an automatic rollback following a crash,
         # the file descriptor will not be open, so don't need to do anything.
-        if self.journal != None: self.journal.close()
+        if self.journal is not None: self.journal.close()
         self.journal = None
 
         # Read the journal
@@ -109,10 +112,12 @@ class storage(object):
         os.remove(self.j_file)
 
 ############################################################################################
-    def commit(self, cont = False):
+    def commit(self, cont: bool = False):
         """ Finish a transaction """
 
-        self.journal.close()
+        if self.journal is None: raise Exception('Must call begin first')
+
+        self.journal.close() # type: ignore
         self.journal = None
         os.remove(self.j_file)
 
@@ -121,14 +126,14 @@ class storage(object):
         if cont is True: self.begin()
 
 ############################################################################################
-    def file_get_contents(self, path):
+    def file_get_contents(self, path: str) -> bytes:
         """ Returns contents of file located at 'path', not changing FS so does
         not require journaling """
 
-        with open(self.get_full_file_path(path), 'r') as f: return  f.read()
+        with open(self.get_full_file_path(path), 'rb') as f: return  f.read()
 
 ############################################################################################
-    def file_put_contents(self, path, data):
+    def file_put_contents(self, path: str, data: bytes):
         """ Put passed contents into file located at 'path' """
 
         path = self.get_full_file_path(path)
@@ -145,7 +150,7 @@ class storage(object):
              'undo' : ['backup', path]})
 
 ############################################################################################
-    def move_file(self, src, dst):
+    def move_file(self, src: str, dst: str):
         """ Move file from src to dst """
 
         src = self.get_full_file_path(src); dst = self.get_full_file_path(dst)
@@ -164,7 +169,7 @@ class storage(object):
              'undo' : ['move', dst, src]})
 
 ############################################################################################
-    def delete_file(self, path):
+    def delete_file(self, path: str):
         """ delete a file """
 
         path = self.get_full_file_path(path)
@@ -178,4 +183,3 @@ class storage(object):
 
         else:
             raise OSError(errno.ENOENT, 'No such file or directory', path)
-

@@ -11,3 +11,7 @@ build
 dist
 shttpfs/tests/vers_test
 tests/filesystem_tests
+<<<<<<< HEAD
+=======
+.mypy_cache
+>>>>>>> python3

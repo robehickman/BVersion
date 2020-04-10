@@ -1,5 +1,5 @@
 from unittest import TestCase
-from shttpfs.merge_client_and_server_changes import merge_client_and_server_changes
+from shttpfs3.merge_client_and_server_changes import merge_client_and_server_changes
 
 class TestMerge(TestCase):
 ############################################################################################
@@ -40,7 +40,7 @@ class TestMerge(TestCase):
         test_id = 0
         for test in tests:
             result = merge_client_and_server_changes(test[0], test[1]); check = result.pop(test[2])
-            if any(True for k,v in result.iteritems() if v != []): raise Exception('Category occupied which should be empty. Test id ' + str(test_id))
+            if any(True for k,v in result.items() if v != []): raise Exception('Category occupied which should be empty. Test id ' + str(test_id))
             if len(check) != 1: raise Exception('Item should be in '+test[2]+ " but is not. Test id " + str(test_id))
             test_id += 1
 

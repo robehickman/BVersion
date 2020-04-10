@@ -1,6 +1,6 @@
 import json
-from shttpfs.storage import storage
-from shttpfs.common import cpjoin, get_single_file_info, file_or_default
+from shttpfs3.storage import storage
+from shttpfs3.common import cpjoin, get_single_file_info, file_or_default
 
 class plain_storage(storage):
     """ Plain (non-versioned) data store used by the client """
@@ -23,11 +23,11 @@ class plain_storage(storage):
     def read_local_manifest(self):
         """ Read the file manifest, or create a new one if there isn't one already """
 
-        manifest = file_or_default(self.get_full_file_path(self.manifest_file), {
-            'format_version' : 2,
-            'root'           : '/',
-            'have_revision'  : 'root',
-            'files'          : {}}, json.loads)
+        manifest = json.loads(file_or_default(self.get_full_file_path(self.manifest_file), """{
+            "format_version" : 2,
+            "root"           : "/",
+            "have_revision"  : "root",
+            "files"          : {}}"""))
 
         if 'format_version' not in manifest or manifest['format_version'] < 2:
             raise SystemExit('Please update the client manifest format')
@@ -35,7 +35,7 @@ class plain_storage(storage):
 
 #===============================================================================
     def write_local_manifest(self, manifest):
-        self.file_put_contents(self.manifest_file, json.dumps(manifest))
+        self.file_put_contents(self.manifest_file, json.dumps(manifest).encode('utf8'))
 
 #===============================================================================
     def remove_from_manifest(self, manifest, rpath):
@@ -78,7 +78,7 @@ class plain_storage(storage):
             # Rename the file in the manifest
             manifest = self.read_local_manifest()
             manifest['files'][r_dst] = self.get_single_file_info(r_dst)
-            manifest = self.write_local_manifest(manifest)
+            self.write_local_manifest(manifest)
 
             self.commit()
         except:
@@ -95,9 +95,8 @@ class plain_storage(storage):
             # Rename the file in the manifest
             manifest = self.read_local_manifest()
             del manifest['files'][rpath]
-            manifest = self.write_local_manifest(manifest)
+            self.write_local_manifest(manifest)
 
             self.commit()
         except:
             self.rollback(); raise
-

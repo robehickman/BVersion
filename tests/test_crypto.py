@@ -1,12 +1,12 @@
 from unittest import TestCase
-import base64, pysodium
+import base64, pysodium #type: ignore
 
-from shttpfs import crypto
+from shttpfs3 import crypto
 
 class TestCrypto(TestCase):
 #######################################################################################
     def test_private_key_no_encrypt(self):
-        crypto.raw_input = lambda : 'n'
+        crypto.input = lambda prompt : 'n'
         private_key, public_key = crypto.make_keypair()
         key = crypto.unlock_private_key(private_key)
         sig = pysodium.crypto_sign_detached('test', key)
@@ -15,8 +15,8 @@ class TestCrypto(TestCase):
 
 #######################################################################################
     def test_private_key_unlock(self):
-        crypto.raw_input = lambda : 'y'
-        crypto.getpass.getpass = lambda : 'test'
+        crypto.input = lambda prompt : 'y'
+        crypto.getpass.getpass = lambda : 'test' # type: ignore
         private_key = crypto.make_keypair()[0]
         crypto.unlock_private_key(private_key) # this will throw if there is any problem
 
