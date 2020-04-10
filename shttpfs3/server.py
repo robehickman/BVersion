@@ -479,7 +479,7 @@ def push_file(request: Request) -> Responce:
         tmp_path = cpjoin(repository_path, 'tmp_file')
         with open(tmp_path, 'wb') as f:
             while True:
-                chunk = request.body(1000 * 1000)
+                chunk = request.body.read(1000 * 1000)
                 if chunk is None: break
                 f.write(chunk)
 

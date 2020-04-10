@@ -1,25 +1,10 @@
-from http.server import BaseHTTPRequestHandler
-from io import BytesIO
 import json
 import os
 import socket
+from typing import Union
 import _thread
 
-from typing import Union
-
-from shttpfs3.http_common import read_body
-
-#=============================================
-class HTTPRequest(BaseHTTPRequestHandler):
-    def __init__(self, request_text):
-        self.rfile = BytesIO(request_text)
-        self.raw_requestline = self.rfile.readline()
-        self.error_code = self.error_message = None
-        self.parse_request()
-
-    def send_error(self, code, message): #pylint: ignore
-        self.error_code = code
-        self.error_message = message
+from shttpfs3.http_common import read_body, parse_http_request_preamble
 
 #=====================
 class Request:
@@ -31,7 +16,7 @@ class Request:
         self.body    = body
 
     def get_json(self):
-        return json.loads(self.body())
+        return json.loads(self.body.read_all())
 
 #=====================
 class ServeFile:
@@ -59,27 +44,25 @@ def HTTPServer(host, port, connection_handler):
 
                 preamble, body_partial = data.split(b"\r\n\r\n")
 
-                # parse the header
-                request = HTTPRequest(preamble)
-                if request.error_code is not None:
-                    print(self.error_message)
-                    break
 
-                if request.command.lower() != 'post':
+                # parse the header
+                request = parse_http_request_preamble(preamble)
+
+                if request['method'].lower() != 'post':
                     print('error parsing request')
                     break
 
-                request_headers = {k.lower() : v for k,v in dict(request.headers).items()}
+                request_headers = {k.lower() : v for k,v in dict(request['headers']).items()}
 
                 # handle the request
-                print('Connecction from:', addr[0], ':', addr[1],' ', request.path)
+                print('Connecction from:', addr[0], ':', addr[1],' ', request['path'])
 
                 body_length = int(request_headers['content-length'])
                 body_reader = read_body(c.recv, body_length, body_partial)
-                rq = Request(addr[0], addr[1], request.path, request_headers, body_reader.read)
+                rq = Request(addr[0], addr[1], request['path'], request_headers, body_reader)
                 rsp: Responce = connection_handler(rq)
                 body_reader.dump() # as we are using persistant connections, we need to read any
-                                   # body from the socket 
+                                   # body from the socket
 
                 # generate client responce
                 responce_headers =  b"HTTP/1.1 200 OK\r\n"

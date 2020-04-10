@@ -359,6 +359,7 @@ def get_files_in_version(session_token, version_id):
         'session_token' : session_token,
         'repository'    : config['repository'],
         'version_id'    : version_id})
+
     return req_result, headers
 
 

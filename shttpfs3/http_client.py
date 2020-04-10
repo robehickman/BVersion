@@ -1,7 +1,7 @@
 import socket, ssl
 from typing import Dict
 
-from shttpfs3.http_common import read_body, generate_headers, parse_http_preamble
+from shttpfs3.http_common import read_body, generate_headers, parse_http_responce_preamble
 
 #=====================================================================
 class HTTPClient:
@@ -35,7 +35,7 @@ class HTTPClient:
             if b"\r\n\r\n" in data: break
 
         preamble, body_partial = data.split(b"\r\n\r\n")
-        parsed_preamble = parse_http_preamble(preamble)
+        parsed_preamble = parse_http_responce_preamble(preamble)
         return parsed_preamble, body_partial
 
     def close(self):

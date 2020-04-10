@@ -13,15 +13,15 @@ class client_http_request:
         self.server_base_url = server_base_url
         port                 = res.port
 
-        if scheme not in ['http', 'https']: raise SystemExit('unknown protocol: ' + self.scheme)
+        if scheme not in ['http', 'https']: raise SystemExit('unknown protocol: ' + scheme)
 
-        if port is None: port = 443 if self.scheme == 'https' else 80
+        if port is None: port = 443 if scheme == 'https' else 80
 
         self.c = HTTPClient()
         self.c.connect( server_base_url,
                         port = port,
                         tls  = (scheme == 'https'))
-        
+
 ############################################################################################
     def begin(self, url: str, body_length: int, add_headers: Dict[str, str], content_type: str):
         headers = {
@@ -46,14 +46,14 @@ class client_http_request:
         parsed_preamble, body = conn.read_responce()
 
         if gen is False:
-            return body.read(), parsed_preamble['headers']
-            
+            return body.read_all(), parsed_preamble['headers']
+
         else:
             def writer(path):
                 with open(path, 'wb') as f:
                     while True:
                         chunk = body.read(1000 * 1000)
-                        if chunk == None: break
+                        if chunk is None: break
                         f.write(chunk)
 
             return writer, parsed_preamble['headers']
@@ -71,5 +71,5 @@ class client_http_request:
                 conn.send(chunk)
 
         parsed_preamble, body = conn.read_responce()
-        return body.read(), parsed_preamble['headers']
+        return body.read_all(), parsed_preamble['headers']
         

@@ -32,7 +32,6 @@ def setup():
 ############################################################################################
 def setup_client(name):
     client.working_copy_base_path = DATA_DIR + name
-    client.init()
 
     # Override the server connection with a test implementation that passes
     # requests directly to server code
@@ -59,7 +58,7 @@ def setup_client(name):
 
             def real_reader(length = None):
                 if length == None:
-                    r = reader.read()
+                    r = reader.read_all()
                 else:
                     r = reader.read(length)
 
@@ -97,6 +96,7 @@ def setup_client(name):
             return res.body, dict(res.headers)
 
     client.server_connection = test_connection()
+    client.init()
 
 
 def get_server_file_name(content):
