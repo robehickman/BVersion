@@ -28,6 +28,6 @@ setup(
         'termcolor==1.1.0',
         'typing_extensions'
     ],
-    scripts=['cli_tools/shttpfs3', 'cli_tools/shttpfs_server3'],
+    scripts=['cli_tools/shttpfs', 'cli_tools/shttpfs_server'],
     zip_safe=False)
 
