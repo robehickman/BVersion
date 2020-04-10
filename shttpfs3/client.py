@@ -44,8 +44,8 @@ def init(unlocked = False):
     except IOError: raise SystemExit('Could not lock working copy')
 
     #-----------
-    ignore_filters:      str = file_or_default(cpjoin(working_copy_base_path, '.shttpfs_ignore'), '')
-    pull_ignore_filters: str = file_or_default(cpjoin(working_copy_base_path, '.shttpfs_pull_ignore'), '')
+    ignore_filters:      str = file_or_default(cpjoin(working_copy_base_path, '.shttpfs_ignore'), b'').decode('utf8')
+    pull_ignore_filters: str = file_or_default(cpjoin(working_copy_base_path, '.shttpfs_pull_ignore'), b'').decode('utf8')
 
     #-----------
     config['ignore_filters']:      List[str] = ['/.shttpfs*'] + ignore_filters.splitlines()

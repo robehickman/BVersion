@@ -5,13 +5,9 @@
 *.swn
 server.ini
 lint.txt
-
 shttpfs.egg-info
 build
 dist
 shttpfs/tests/vers_test
 tests/filesystem_tests
-<<<<<<< HEAD
-=======
 .mypy_cache
->>>>>>> python3
