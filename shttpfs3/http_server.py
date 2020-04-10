@@ -42,7 +42,7 @@ def HTTPServer(host, port, connection_handler):
                     data += c.recv(1024)
                     if b"\r\n\r\n" in data: break
 
-                preamble, body_partial = data.split(b"\r\n\r\n")
+                preamble, body_partial = data.split(b"\r\n\r\n", 1)
 
 
                 # parse the header
