@@ -40,6 +40,7 @@ def HTTPServer(host, port, connection_handler):
                 # read request preamble
                 while True:
                     data += c.recv(1024)
+                    if data == b'': raise Exception('Socket closed')
                     if b"\r\n\r\n" in data: break
 
                 preamble, body_partial = data.split(b"\r\n\r\n", 1)
@@ -92,7 +93,7 @@ def HTTPServer(host, port, connection_handler):
 
         except:
             c.close()
-            raise
+            #raise
 
         c.close()
 
