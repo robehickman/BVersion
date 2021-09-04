@@ -233,6 +233,18 @@ class versioned_storage:
         if not self.have_active_commit(): raise Exception()
 
         #=======================================================
+        # Check if the file actually exists in the commit
+        #=======================================================
+        file_exists = False
+        def helper2(contents):
+            nonlocal file_exists
+            file_exists = file_info['path'] in contents
+            return contents
+        self.update_system_file('active_commit_files', helper2)
+
+        if not file_exists: return
+
+        #=======================================================
         # Update commit changes
         #=======================================================
         def helper(contents):
