@@ -8,6 +8,11 @@ SHTTPFS offers the following benifits:
 Working copies (checkouts) store only the minimum data required to detect changed files, with an overhead of only a few megabytes on a repository of thousands of files. It uses vastly less disk space than Subversion (which stores two copies of everything), and vastly less than git (which stores the whole change history).
 
 
+### Partial checkouts
+
+You can specify arbitary rules for ommitting files from a working copy, while leaving them alone on the server.
+
+
 ### Automatic or manual syncing:
 
 SHTTPFS can operate in two modes, either supporting manual commit and update, or periodically checking a file system for changes and updating automatically.
