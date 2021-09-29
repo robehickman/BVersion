@@ -1,4 +1,4 @@
-Simple HTTP File Sync (SHTTPFS) is a file synchroniser and basic version control system designed for managing binary files such as images, it follows a centralised design and has a strong emphasis on code simplicity, being inspired by the 'suckless philosophy'. It is configured using text files and intentionally does not have a web or graphical interface. Note that this has only been tested using linux ext 3 and 4, and that the system currently only works with unix file paths. The server will also only work on a unix style os as it depends on flock.
+Simple HTTP File Sync (SHTTPFS) is a version control system designed for managing binary files like images, audio, and video. It follows a centralised design and has a strong emphasis on code simplicity, being inspired by the 'suckless philosophy'. It is configured with text files, intentionally has no grapgical interface, and does not use the system tray at all.
 
 
 SHTTPFS has the following features:
