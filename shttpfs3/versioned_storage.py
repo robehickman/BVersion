@@ -419,3 +419,21 @@ class versioned_storage:
 #===============================================================================
     def get_file_directory_path(self, file_hash: str) -> str:
         return sfs.cpjoin(self.base_path, 'files', file_hash[:2])
+
+#===============================================================================
+    def verify_fs() -> str:
+        """
+        Read and rehash the entire filesystem starting from the earliest revision,
+        to the latest revision, ensuring that file hashes are actually valid.
+        """
+
+        # walk up the commit change to the first version
+
+        # Read tree objects
+
+        # While reading tree objects rehash the files too
+
+        # all file hashes should match the name of the file, if not, something is wrong.
+
+        pass
+

@@ -11,6 +11,16 @@ if len(sys.argv) > 1 and sys.argv[1] == '-c':
 server.config = json.loads(file_get_contents(conf_path))
 
 #===============================================================================
+listen      = ''
+listen_port = 8090
+
+if 'listen' in server.config:
+    listen = server.config['listen']
+
+if 'listen_port' in server.config:
+    listen_port = server.config['listen_port']
+
+
 if __name__ == "__main__":
-    HTTPServer('', 8090, server.endpoint)
+    HTTPServer(listen, listen_port, server.endpoint)
 

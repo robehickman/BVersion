@@ -3,9 +3,43 @@ from typing import List, Dict, Any, cast
 from typing_extensions import TypedDict
 from termcolor import colored
 
+#===============================================================================
+def find_shttpfs_dir() -> str:
+    """ Looks up the directory tree from the pwd to find a directory containing
+    a .shttpfs directory, and returns that path """
+
+    cwd:        str = os.getcwd() + '/'
+    split_path: str = cwd.split('/')
+
+    while True:
+        joined_path = '/'.join(split_path)
+        joined_path = '/' if joined_path == '' else '/' + joined_path + '/'
+
+        if os.path.isdir(joined_path + '.shttpfs'):
+            return joined_path
+            break
+
+        if joined_path == []:
+            raise SystemExit('Not a shttpfs checkout, could not find a .shttpfs directory in parent dirs')
+
+        split_path.pop()
+
+#===============================================================================
+def question_user(prompt_text: str) -> str:
+    choice = None
+    if not testing:
+        while True:
+            print(prompt_text)
+            choice = input()
+            if choice.lower() in ['y', 'n']: break
+    else: choice = 'y'
+
+    return choice
+
 ############################################################################
 def ignore(*args):
     """ Calls function passed as argument zero and ignores any exceptions raised by it """
+
     try: return args[0](*args[1:])
     except Exception: pass # pylint: disable=broad-except
 
