@@ -172,11 +172,15 @@ def update(session_token: str, testing = False):
                     raise SystemExit('specified resolution must be either "client" or "server"')
 
                 if resolution   == 'client':
-                    # put the conflict files into the 'to download from server' bin
+                    # Ignore items changed on the server and push the client changes to overwrite them
+                    # TODO does this need to pass data about the files to commit?
+                    # dont think so, as when we update the local version to latest, it will automatically
+                    # discard server changes. May need to handle this when feature to allow downloading
+                    # of pull ignored files gets added
                     pass
 
                 elif resolution == 'server':
-                    # put the conflict files into the 'to upload to server bin
+                    # Download the changed files from the server
                     pass
 
         else:
@@ -331,6 +335,9 @@ def commit(session_token: str, commit_message = ''):
         if change['status'] in ['new', 'changed']: changes['client_push_files'].append(change)
         elif change['status'] == 'deleted':        changes['to_delete_on_server'].append(change)
         else: raise Exception('Unknown status type')
+
+    # TODO check if any added files would be pull ignored, and also hit files which exist
+    # on the server.
 
     if all(v == [] for k,v in changes.items()):
         print('Nothing to commit'); return None
