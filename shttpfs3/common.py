@@ -25,14 +25,12 @@ def find_shttpfs_dir() -> str:
         split_path.pop()
 
 #===============================================================================
-def question_user(prompt_text: str) -> str:
+def question_user(prompt_text: str, valid_choices) -> str:
     choice = None
-    if not testing:
-        while True:
-            print(prompt_text)
-            choice = input()
-            if choice.lower() in ['y', 'n']: break
-    else: choice = 'y'
+    while True:
+        print(prompt_text)
+        choice = input()
+        if choice.lower() in ['y', 'n']: break
 
     return choice
 

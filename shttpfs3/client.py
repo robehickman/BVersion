@@ -26,9 +26,9 @@ class clientConfiguration(TypedDict, total=False):
     data_dir:            str
 
 #===============================================================================
-config:            clientConfiguration
-data_store:        plain_storage
-server_connection: client_http_request
+config:            clientConfiguration = None
+data_store:        plain_storage       = None
+server_connection: client_http_request = None
 
 working_copy_base_path: str = find_shttpfs_dir()
 
@@ -57,7 +57,8 @@ def init(unlocked = False):
     if not unlocked: config["private_key"] = crypto.unlock_private_key(config["private_key"])
 
     data_store = plain_storage(config['data_dir'])
-    server_connection = client_http_request(config['server_domain'])
+    if server_connection is None:
+        server_connection = client_http_request(config['server_domain'])
 
 
 #===============================================================================
@@ -102,11 +103,20 @@ def find_local_changes() -> Tuple[dict, Dict[str, manifestFileDetails]]:
 
 
 #===============================================================================
-def update(session_token: str, testing = False):
+def update(session_token: str, test_overrides = None):
     """ Compare changes on the client to changes on the server and update local files
     which have changed on the server. """
 
-
+    # The unit test code needs to be able to override some of the function
+    # of this code, and cause partial checkout failiures. This var allows
+    # that to happen.
+    testing = False
+    if test_overrides == None:
+        test_overrides = {
+            'resolve_to_override' : ''
+        }
+    else:
+        testing = True
 
     # Send the changes and the revision of the most recent update to the server to find changes
     manifest, client_changes = find_local_changes()
@@ -196,19 +206,25 @@ def update(session_token: str, testing = False):
             # Offer the choice between resolving conflicts to the server,
             # resolving conflicts to the client, or manually resolving
             # the conflicting files.
+            choice = None
             if not testing:
                 choice = question_user(
                     "type 'server' to discard client versions and accept server versions" +
                     "type 'client' to discard server versions and accept client versions" +
                     "type 'manual' to manually resolve conflicts")
             else:
+                choice = test_overrides['resolve_to_override']
                 raise SystemExit('each case needs to be tested ')
 
             if choice == 'server':
                 # put the conflict files into the 'to download from server' bin
+                pass
 
             if choice == 'client':
                 # ignore the files on the server, and upload the files from the client
+                # don't think we need to actually do anything as this should happen
+                # during commit
+                pass
 
             if choice == 'manual':
 
@@ -342,11 +358,13 @@ def commit(session_token: str, commit_message = ''):
     if all(v == [] for k,v in changes.items()):
         print('Nothing to commit'); return None
 
+
     # Acquire the commit lock and check we still have the latest revision
     headers = server_connection.request("begin_commit", {
         "session_token"     : session_token,
         'repository'        : config['repository'],
         "previous_revision" : manifest['have_revision']})[1] # Only care about headers
+
 
     if headers['status'] != 'ok': raise SystemExit(headers['msg'])
 
@@ -382,6 +400,8 @@ def commit(session_token: str, commit_message = ''):
 
             if headers['status'] == 'ok': changes_made.append({'status' : 'new/changed', 'path' : fle['path']})
             else:                         errors.append(fle['path']); break
+
+
 
     # commit and release the lock. If errors occurred roll back and release the lock
     mode = 'commit' if errors == [] else 'abort'
@@ -477,6 +497,10 @@ def run():
 
     #----------------------------
     elif args [0] == 'checkout':
+        # TODO If we do not already have a working copy, this should allow the user to setup a new repo
+        # if we do have a checkout, it should allow the user to revert one or more files to a previous
+        # version.
+
         plain_input = get_if_set_or_quit(args, 1, 'URL is missing')
 
         result = urllib.parse.urlparse(plain_input)
@@ -548,26 +572,69 @@ def run():
 
     #----------------------------
     elif args [0] == 'status':
+        init(); 
+        manifest, client_changes = find_local_changes()
 
-        pass
-        """
-        Detect changes and display, but don't actually do anything
-        """
+        if headers['status'] == 'ok':
+            for fle in json.loads(req_result)['files']:
+                print(fle)
 
+        for item in client_changes:
+            print(item)
 
     #----------------------------
-    elif args [0] == 'pull_ignore':
+    elif args [0] == 'ignore_server_files':
+        init(); 
+        manifest, client_changes = find_local_changes()
 
-        pass
-        """
-        Parse arguments
-        Get the manifest
-        Filter manifest based on arguments
-        Add filtered items to pull ignore
-        If -d passed, delete the local files
-        Should the files be added to ignore? If we don't, they will be deleted on the server which is not what we want
-        update the manifest
-        """
+        filters = args [1:]
+
+        filtered_files       = []
+        affected_local_files = []
+        for fle in manifest['files']:
+            affects_existing = next((True for flter in filters if fnmatch.fnmatch(fle['path'], flter)), False)
+            if affects_existing:
+                affected_local_files.append(fle['path'])
+            else:
+                filtered_files.append(fle)
+
+        if affected_local_files != []:
+            for fle in affected_local_files:
+                print(fle)
+
+            print('\nThe files listed above would be affected by this opperation.\n' +
+                  'Should these files be deleted from the working copy, added to the\n ' +
+                  '".shttpfs_ignore"  file, or left as is? Note that leaving the \n ' +
+                  'will cause them to be removed from the server the next time commit is run')
+
+        # Ask the user if we should delete the local files, 
+        choice = question_user(
+            "type 'ignore'  to add files to '.shttpfs_ignore'" +
+            "type 'delete'  to delete the files from the working copy" +
+            "type 'nothing' to remove the files from the local manifest," +
+            "and leave the files alone")
+
+        # read args
+        if choice == 'ignore':
+            ignore_fle = file_get_contents(working_copy_base_path + '.shttpfs_ignore')
+            ignore_fle += "\n".join(filters)
+            file_put_contents(working_copy_base_path + '.shttpfs_ignore', ignore_fle)
+
+        elif choice == 'delete':
+            for path in affected_local_files:
+                os.remove(cpjoin(working_copy_base_path, path))
+
+        elif choice == 'nothing':
+            # We do not need to do anything in this case
+            pass
+
+        # Remove the affected files from the manifest
+        data_store.begin()
+        manifest = data_store.read_local_manifest()
+        manifest['files'] = filtered_files
+        data_store.write_local_manifest(manifest)
+        data_store.commit()
+
 
     #----------------------------
     elif args [0] == 'list_versions':

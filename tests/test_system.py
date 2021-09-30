@@ -17,7 +17,7 @@ repo_name   = 'test_repo'
 ############################################################################################
 def setup():
     """ create test dirs with two clients and a server """
-    def make_client(name):
+    def make_client_dirs(name):
         make_dirs_if_dont_exist(DATA_DIR + name + '/.shttpfs')
         file_put_contents(DATA_DIR +  name + '/.shttpfs/client_configuration.json', bytes(json.dumps({
             "server_domain"  : "none",
@@ -25,16 +25,14 @@ def setup():
             "repository"     : repo_name,
             "private_key"    : private_key}),  encoding='utf8'))
 
-    make_client('client1')
-    make_client('client2')
+    make_client_dirs('client1')
+    make_client_dirs('client2')
     make_dirs_if_dont_exist(DATA_DIR + 'server')
 
 ############################################################################################
 def setup_client(name):
     client.working_copy_base_path = DATA_DIR + name
 
-    # Override the server connection with a test implementation that passes
-    # requests directly to server code
     server.config = {
         "repositories" : {
             repo_name : {
@@ -49,27 +47,43 @@ def setup_client(name):
         }
     }
 
-    class test_connection(object):
+
+    # Mock data reader that reads from a bytesio object instead of a socket
+    class mock_reader:
+        def __init__(self, reader_data):
+            self.reader = BytesIO(reader_data)
+            pass
+
+        def read(self, length = None):
+            if length is None:
+                r = self.reader.read()
+
+            else:
+                r = self.reader.read(length)
+
+            if r == b'': return None
+            else: return r
+
+        def read_all(self):
+            r = self.read()
+            if r == b'': return None
+            else: return r
+
+
+    # Override the server connection with a mock implementation that passes
+    # requests directly to server code
+    class mock_connection(object):
         def request_helper(self, url, headers, reader):
             headers_new = {}
             for k,v in headers.items():
                 if isinstance(v, bytes): v = v.decode('utf8')
                 headers_new[k] = v
 
-            def real_reader(length = None):
-                if length == None:
-                    r = reader.read_all()
-                else:
-                    r = reader.read(length)
-
-                if r == b'': return None
-                else: return r
-
             request = Request(remote_addr = '0.0.0.0',
                               remote_port = 80,
                               uri         = '/' + url,
                               headers     = headers_new,
-                              body        = real_reader)
+                              body        = reader)
 
             return server.endpoint(request)
 
@@ -77,7 +91,7 @@ def setup_client(name):
             if data is None: data = {}
             reader_data = json.dumps(data).encode('utf8') if(isinstance(data, dict)) else data
 
-            reader = BytesIO(reader_data)
+            reader = mock_reader(reader_data)
             res = self.request_helper(url, headers, reader)
 
             if gen:
@@ -91,11 +105,11 @@ def setup_client(name):
                 return res.body, dict(res.headers)
 
         def send_file(self, url, headers, file_path):
-            reader = BytesIO(file_get_contents(file_path))
+            reader = mock_reader(file_get_contents(file_path))
             res = self.request_helper(url, headers, reader)
             return res.body, dict(res.headers)
 
-    client.server_connection = test_connection()
+    client.server_connection = mock_connection()
     client.init()
 
 
@@ -126,7 +140,6 @@ class TestSystem(TestCase):
 
         # commit the files
         session_token = client.authenticate()
-        print(session_token)
         version_id = client.commit(session_token, 'test commit')
 
         self.assertNotEqual(version_id, None)
@@ -161,6 +174,10 @@ class TestSystem(TestCase):
         time.sleep(0.5) # See above
 
         #==================================================
+        # TODO test mid update failiure works as expected
+        #==================================================
+
+        #==================================================
         # test delete and add
         #==================================================
         os.unlink(DATA_DIR + 'client2/test1')
@@ -193,25 +210,96 @@ class TestSystem(TestCase):
 
         time.sleep(0.5) # See above
 
-        #==================================================
-        # setup for next test
-        #==================================================
-        file_put_contents(DATA_DIR +  'client1/test1',        test_content_1)
-        file_put_contents(DATA_DIR +  'client1/test5',        test_content_1)
-        file_put_contents(DATA_DIR +  'client1/test6',        test_content_1)
 
+        #==================================================
+        # setup helper for next test
+        #==================================================
+        def clean_clients_and_commit():
+            # Clean out client1
+            res = os.listdir(DATA_DIR +  'client1')
+            for it in res:
+                if it not in ['.shttpfs']:
+                    os.remove(DATA_DIR + 'client1/' + it)
+
+            # client1 init
+            file_put_contents(DATA_DIR +  'client1/test1',        test_content_1)
+            file_put_contents(DATA_DIR +  'client1/test2',        test_content_1)
+            file_put_contents(DATA_DIR +  'client1/test3',        test_content_1)
+
+            setup_client('client1')
+            client.commit(client.authenticate(), 'test setup')
+
+            # client2 init
+            setup_client('client2')
+            client.update(client.authenticate(), test_overrides = {})
+
+            time.sleep(0.5) # See above
+ 
+            # -----------------------------------------------------------------
+            # The next steps diliberately set up changes in both working copies
+            # to cause the second client to conflict when an update is run.
+            # All permutations of conflict are tested.
+            # -----------------------------------------------------------------
+
+            # new on client, new on server
+            file_put_contents(DATA_DIR + 'client1/test4', test_content_5 + b'aa')
+            file_put_contents(DATA_DIR + 'client2/test4', test_content_5 + b'bb')
+
+            # Delete on client, change on server
+            file_put_contents(DATA_DIR + 'client1/test1', test_content_5 + b'cc')
+            os.unlink(        DATA_DIR + 'client2/test1')
+
+            # Delete on server, change on client
+            os.unlink(        DATA_DIR + 'client1/test2')
+            file_put_contents(DATA_DIR + 'client2/test2', test_content_5 + b'ff')
+
+            # Double change resolution
+            file_put_contents(DATA_DIR + 'client1/test3', test_content_5 + b'aa')
+            file_put_contents(DATA_DIR + 'client2/test3', test_content_5 + b'bb')
+
+            time.sleep(0.5) # See above
+
+
+        #==================================================
+        # test conflict resolution to the client
+        #==================================================
+        clean_clients_and_commit()
+
+        # commit both clients second to commit should error
         setup_client('client1')
-        client.commit(client.authenticate(), 'test setup')
+        session_token = client.authenticate()
+        version_id = client.commit(session_token, 'initial commit for conflict test')
 
         setup_client('client2')
-        client.update(client.authenticate())
+        session_token = client.authenticate()
+        try:
+            version_id = client.commit(session_token, 'this should conflict')
+            self.fail()
+        except SystemExit: pass
 
-        time.sleep(0.5) # See above
+        # Update should begin conflict resolution process
+        try:
+            client.update(session_token, testing=True)
+            self.fail()
+        except SystemExit: pass
+
 
         #==================================================
-        # test conflict resolution, both to the server
-        # and client version
+        # test automatic conflict resolution to the server
         #==================================================
+
+
+        raise SystemExit()
+
+
+
+
+        #==================================================
+        # test selective conflict resolution
+        #==================================================
+
+        raise SystemExit(DATA_DIR)
+
         # Delete on client, change on server resolution
         file_put_contents(DATA_DIR + 'client1/test1', test_content_5 + b'11')
         os.unlink(        DATA_DIR + 'client2/test1')

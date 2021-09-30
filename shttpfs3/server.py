@@ -477,6 +477,7 @@ def push_file(request: Request) -> Responce:
         file_path = request.headers['path']
         if any(True for item in re.split(r'\\|/', file_path) if item in ['..', '.']): return fail()
 
+
         #===
         tmp_path = cpjoin(repository_path, 'tmp_file')
         with open(tmp_path, 'wb') as f:
@@ -484,6 +485,7 @@ def push_file(request: Request) -> Responce:
                 chunk = request.body.read(1000 * 1000)
                 if chunk is None: break
                 f.write(chunk)
+
 
         #===
         data_store.fs_put_from_file(tmp_path, {'path' : file_path})
