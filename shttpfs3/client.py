@@ -151,10 +151,11 @@ def update(session_token: str, test_overrides = None):
         # to resolve the conflicting files.
         seperator = '------------'
         conflict_comparison_file_dest = cpjoin(config['data_dir'], '.shttpfs', 'conflict_files')
-        conflict_resolution_path      = cpjoin(config['data_dir'], '.shttpfs', 'conflict_resolution.json')
+        conflict_resolution_path      = cpjoin(config['data_dir'], '.shttpfs', 'conflict_resolution')
         conflict_resolutions          = file_or_default(conflict_resolution_path, None)
 
         if conflict_resolutions is not None:
+            conflict_resolutions = conflict_resolutions.decode('utf-8')
             split_file = conflict_resolutions.split('\n')
 
             chunk  = []
@@ -171,14 +172,20 @@ def update(session_token: str, test_overrides = None):
 
             chunks = chunks[1:]
 
+            import pprint
+            pprint.pprint(chunks)
+
             for chunk in chunks:
                 if len(chunk) != 4:
                     raise SystemExit('Parsed chunk lenth is incorrect')
 
                 path = chunk[0].split(':')[1]
-                resolution = chunk[0].split(':')[1]
+                resolution = chunk[2].split(':')[1]
 
-                if resolution.lower() not in ['client', 'server']:
+                print(resolution.lower().strip())
+                raise SystemExit('test')
+
+                if resolution.lower().strip() not in ['client', 'server']:
                     raise SystemExit('specified resolution must be either "client" or "server"')
 
                 if resolution   == 'client':
@@ -209,34 +216,44 @@ def update(session_token: str, test_overrides = None):
             choice = None
             if not testing:
                 choice = question_user(
-                    "type 'server' to discard client versions and accept server versions" +
-                    "type 'client' to discard server versions and accept client versions" +
-                    "type 'manual' to manually resolve conflicts")
+                    "type 'server' to discard client versions and accept server versions\n" +
+                    "type 'client' to discard server versions and accept client versions\n" +
+                    "type 'manual' to manually resolve conflicts\n",
+                    valid_choices=['server', 'client', 'manual'])
             else:
-                choice = test_overrides['resolve_to_override']
-                raise SystemExit('each case needs to be tested ')
+                choice = test_overrides['resolve_to']
 
+            #-----------------------------------
             if choice == 'server':
-                # put the conflict files into the 'to download from server' bin
-                pass
+                for fle in changes['conflict_files']:
+                    if fle['server_status'] == 'Changed': 
+                        changes['client_pull_files'].append({'path' : fle['file_info']['path']})
 
+                    elif fle['server_status'] == 'Deleted':
+                        changes['to_delete_on_client'].append({'path' : fle['file_info']['path']})
+
+                    else:
+                        raise Exception('Unknown server change state')
+
+            #-----------------------------------
             if choice == 'client':
+                print('Client files will override server files the next time you commit.')
+
                 # ignore the files on the server, and upload the files from the client
                 # don't think we need to actually do anything as this should happen
                 # during commit
                 pass
 
+            #-----------------------------------
             if choice == 'manual':
-
                 # Generate a conflict resolution file
-                resolution_file = 'Please write either "client" or "server" after each resolution block \n'
-                resolution_file += '\n\n------------'
+                resolution_file = 'Please write either "client" or "server" after each resolution block \n\n'
 
                 for fle in changes['conflict_files']:
-                    resolution_file += seperator
-                    resolution_file += 'Path:  ' + fle['file_info']['path']
-                    resolution_file += 'Client ' + fle['client_status'] + ' server ' + fle['server_status']
-                    resolution_file += 'Resolution: '
+                    resolution_file += seperator + '\n'
+                    resolution_file += 'Path:  ' + fle['file_info']['path'] + '\n'
+                    resolution_file += 'Client ' + fle['client_status'] + ' server ' + fle['server_status'] + '\n'
+                    resolution_file += 'Resolution: ' + '\n'
                     resolution_file += '\n'
 
                 # Offer to download files that have been changed on the server in order to compare them
@@ -245,7 +262,7 @@ def update(session_token: str, test_overrides = None):
                     if fle['server_status'] == 'Changed': server_versions.append(fle['file_info'])
 
 
-                choice = 'y' if testing else question_user('Download server versions for comparison? (Y/N)')
+                choice = 'y' if testing else question_user('Download server versions for comparison? (Y/N)', ['y', 'n'])
 
                 if server_versions != [] and choice == 'y':
                     errors = []
@@ -265,13 +282,12 @@ def update(session_token: str, test_overrides = None):
                             result(cpjoin(conflict_comparison_file_dest, fle['path']))
 
                     print('Server versions of conflicting files written to .shttpfs/conflict_files\n')
-                    pprint(errors)
 
                 # ====================
-                file_put_contents(conflict_resolution_path, json.dumps(out, indent=4, sort_keys=True).encode('utf8'))
-                raise SystemExit("Conflict resolution file written to .shttpfs/conflict_resolution.json\n" +
-                                "Please edit this file removing 'client', or 'server' to choose which version to retain.")
-
+                file_put_contents(conflict_resolution_path, resolution_file.encode('utf-8'))
+                raise SystemExit("Conflict resolution file written to .shttpfs/conflict_resolution\n" +
+                                "Please edit this file removing 'client', or 'server' to choose which\n" +
+                                "version to retain, and then re-run shttpfs update.")
 
     # Are there any changes?
     if all(v == [] for k,v in changes.items()):
@@ -609,10 +625,11 @@ def run():
 
         # Ask the user if we should delete the local files, 
         choice = question_user(
-            "type 'ignore'  to add files to '.shttpfs_ignore'" +
-            "type 'delete'  to delete the files from the working copy" +
-            "type 'nothing' to remove the files from the local manifest," +
-            "and leave the files alone")
+            "type 'ignore'  to add files to '.shttpfs_ignore'\n" +
+            "type 'delete'  to delete the files from the working copy\n" +
+            "type 'nothing' to remove the files from the local manifest,\n" +
+            "and leave the files alone\n",
+            valid_choices=['ignore', 'delete', 'nothing'])
 
         # read args
         if choice == 'ignore':

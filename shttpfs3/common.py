@@ -29,8 +29,8 @@ def question_user(prompt_text: str, valid_choices) -> str:
     choice = None
     while True:
         print(prompt_text)
-        choice = input()
-        if choice.lower() in ['y', 'n']: break
+        choice = input('> ')
+        if choice.lower() in valid_choices: break
 
     return choice
 

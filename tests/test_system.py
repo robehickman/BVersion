@@ -227,11 +227,12 @@ class TestSystem(TestCase):
             file_put_contents(DATA_DIR +  'client1/test3',        test_content_1)
 
             setup_client('client1')
+            client.update(client.authenticate())
             client.commit(client.authenticate(), 'test setup')
 
             # client2 init
             setup_client('client2')
-            client.update(client.authenticate(), test_overrides = {})
+            client.update(client.authenticate())
 
             time.sleep(0.5) # See above
  
@@ -261,7 +262,7 @@ class TestSystem(TestCase):
 
 
         #==================================================
-        # test conflict resolution to the client
+        # test full conflict resolution to the client
         #==================================================
         clean_clients_and_commit()
 
@@ -273,53 +274,55 @@ class TestSystem(TestCase):
         setup_client('client2')
         session_token = client.authenticate()
         try:
-            version_id = client.commit(session_token, 'this should conflict')
+            version_id = client.commit(session_token, 'should fail due to not having latest revision')
             self.fail()
-        except SystemExit: pass
+        except SystemExit:
+            pass
 
         # Update should begin conflict resolution process
+        client.update(session_token, test_overrides = {'resolve_to' : 'client'})
+
+        version_id = client.commit(session_token, 'this should succeed')
+
+        setup_client('client1')
+
+        client.update(session_token)
+
+        # TODO check that client 1 now has the changes from client 2
+        # and contents is correct
+
+
+        #==================================================
+        # test full conflict resolution to the server
+        #==================================================
+        clean_clients_and_commit()
+
+        # commit both clients second to commit should error
+        setup_client('client1')
+        session_token = client.authenticate()
+        version_id = client.commit(session_token, 'initial commit for conflict test')
+
+        setup_client('client2')
+        session_token = client.authenticate()
         try:
-            client.update(session_token, testing=True)
+            version_id = client.commit(session_token, 'should fail due to not having latest revision')
             self.fail()
-        except SystemExit: pass
+        except SystemExit:
+            pass
 
+        # Update should begin conflict resolution process
+        client.update(session_token, test_overrides = {'resolve_to' : 'server'})
 
-        #==================================================
-        # test automatic conflict resolution to the server
-        #==================================================
+        # TODO check that server files have been downloaded to the client and contents is correct
 
-
-        raise SystemExit()
-
-
+        # This should not do anything as the client should now match the server
+        version_id = client.commit(session_token, 'this should do nothing')
 
 
         #==================================================
         # test selective conflict resolution
         #==================================================
-
-        raise SystemExit(DATA_DIR)
-
-        # Delete on client, change on server resolution
-        file_put_contents(DATA_DIR + 'client1/test1', test_content_5 + b'11')
-        os.unlink(        DATA_DIR + 'client2/test1')
-
-        file_put_contents(DATA_DIR + 'client1/test2', test_content_5 + b'00')
-        os.unlink(        DATA_DIR + 'client2/test2')
-
-        # Delete on server, change on client resolution
-        os.unlink(        DATA_DIR + 'client1/test5')
-        file_put_contents(DATA_DIR + 'client2/test5', test_content_5 + b'ff')
-
-        os.unlink(        DATA_DIR + 'client1/test6')
-        file_put_contents(DATA_DIR + 'client2/test6', test_content_5 + b'gg')
-
-        # Double change resolution
-        file_put_contents(DATA_DIR + 'client1/test3', test_content_5 + b'aa')
-        file_put_contents(DATA_DIR + 'client2/test3', test_content_5 + b'bb')
-
-        file_put_contents(DATA_DIR + 'client1/test4', test_content_5 + b'cc')
-        file_put_contents(DATA_DIR + 'client2/test4', test_content_5 + b'dd')
+        clean_clients_and_commit()
 
 
         # commit both clients second to commit should error
@@ -336,18 +339,21 @@ class TestSystem(TestCase):
 
         # Update should begin conflict resolution process
         try:
-            client.update(session_token, testing=True)
+            client.update(session_token, test_overrides = {'resolve_to' : 'manual'})
             self.fail()
         except SystemExit: pass
 
+        """
         # test server versions of conflict files downloaded correctly
         self.assertEqual(file_get_contents(DATA_DIR + 'client1/test1'), test_content_5 + b'11')
         self.assertEqual(file_get_contents(DATA_DIR + 'client1/test2'), test_content_5 + b'00')
         self.assertEqual(file_get_contents(DATA_DIR + 'client1/test3'), test_content_5 + b'aa')
         self.assertEqual(file_get_contents(DATA_DIR + 'client1/test4'), test_content_5 + b'cc')
         # NOTE nothing to download in delete on server case
+        """
 
         #test resolving it
+        """
         path = DATA_DIR + 'client2/.shttpfs/conflict_resolution.json'
         resolve = json.loads(file_get_contents(path))
         resolve_index = {v['1_path'] : v for v in resolve}
@@ -360,9 +366,23 @@ class TestSystem(TestCase):
         resolve_index['/test6']['4_resolution'] = ['server']
 
         file_put_contents(path, json.dumps([v for v in list(resolve_index.values())]).encode('utf8'))
+        """
+
+        resolution_file = file_get_contents(DATA_DIR + 'client2/.shttpfs/conflict_resolution').decode('utf-8')
+
+        resolution_file = resolution_file.replace('Resolution:', 'Resolution: client', 1)
+        resolution_file = resolution_file.replace('Resolution:', 'Resolution: server', 1)
+        resolution_file = resolution_file.replace('Resolution:', 'Resolution: client', 1)
+        resolution_file = resolution_file.replace('Resolution:', 'Resolution: server', 1)
+
+        file_put_contents(DATA_DIR + 'client2/.shttpfs/conflict_resolution', resolution_file.encode('utf-8'))
 
         # perform update and test resolve as expected
         client.update(session_token)
+
+        raise SystemExit()
+
+
         self.assertFalse(                        os.path.isfile(DATA_DIR + 'client2/test1'))
         self.assertEqual(test_content_5 + b'00', file_get_contents(DATA_DIR + 'client2/test2'))
         self.assertEqual(test_content_5 + b'bb', file_get_contents(DATA_DIR + 'client2/test3'))
