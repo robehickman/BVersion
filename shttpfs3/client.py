@@ -176,16 +176,11 @@ def update(session_token: str, test_overrides = None):
             pprint.pprint(chunks)
 
             for chunk in chunks:
-                if len(chunk) != 4:
-                    raise SystemExit('Parsed chunk lenth is incorrect')
-
                 path = chunk[0].split(':')[1]
                 resolution = chunk[2].split(':')[1]
+                resolution = resolution.lower().strip()
 
-                print(resolution.lower().strip())
-                raise SystemExit('test')
-
-                if resolution.lower().strip() not in ['client', 'server']:
+                if resolution not in ['client', 'server']:
                     raise SystemExit('specified resolution must be either "client" or "server"')
 
                 if resolution   == 'client':
@@ -198,7 +193,17 @@ def update(session_token: str, test_overrides = None):
 
                 elif resolution == 'server':
                     # Download the changed files from the server
-                    pass
+
+                    for fle in changes['conflict_files']:
+                        if fle['server_status'] == 'Changed': 
+                            changes['client_pull_files'].append({'path' : fle['file_info']['path']})
+
+                        elif fle['server_status'] == 'Deleted':
+                            changes['to_delete_on_client'].append({'path' : fle['file_info']['path']})
+
+                        else:
+                            raise Exception('Unknown server change state')
+
 
         else:
             # Print out all conflicting files
