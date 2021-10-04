@@ -385,6 +385,8 @@ class TestSystem(TestCase):
         # perform update and test resolve as expected
         client.update(session_token)
 
+        # TODO check files resolve as expected
+
         #self.assertTrue(                         os.path.isfile(DATA_DIR + 'client2/test1'))
         #self.assertEqual(test_content_5 + b'00', file_get_contents(DATA_DIR + 'client2/test2'))
         #self.assertEqual(test_content_5 + b'bb', file_get_contents(DATA_DIR + 'client2/test3'))
