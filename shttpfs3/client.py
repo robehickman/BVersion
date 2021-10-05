@@ -50,7 +50,7 @@ def init(unlocked = False):
     pull_ignore_filters: str = file_or_default(cpjoin(working_copy_base_path, '.shttpfs_pull_ignore'), b'').decode('utf8')
 
     #-----------
-    config['ignore_filters']:      List[str] = ['/.shttpfs*'] + ignore_filters.splitlines()
+    config['ignore_filters']:      List[str] = ['/.shttpfs/*'] + ignore_filters.splitlines()
     config['pull_ignore_filters']: List[str] = pull_ignore_filters.splitlines()
     config['data_dir']:            str       = working_copy_base_path
 
@@ -103,9 +103,7 @@ def find_local_changes() -> Tuple[dict, Dict[str, manifestFileDetails]]:
 
 
 #===============================================================================
-def update(session_token: str, test_overrides = None):
-    """ Compare changes on the client to changes on the server and update local files
-    which have changed on the server. """
+def resolve_update_conflicts(session_token: str, changes: list, test_overrides):
 
     # The unit test code needs to be able to override some of the function
     # of this code, and cause partial checkout failiures. This var allows
@@ -117,6 +115,221 @@ def update(session_token: str, test_overrides = None):
         }
     else:
         testing = True
+
+    # ----------------------------------------------------------------------
+    # If this code is being run for the second time after the user has
+    # chosen to create a conflict resolution file to resolve conflicts
+    # manually, we need to get the contents of said file, and use it
+    # to resolve the conflicting files.
+    # ----------------------------------------------------------------------
+    seperator = '------------'
+    conflict_comparison_file_dest = cpjoin(config['data_dir'], '.shttpfs', 'conflict_files')
+    conflict_resolution_path      = cpjoin(config['data_dir'], '.shttpfs', 'conflict_resolution')
+    conflict_resolutions          = file_or_default(conflict_resolution_path, None)
+
+    if conflict_resolutions is not None:
+        # Parse the conflict resolution file
+        conflict_resolutions = conflict_resolutions.decode('utf-8')
+        split_file = conflict_resolutions.split('\n')
+
+        chunk  = []
+        chunks = []
+        for line in split_file:
+            if line == seperator:
+                chunks.append(chunk)
+                chunk  = []
+            else: 
+                chunk.append(line)
+
+        if chunk != []:
+            chunks.append(chunk)
+
+        chunks = chunks[1:]
+
+        resolutions = []
+        for chunk in chunks:
+            path_sect = chunk[0].split(':')
+            res_sect  = chunk[2].split(':')
+
+            if 'Path' not in path_sect[0]:
+                raise SystemExit('Corrupted resolution file')
+
+            if 'Resolution' not in res_sect[0]:
+                raise SystemExit('Corrupted resolution file')
+
+            resolution = res_sect[1].strip().lower()
+
+            if resolution not in ['client', 'server']:
+                raise SystemExit('specified resolution must be either "client" or "server"')
+
+            resolutions.append({
+                'path' : path_sect[1].strip(),
+                'resolution' : resolution
+            })
+
+
+        import pprint
+        pprint.pprint(resolutions)
+
+        # Verify that the file resolves all conflicts, and that the paths match exactly the paths of conflicting items
+        pprint.pprint(changes['conflict_files'])
+
+        conflicting_paths = set([f['file_info']['path'] for f in changes['conflict_files']])
+        resolved_paths = set([f['path'] for f in resolutions])
+
+        unresolved_paths = conflicting_paths ^ resolved_paths
+
+        pprint.pprint(unresolved_paths)
+
+        if len(unresolved_paths) != 0:
+            raise SystemExit('The conflict resolution file does not resolve all conflicts')
+
+
+        resolution_index = {}
+        for resolution in resolutions:
+            resolution_index [resolution['path']] = resolution['resolution']
+
+        # ===========================
+        import pprint
+        pprint.pprint(changes['conflict_files'])
+
+        for fle in changes['conflict_files']:
+            resolution = resolution_index[fle['file_info']['path']]
+
+            if resolution   == 'client':
+                print('resolution to client')
+
+                # Ignore items changed on the server and push the client changes to overwrite them
+                # TODO does this need to pass data about the files to commit?
+                # dont think so, as when we update the local version to latest, it will automatically
+                # discard server changes. May need to handle this when feature to allow downloading
+                # of pull ignored files gets added
+                pass
+
+            elif resolution == 'server':
+                print('resolution to server')
+                # Download the changed files from the server
+
+                if fle['server_status'] == 'Changed': 
+                    changes['client_pull_files'].append({'path' : fle['file_info']['path']})
+
+                elif fle['server_status'] == 'Deleted':
+                    changes['to_delete_on_client'].append({'path' : fle['file_info']['path']})
+
+                else:
+                    raise Exception('Unknown server change state')
+
+        changes['conflict_files'] = []
+
+
+    # ----------------------------------------------------------------------
+    # If no conflict resolution file exists, we need to ask the user how
+    # they want to resolve the conflict
+    # ----------------------------------------------------------------------
+    else:
+        # Print out all conflicting files
+        for fle in changes['conflict_files']:
+            print('Path:  ' + fle['file_info']['path'])
+            print('Client ' + fle['client_status'] + ' server ' + fle['server_status'])
+            print()
+
+        print("The above files are in conflict!\n")
+
+
+        # Offer the choice between resolving conflicts to the server,
+        # resolving conflicts to the client, or manually resolving
+        # the conflicting files.
+        choice = None
+        if not testing:
+            choice = question_user(
+                "type 'server' to discard client versions and accept server versions\n" +
+                "type 'client' to discard server versions and accept client versions\n" +
+                "type 'manual' to manually resolve conflicts\n",
+                valid_choices=['server', 'client', 'manual'])
+        else:
+            choice = test_overrides['resolve_to']
+
+        #-----------------------------------
+        if choice == 'server':
+            for fle in changes['conflict_files']:
+                if fle['server_status'] == 'Changed': 
+                    changes['client_pull_files'].append({'path' : fle['file_info']['path']})
+
+                elif fle['server_status'] == 'Deleted':
+                    changes['to_delete_on_client'].append({'path' : fle['file_info']['path']})
+
+                else:
+                    raise Exception('Unknown server change state')
+
+            changes['conflict_files'] = []
+
+        #-----------------------------------
+        if choice == 'client':
+            print('Client files will override server files the next time you commit.')
+
+            # ignore the files on the server, and upload the files from the client
+            # don't think we need to actually do anything as this should happen
+            # during commit
+
+            changes['conflict_files'] = []
+
+        #-----------------------------------
+        if choice == 'manual':
+            # Generate a conflict resolution file
+            resolution_file = 'Please write either "client" or "server" after each resolution block \n\n'
+
+            for fle in changes['conflict_files']:
+                resolution_file += seperator + '\n'
+                resolution_file += 'Path:  ' + fle['file_info']['path'] + '\n'
+                resolution_file += 'Client ' + fle['client_status'] + ' server ' + fle['server_status'] + '\n'
+                resolution_file += 'Resolution: ' + '\n'
+                resolution_file += '\n'
+
+            # Offer to download files that have been changed on the server in order to compare them
+            server_versions = []
+            for fle in changes['conflict_files']:
+                if fle['server_status'] == 'Changed': server_versions.append(fle['file_info'])
+
+
+            choice = 'y' if testing else question_user('Download server versions for comparison? (Y/N)', ['y', 'n'])
+
+            if server_versions != [] and choice == 'y':
+                errors = []
+                for fle in server_versions:
+                    print('Pulling file: ' + fle['path'])
+
+                    result, headers = server_connection.request("pull_file", {
+                        'session_token' : session_token,
+                        'repository'    : config['repository'],
+                        'path'          : fle['path']}, gen = True)
+
+                    if headers['status'] != 'ok':
+                        errors.append(fle['path'])
+
+                    else:
+                        make_dirs_if_dont_exist(cpjoin(conflict_comparison_file_dest, *fle['path'].split('/')[:-1]) + '/')
+                        result(cpjoin(conflict_comparison_file_dest, fle['path']))
+
+                print('Server versions of conflicting files written to .shttpfs/conflict_files\n')
+
+            # ====================
+            file_put_contents(conflict_resolution_path, resolution_file.encode('utf-8'))
+            raise SystemExit("Conflict resolution file written to .shttpfs/conflict_resolution\n" +
+                            "Please edit this file removing 'client', or 'server' to choose which\n" +
+                            "version to retain, and then re-run shttpfs update.")
+
+    if changes['conflict_files'] != []:
+        raise Exception('Not all conflicting files have been resolved')
+
+    return changes
+
+
+
+#===============================================================================
+def update(session_token: str, test_overrides = None):
+    """ Compare changes on the client to changes on the server and update local files
+    which have changed on the server. """
+
 
     # Send the changes and the revision of the most recent update to the server to find changes
     manifest, client_changes = find_local_changes()
@@ -141,163 +354,15 @@ def update(session_token: str, test_overrides = None):
     result = json.loads(req_result)
     changes = result['sorted_changes']
 
-
-    # Files which are in conflict
-    if changes['conflict_files'] != []:
-
-        # If this code is being run for the second time after the user has
-        # chosen to create a conflict resolution file to resolve conflicts
-        # manually, we need to get the contents of said file, and use it
-        # to resolve the conflicting files.
-        seperator = '------------'
-        conflict_comparison_file_dest = cpjoin(config['data_dir'], '.shttpfs', 'conflict_files')
-        conflict_resolution_path      = cpjoin(config['data_dir'], '.shttpfs', 'conflict_resolution')
-        conflict_resolutions          = file_or_default(conflict_resolution_path, None)
-
-        if conflict_resolutions is not None:
-            conflict_resolutions = conflict_resolutions.decode('utf-8')
-            split_file = conflict_resolutions.split('\n')
-
-            chunk  = []
-            chunks = []
-            for line in split_file:
-                if line == seperator:
-                    chunks.append(chunk)
-                    chunk  = []
-                else: 
-                    chunk.append(line)
-
-            if chunk != []:
-                chunks.append(chunk)
-
-            chunks = chunks[1:]
-
-            import pprint
-            pprint.pprint(chunks)
-
-            for chunk in chunks:
-                path = chunk[0].split(':')[1]
-                resolution = chunk[2].split(':')[1]
-                resolution = resolution.lower().strip()
-
-                if resolution not in ['client', 'server']:
-                    raise SystemExit('specified resolution must be either "client" or "server"')
-
-                if resolution   == 'client':
-                    # Ignore items changed on the server and push the client changes to overwrite them
-                    # TODO does this need to pass data about the files to commit?
-                    # dont think so, as when we update the local version to latest, it will automatically
-                    # discard server changes. May need to handle this when feature to allow downloading
-                    # of pull ignored files gets added
-                    pass
-
-                elif resolution == 'server':
-                    # Download the changed files from the server
-
-                    for fle in changes['conflict_files']:
-                        if fle['server_status'] == 'Changed': 
-                            changes['client_pull_files'].append({'path' : fle['file_info']['path']})
-
-                        elif fle['server_status'] == 'Deleted':
-                            changes['to_delete_on_client'].append({'path' : fle['file_info']['path']})
-
-                        else:
-                            raise Exception('Unknown server change state')
-
-
-        else:
-            # Print out all conflicting files
-            for fle in changes['conflict_files']:
-                print('Path:  ' + fle['file_info']['path'])
-                print('Client ' + fle['client_status'] + ' server ' + fle['server_status'])
-                print()
-
-            print("The above files are in conflict!\n")
-
-
-            # Offer the choice between resolving conflicts to the server,
-            # resolving conflicts to the client, or manually resolving
-            # the conflicting files.
-            choice = None
-            if not testing:
-                choice = question_user(
-                    "type 'server' to discard client versions and accept server versions\n" +
-                    "type 'client' to discard server versions and accept client versions\n" +
-                    "type 'manual' to manually resolve conflicts\n",
-                    valid_choices=['server', 'client', 'manual'])
-            else:
-                choice = test_overrides['resolve_to']
-
-            #-----------------------------------
-            if choice == 'server':
-                for fle in changes['conflict_files']:
-                    if fle['server_status'] == 'Changed': 
-                        changes['client_pull_files'].append({'path' : fle['file_info']['path']})
-
-                    elif fle['server_status'] == 'Deleted':
-                        changes['to_delete_on_client'].append({'path' : fle['file_info']['path']})
-
-                    else:
-                        raise Exception('Unknown server change state')
-
-            #-----------------------------------
-            if choice == 'client':
-                print('Client files will override server files the next time you commit.')
-
-                # ignore the files on the server, and upload the files from the client
-                # don't think we need to actually do anything as this should happen
-                # during commit
-                pass
-
-            #-----------------------------------
-            if choice == 'manual':
-                # Generate a conflict resolution file
-                resolution_file = 'Please write either "client" or "server" after each resolution block \n\n'
-
-                for fle in changes['conflict_files']:
-                    resolution_file += seperator + '\n'
-                    resolution_file += 'Path:  ' + fle['file_info']['path'] + '\n'
-                    resolution_file += 'Client ' + fle['client_status'] + ' server ' + fle['server_status'] + '\n'
-                    resolution_file += 'Resolution: ' + '\n'
-                    resolution_file += '\n'
-
-                # Offer to download files that have been changed on the server in order to compare them
-                server_versions = []
-                for fle in changes['conflict_files']:
-                    if fle['server_status'] == 'Changed': server_versions.append(fle['file_info'])
-
-
-                choice = 'y' if testing else question_user('Download server versions for comparison? (Y/N)', ['y', 'n'])
-
-                if server_versions != [] and choice == 'y':
-                    errors = []
-                    for fle in server_versions:
-                        print('Pulling file: ' + fle['path'])
-
-                        result, headers = server_connection.request("pull_file", {
-                            'session_token' : session_token,
-                            'repository'    : config['repository'],
-                            'path'          : fle['path']}, gen = True)
-
-                        if headers['status'] != 'ok':
-                            errors.append(fle['path'])
-
-                        else:
-                            make_dirs_if_dont_exist(cpjoin(conflict_comparison_file_dest, *fle['path'].split('/')[:-1]) + '/')
-                            result(cpjoin(conflict_comparison_file_dest, fle['path']))
-
-                    print('Server versions of conflicting files written to .shttpfs/conflict_files\n')
-
-                # ====================
-                file_put_contents(conflict_resolution_path, resolution_file.encode('utf-8'))
-                raise SystemExit("Conflict resolution file written to .shttpfs/conflict_resolution\n" +
-                                "Please edit this file removing 'client', or 'server' to choose which\n" +
-                                "version to retain, and then re-run shttpfs update.")
-
     # Are there any changes?
     if all(v == [] for k,v in changes.items()):
         print('Nothing to update')
         return
+
+
+    # Files which are in conflict
+    if changes['conflict_files'] != []:
+        changes = resolve_update_conflicts(session_token, changes, test_overrides)
 
     # Pull and delete from remote to local
     if changes['client_pull_files'] != []:

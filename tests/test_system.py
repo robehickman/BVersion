@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #from helpers import *
-import os, json, struct, hashlib, time, re
+import os, json, struct, hashlib, time, re, shutil
 from unittest import TestCase
 from io import BytesIO
 from tests.helpers import DATA_DIR, delete_data_dir
@@ -177,6 +177,27 @@ class TestSystem(TestCase):
         # TODO test mid update failiure works as expected
         #==================================================
 
+        """
+        write two files to the repo
+
+        commit them
+
+        perform an update, and kill mid update
+
+        continue update, what happens?
+        """
+
+
+        #==================================================
+        # TODO test pull ignore
+        #==================================================
+
+        #==================================================
+        # TODO test that a file removed from pull ignore
+        # is downloaded on next update
+        #==================================================
+
+
         #==================================================
         # test delete and add
         #==================================================
@@ -236,41 +257,116 @@ class TestSystem(TestCase):
 
             time.sleep(0.5) # See above
  
-            # -----------------------------------------------------------------
-            # The next steps diliberately set up changes in both working copies
-            # to cause the second client to conflict when an update is run.
-            # All permutations of conflict are tested.
-            # -----------------------------------------------------------------
 
-            # new on client, new on server
-            file_put_contents(DATA_DIR + 'client1/test4', test_content_5 + b'aa')
-            file_put_contents(DATA_DIR + 'client2/test4', test_content_5 + b'bb')
+        #===============================================================
+        # Diliberately set up changes in both working copies that are
+        # in conflict. These are tested by first commiting client1,
+        # and the conflict is always created in client 2 by running
+        # update. All permutations of conflict are tested.
+        #===============================================================
+        def setup_test_case():
+            # Case 1 - new on client, new on server
+            file_put_contents(DATA_DIR + 'client1/test1', test_content_5 + b'aa')
+            file_put_contents(DATA_DIR + 'client2/test1', test_content_5 + b'bb')
 
-            # Delete on client, change on server
-            file_put_contents(DATA_DIR + 'client1/test1', test_content_5 + b'cc')
-            os.unlink(        DATA_DIR + 'client2/test1')
+            # Case 2 - Delete on client, change on server
+            file_put_contents(DATA_DIR + 'client1/test2', test_content_5 + b'cc')
+            os.unlink(        DATA_DIR + 'client2/test2')
 
-            # Delete on server, change on client
-            os.unlink(        DATA_DIR + 'client1/test2')
-            file_put_contents(DATA_DIR + 'client2/test2', test_content_5 + b'ff')
+            # Case 3 - Delete on server, change on client
+            os.unlink(        DATA_DIR + 'client1/test3')
+            file_put_contents(DATA_DIR + 'client2/test3', test_content_5 + b'dd')
 
-            # Double change resolution
-            file_put_contents(DATA_DIR + 'client1/test3', test_content_5 + b'aa')
-            file_put_contents(DATA_DIR + 'client2/test3', test_content_5 + b'bb')
+            # Case 4 - Double change resolution
+            file_put_contents(DATA_DIR + 'client1/test4', test_content_5 + b'ee')
+            file_put_contents(DATA_DIR + 'client2/test4', test_content_5 + b'ff')
+
 
             time.sleep(0.5) # See above
+
+        #------------------------------------------------------
+        def test_resolution_to_client(self, base_path):
+            # File test1 should contain the text 'bb'
+            self.assertEqual(file_get_contents(base_path + 'test1'), test_content_5 + b'bb')
+
+            # File test2 should be deleted
+            self.assertFalse(os.path.isfile(base_path + 'test2'))
+
+            # File test3 should contain the text 'dd'
+            self.assertEqual(file_get_contents(base_path + 'test3'), test_content_5 + b'dd')
+            
+            # File test4 should contain the text 'ff'
+            self.assertEqual(file_get_contents(base_path + 'test4'), test_content_5 + b'ff')
+
+        #------------------------------------------------------
+        def test_resolution_to_server(self, base_path):
+            # File test1 should contain the text 'aa'
+            self.assertEqual(file_get_contents(base_path + 'test1'), test_content_5 + b'aa')
+
+            # File test2 should contain the text 'cc'
+            self.assertEqual(file_get_contents(base_path + 'test2'), test_content_5 + b'cc')
+
+            # File test3 should be deleted
+            self.assertFalse(os.path.isfile(base_path + 'test3'))
+
+            # File test4 should contain the text 'ee'
+            self.assertEqual(file_get_contents(base_path + 'test4'), test_content_5 + b'ee')
+
+        #------------------------------------------------------
+        def perform_selective_conflict_resolve(mode = 'full'):
+            resolution_file = file_get_contents(DATA_DIR + 'client2/.shttpfs/conflict_resolution').decode('utf-8')
+
+            resolutions = ['server', 'client', 'server', 'client']
+
+            if mode == 'partial':
+                resolutions = [0,2]
+
+            i = 0
+            new_file = ''
+            for line in resolution_file.split('\n'):
+                print(line)
+                if 'Resolution:' in line:
+                    print('hit')
+
+                    try:
+                        line += ' ' + resolutions[i]
+                        i += 1
+                    except:
+                        pass
+
+
+                new_file += line + '\n'
+            resolution_file = new_file
+
+            file_put_contents(DATA_DIR + 'client2/.shttpfs/conflict_resolution', resolution_file.encode('utf-8'))
+
+        #------------------------------------------------------
+        def test_selective_conflict_resolve(self, base_path):
+            # File test1 should contain the text 'aa'
+            self.assertEqual(file_get_contents(base_path + 'test1'), test_content_5 + b'aa')
+
+            # File test2 should be deleted
+            self.assertFalse(os.path.isfile(base_path + 'test2'))
+
+            # File test3 should be deleted
+            self.assertFalse(os.path.isfile(base_path + 'test3'))
+
+            # File test4 should contain the text 'ff'
+            self.assertEqual(file_get_contents(base_path + 'test4'), test_content_5 + b'ff')
 
 
         #==================================================
         # test full conflict resolution to the client
         #==================================================
         clean_clients_and_commit()
+        setup_test_case()
 
         # commit both clients second to commit should error
         setup_client('client1')
         session_token = client.authenticate()
         version_id = client.commit(session_token, 'initial commit for conflict test')
 
+        #----------------
         setup_client('client2')
         session_token = client.authenticate()
         try:
@@ -279,23 +375,25 @@ class TestSystem(TestCase):
         except SystemExit:
             pass
 
-        # Update should begin conflict resolution process
+        # Update and resolve conflicting files to the client
         client.update(session_token, test_overrides = {'resolve_to' : 'client'})
+        test_resolution_to_client(self, DATA_DIR + 'client2/')
 
+        # --------------------------
         version_id = client.commit(session_token, 'this should succeed')
+        self.assertNotEqual(None, version_id)
 
+        # check that client 1 gets the changes from client 2, both should now match
         setup_client('client1')
-
         client.update(session_token)
-
-        # TODO check that client 1 now has the changes from client 2
-        # and contents is correct
+        test_resolution_to_client(self, DATA_DIR + 'client1/')
 
 
         #==================================================
         # test full conflict resolution to the server
         #==================================================
         clean_clients_and_commit()
+        setup_test_case()
 
         # commit both clients second to commit should error
         setup_client('client1')
@@ -310,20 +408,27 @@ class TestSystem(TestCase):
         except SystemExit:
             pass
 
-        # Update should begin conflict resolution process
+        # Update and resolve conflicting files to the server
         client.update(session_token, test_overrides = {'resolve_to' : 'server'})
 
-        # TODO check that server files have been downloaded to the client and contents is correct
+        # check that server files have been downloaded to the client and contents is correct
+        test_resolution_to_server(self, DATA_DIR + 'client2/')
 
         # This should not do anything as the client should now match the server
         version_id = client.commit(session_token, 'this should do nothing')
+
+        setup_client('client1')
+        session_token = client.authenticate()
+        client.update(session_token)
+
+        test_resolution_to_server(self, DATA_DIR + 'client1/')
 
 
         #==================================================
         # test selective conflict resolution
         #==================================================
         clean_clients_and_commit()
-
+        setup_test_case()
 
         # commit both clients second to commit should error
         setup_client('client1')
@@ -343,68 +448,45 @@ class TestSystem(TestCase):
             self.fail()
         except SystemExit: pass
 
-        """
-        # test server versions of conflict files downloaded correctly
-        self.assertEqual(file_get_contents(DATA_DIR + 'client1/test1'), test_content_5 + b'11')
-        self.assertEqual(file_get_contents(DATA_DIR + 'client1/test2'), test_content_5 + b'00')
-        self.assertEqual(file_get_contents(DATA_DIR + 'client1/test3'), test_content_5 + b'aa')
-        self.assertEqual(file_get_contents(DATA_DIR + 'client1/test4'), test_content_5 + b'cc')
-        # NOTE nothing to download in delete on server case
-        """
+        # Test incomplete resolution file causes an error
+        shutil.copyfile(DATA_DIR + 'client2/.shttpfs/conflict_resolution', DATA_DIR + 'client2/.shttpfs/conflict_resolution.back')
+        perform_selective_conflict_resolve('partial')
 
-        #test resolving it
-        """
-        path = DATA_DIR + 'client2/.shttpfs/conflict_resolution.json'
-        resolve = json.loads(file_get_contents(path))
-        resolve_index = {v['1_path'] : v for v in resolve}
+        try:
+            client.update(session_token)
+            self.fail()
+        except SystemExit:
+            pass
 
-        resolve_index['/test1']['4_resolution'] = ['client']
-        resolve_index['/test2']['4_resolution'] = ['server']
-        resolve_index['/test3']['4_resolution'] = ['client']
-        resolve_index['/test4']['4_resolution'] = ['server']
-        resolve_index['/test5']['4_resolution'] = ['client']
-        resolve_index['/test6']['4_resolution'] = ['server']
-
-        file_put_contents(path, json.dumps([v for v in list(resolve_index.values())]).encode('utf8'))
-        """
-
-        resolution_file = file_get_contents(DATA_DIR + 'client2/.shttpfs/conflict_resolution').decode('utf-8')
-
-        resolutions = ['client', 'server', 'client', 'server']
-        i = 0
-        new_file = ''
-        for line in resolution_file.split('\n'):
-            if 'Resolution:' in line:
-                line += ' ' + resolutions[i]
-                i += 1
-            new_file += line + '\n'
-        resolution_file = new_file
-
-        file_put_contents(DATA_DIR + 'client2/.shttpfs/conflict_resolution', resolution_file.encode('utf-8'))
-
-        # perform update and test resolve as expected
+        # Modify the conflict resolution file to resolve the conflicts
+        shutil.copyfile(DATA_DIR + 'client2/.shttpfs/conflict_resolution.back', DATA_DIR + 'client2/.shttpfs/conflict_resolution')
+        perform_selective_conflict_resolve()
         client.update(session_token)
 
-        #self.assertTrue(                         os.path.isfile(DATA_DIR + 'client2/test1'))
-        #self.assertEqual(test_content_5 + b'00', file_get_contents(DATA_DIR + 'client2/test2'))
-        #self.assertEqual(test_content_5 + b'bb', file_get_contents(DATA_DIR + 'client2/test3'))
-        #self.assertEqual(test_content_5 + b'cc', file_get_contents(DATA_DIR + 'client2/test4'))
-        #self.assertEqual(test_content_5 + b'ff', file_get_contents(DATA_DIR + 'client2/test5'))
-        #self.assertFalse(                        os.path.isfile(DATA_DIR + 'client2/test6'))
+        # Check files resolve as expected
+        test_selective_conflict_resolve(self, DATA_DIR + 'client2/')
 
         # This should now commit
         version_id = client.commit(session_token, 'this should be ok')
-        #self.assertNotEqual(None, version_id)
+        self.assertNotEqual(None, version_id)
 
-        #req_result = client.get_changes_in_version(session_token, version_id)[0]
-        #res_index = { v['path'] : v for v in json.loads(req_result)['changes']}
+        # Check the other working copy too
+        setup_client('client1')
+        session_token = client.authenticate()
+        client.update(session_token)
 
-        #self.assertEqual('deleted', res_index['/test1']['status'])
-        #self.assertTrue('/test2' not in res_index)
-        #self.assertEqual('new', res_index['/test3']['status'])
-        #self.assertTrue('/test4' not in res_index)
-        #self.assertEqual('new', res_index['/test5']['status'])
-        #self.assertTrue('/test6' not in res_index)
+        test_selective_conflict_resolve(self, DATA_DIR + 'client1/')
+
+        # Test change log is correct
+        req_result = client.get_changes_in_version(session_token, version_id)[0]
+        res_index = { v['path'] : v for v in json.loads(req_result)['changes']}
+
+        self.assertEqual('deleted', res_index['/test1']['status'])
+        self.assertTrue('/test2' not in res_index)
+        self.assertEqual('new', res_index['/test3']['status'])
+        self.assertTrue('/test4' not in res_index)
+        self.assertEqual('new', res_index['/test5']['status'])
+        self.assertTrue('/test6' not in res_index)
 
         #==================================================
         delete_data_dir()
