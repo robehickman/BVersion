@@ -48,7 +48,7 @@ def init(unlocked = False):
     pull_ignore_filters: str = file_or_default(cpjoin(working_copy_base_path, '.shttpfs_pull_ignore'), b'').decode('utf8')
 
     #-----------
-    config['ignore_filters']:      List[str] = ['/.shttpfs*'] + ignore_filters.splitlines()
+    config['ignore_filters']:      List[str] = ['/.shttpfs/*', '/.shttpfs_pull_ignore'] + ignore_filters.splitlines()
     config['pull_ignore_filters']: List[str] = pull_ignore_filters.splitlines()
     config['data_dir']:            str       = working_copy_base_path
 
