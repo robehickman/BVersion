@@ -324,10 +324,7 @@ class TestSystem(TestCase):
             i = 0
             new_file = ''
             for line in resolution_file.split('\n'):
-                print(line)
                 if 'Resolution:' in line:
-                    print('hit')
-
                     try:
                         line += ' ' + resolutions[i]
                         i += 1
@@ -481,12 +478,8 @@ class TestSystem(TestCase):
         req_result = client.get_changes_in_version(session_token, version_id)[0]
         res_index = { v['path'] : v for v in json.loads(req_result)['changes']}
 
-        self.assertEqual('deleted', res_index['/test1']['status'])
-        self.assertTrue('/test2' not in res_index)
-        self.assertEqual('new', res_index['/test3']['status'])
-        self.assertTrue('/test4' not in res_index)
-        self.assertEqual('new', res_index['/test5']['status'])
-        self.assertTrue('/test6' not in res_index)
+        self.assertEqual('deleted', res_index['/test2']['status'])
+        self.assertEqual('new', res_index['/test4']['status'])
 
         #==================================================
         delete_data_dir()

@@ -167,19 +167,11 @@ def resolve_update_conflicts(session_token: str, changes: list, test_overrides):
                 'resolution' : resolution
             })
 
-
-        import pprint
-        pprint.pprint(resolutions)
-
         # Verify that the file resolves all conflicts, and that the paths match exactly the paths of conflicting items
-        pprint.pprint(changes['conflict_files'])
-
         conflicting_paths = set([f['file_info']['path'] for f in changes['conflict_files']])
         resolved_paths = set([f['path'] for f in resolutions])
 
         unresolved_paths = conflicting_paths ^ resolved_paths
-
-        pprint.pprint(unresolved_paths)
 
         if len(unresolved_paths) != 0:
             raise SystemExit('The conflict resolution file does not resolve all conflicts')
@@ -190,15 +182,11 @@ def resolve_update_conflicts(session_token: str, changes: list, test_overrides):
             resolution_index [resolution['path']] = resolution['resolution']
 
         # ===========================
-        import pprint
-        pprint.pprint(changes['conflict_files'])
 
         for fle in changes['conflict_files']:
             resolution = resolution_index[fle['file_info']['path']]
 
             if resolution   == 'client':
-                print('resolution to client')
-
                 # Ignore items changed on the server and push the client changes to overwrite them
                 # TODO does this need to pass data about the files to commit?
                 # dont think so, as when we update the local version to latest, it will automatically
@@ -207,7 +195,6 @@ def resolve_update_conflicts(session_token: str, changes: list, test_overrides):
                 pass
 
             elif resolution == 'server':
-                print('resolution to server')
                 # Download the changed files from the server
 
                 if fle['server_status'] == 'Changed': 
@@ -358,7 +345,6 @@ def update(session_token: str, test_overrides = None):
     if all(v == [] for k,v in changes.items()):
         print('Nothing to update')
         return
-
 
     # Files which are in conflict
     if changes['conflict_files'] != []:

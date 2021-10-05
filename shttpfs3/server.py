@@ -317,19 +317,6 @@ def find_changed(request: Request) -> Responce:
     client_changes = json.loads(body_data['client_changes'])
     server_changes = data_store.get_changes_since(request.headers["previous_revision"], head)
 
-    # Resolve conflicts
-    """
-    conflict_resolutions = json.loads(body_data['conflict_resolutions'])
-    if conflict_resolutions != []:
-        resolutions = {'server' : {},'client' : {}} # type: ignore
-        for r in conflict_resolutions:
-            if len(r['4_resolution']) != 1 or r['4_resolution'][0] not in ['client', 'server']: return fail(conflict_msg)
-            resolutions[r['4_resolution'][0]][r['1_path']] = None
-
-        client_changes = {k : v for k,v in client_changes.items() if v['path'] not in resolutions['server']}
-        server_changes = {k : v for k,v in server_changes.items() if v['path'] not in resolutions['client']}
-    """
-
     sorted_changes = merge_client_and_server_changes(server_changes, client_changes)
     return success({}, {'head' : head, 'sorted_changes': sorted_changes})
 

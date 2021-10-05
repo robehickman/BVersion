@@ -1,3 +1,5 @@
+import os
+
 def merge_client_and_server_changes(server, client):
     server_copy = server.copy()
     client_copy  = client.copy()
@@ -61,5 +63,14 @@ def merge_client_and_server_changes(server, client):
         # If file has not changed on the on server and has been deleted on the client, delete it on the server
         if value['status'] == 'deleted':
             result['to_delete_on_server'].append(value)
+
+
+    # Sort the result
+    result['client_push_files']   = sorted(result['client_push_files'],   key=lambda i: os.path.splitext(os.path.basename(i['path'])))
+    result['client_pull_files']   = sorted(result['client_pull_files'],   key=lambda i: os.path.splitext(os.path.basename(i['path'])))
+    result['to_delete_on_client'] = sorted(result['to_delete_on_client'], key=lambda i: os.path.splitext(os.path.basename(i['path'])))
+    result['to_delete_on_server'] = sorted(result['to_delete_on_server'], key=lambda i: os.path.splitext(os.path.basename(i['path'])))
+    result['conflict_files']      = sorted(result['conflict_files'],      key=lambda i: os.path.splitext(os.path.basename(i['file_info']['path'])))
+
 
     return result
