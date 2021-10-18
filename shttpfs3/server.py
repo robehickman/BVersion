@@ -317,7 +317,63 @@ def find_changed(request: Request) -> Responce:
     client_changes = json.loads(body_data['client_changes'])
     server_changes = data_store.get_changes_since(request.headers["previous_revision"], head)
 
+    # Figure out which files have not been changed
+    unchanged = data_store.get_commit_files(head)
+
+    for path, info in server_changes.items():
+        unchanged.pop(path)
+
+    for path, info in unchanged.items():
+        unchanged['status'] = 'unchanged'
+
+    print('unchanged')
+    import pprint
+    pprint.pprint(unchanged)
+    print('end unchanged')
+    
+
+        # ===========
+
+
+
+
+
+
+
     sorted_changes = merge_client_and_server_changes(server_changes, client_changes)
+
+
+    # Add a flag to the update command which enables full comparison mode.
+
+    # Find unchanged items that are missing from the client
+
+    # get a complete list of files on the server as of latest
+    # get server changes
+
+    # subtract server deleted files from both the client and server full file lists
+
+    # subtract files from both server lists where the hash already exists in the client list
+
+    # what is left should be files that are missing on the client, and can be added to
+    # client pull files
+
+    # the clients pull ignore could be evaluated on the server to reduce needless transfers
+
+
+    # TODO We need to read the dir tree for head, subtract server changes, and compare it with the 
+    # list of files that the client does already have
+
+    # Deleted files should be removed for definate
+    # Files which have been modifed on the server will be sent to the client anyway
+
+
+    # Subtract changed files that the client already has, where the client's hash
+    # matches the server file. While this can be done on the client, doing it
+    # server side is simpler
+
+    server_changes = data_store.get_changes_since(request.headers["previous_revision"], head)
+
+
     return success({}, {'head' : head, 'sorted_changes': sorted_changes})
 
 

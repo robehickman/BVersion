@@ -60,6 +60,17 @@ def init(unlocked = False):
     if server_connection is None:
         server_connection = client_http_request(config['server_domain'])
 
+#===============================================================================
+def update_manifest():
+    pass
+
+    # Check if the manifest has a version number
+
+    # if the manifest is an old version, we need to download the file hashes
+    # from the server and add them to the manifest data.
+
+    # send the current version the client has to the server, and use that to
+    # get the file hashes from the server
 
 #===============================================================================
 def authenticate(previous_token: str = None) -> str:
@@ -99,7 +110,8 @@ def find_local_changes() -> Tuple[dict, Dict[str, manifestFileDetails]]:
     current_state = [fle for fle in current_state if not
                      next((True for flter in config['ignore_filters']
                            if fnmatch.fnmatch(fle['path'], flter)), False)]
-    return manifest, find_manifest_changes(current_state, old_state)
+    changed_files, unchanged_files = find_manifest_changes(current_state, old_state)
+    return manifest, changed_files, unchanged_files
 
 
 #===============================================================================
@@ -109,11 +121,7 @@ def resolve_update_conflicts(session_token: str, changes: list, test_overrides):
     # of this code, and cause partial checkout failiures. This var allows
     # that to happen.
     testing = False
-    if test_overrides == None:
-        test_overrides = {
-            'resolve_to_override' : ''
-        }
-    else:
+    if test_overrides is not None:
         testing = True
 
     # ----------------------------------------------------------------------
@@ -317,16 +325,23 @@ def update(session_token: str, test_overrides = None):
     """ Compare changes on the client to changes on the server and update local files
     which have changed on the server. """
 
+    # ===========================
+    if test_overrides == None:
+        test_overrides = {
+            'resolve_to_override' : '',
+            'kill_mid_update'     : 0
+        }
 
     # Send the changes and the revision of the most recent update to the server to find changes
-    manifest, client_changes = find_local_changes()
+    manifest, client_changes, client_unchanged = find_local_changes()
 
     req_result, headers = server_connection.request("find_changed", {
         "session_token"        : session_token,
         'repository'           : config['repository'],
         "previous_revision"    : manifest['have_revision'],
         }, {
-            "client_changes"       : json.dumps(client_changes)
+            "client_changes"       : json.dumps(client_changes),
+            "client_unchanged"     : json.dumps(client_unchanged)
         })
 
     if headers['status'] != 'ok':
@@ -366,6 +381,7 @@ def update(session_token: str, test_overrides = None):
             print('Pulling files from server...')
 
         #----------
+        pulled_items = 0
         for fle in filtered_pull_files:
             print('Pulling file: ' + fle['path'])
 
@@ -378,7 +394,49 @@ def update(session_token: str, test_overrides = None):
                 raise SystemExit('Failed to pull file')
             else:
                 make_dirs_if_dont_exist(data_store.get_full_file_path(cpjoin(*fle['path'].split('/')[:-1]) + '/'))
+                file_hash = json.loads(headers['file_info_json'])['hash']
+                
+                # read the manifest and check if the hash does not already exist
+                # only download if it does not exist.
+
+                """
+                There are actually two different issues here:
+
+
+                # Not downloading the same file multiple times if update is killed part way
+
+                This can be implemented client side by checking if the file hash is already 
+                in the manifest before downloading the file.
+
+
+                # Detecting files that the client does not have due to having been in pull ignore previously
+
+                This can be implemented by sending a complete list of files that the client does already have
+                to the server and diffing it with the complete list of files in the version.
+
+
+                -- Is there any way to merge solving these two problems?
+
+                Possibly we can send the whole list of unchanged files to the server, and find
+                the differance between it and the complete file list.
+
+                When the server does a play diffs forwards, the server needs to also track
+                unchanged files
+
+
+
+
+
+                """
+
                 data_store.fs_put(fle['path'], req_result)
+
+            # test override to allow testing of checkout being killed part completed
+            if test_overrides['kill_mid_update'] > 0:
+                if pulled_items == test_overrides['kill_mid_update']:
+                    raise Exception('killed part way through update for testing')
+
+            pulled_items += 1
 
     # Files which have been deleted on server and need deleting on client
     if changes['to_delete_on_client'] != []:
@@ -416,7 +474,7 @@ def update(session_token: str, test_overrides = None):
 
 #===============================================================================
 def commit(session_token: str, commit_message = ''):
-    manifest, client_changes = find_local_changes()
+    manifest, client_changes, client_unchanged = find_local_changes()
 
     changes = {'to_delete_on_server' : [], 'client_push_files' : []} # type: ignore
     for change in list(client_changes.values()):
@@ -615,6 +673,10 @@ def run():
 
     #----------------------------
     elif args [0] == 'update':
+        # TODO parse to see if we have a '-a' paramiter, meaning we should run a full update
+        # this will compare all files to the server, which will find anything previously
+        # omitted due to being added to pull ignore.
+
         init(); update(authenticate())
 
     #----------------------------
@@ -645,7 +707,7 @@ def run():
     #----------------------------
     elif args [0] == 'status':
         init(); 
-        manifest, client_changes = find_local_changes()
+        manifest, client_changes, client_unchanged = find_local_changes()
 
         if headers['status'] == 'ok':
             for fle in json.loads(req_result)['files']:
@@ -657,7 +719,7 @@ def run():
     #----------------------------
     elif args [0] == 'ignore_server_files':
         init(); 
-        manifest, client_changes = find_local_changes()
+        manifest, client_changes, client_unchanged = find_local_changes()
 
         filters = args [1:]
 

@@ -4,7 +4,10 @@ def merge_client_and_server_changes(server, client):
     server_copy = server.copy()
     client_copy  = client.copy()
 
-    result = {'client_push_files' : [], 'client_pull_files' : [], 'to_delete_on_client' : [], 'to_delete_on_server' : [], 'conflict_files' : []}
+    result = {'client_push_files'   : [], 'client_pull_files'   : [],
+              'to_delete_on_client' : [], 'to_delete_on_server' : [],
+              'conflict_files'      : [], 'error_files'         : [],
+              'no_op'               : [] }
 
     # First handle file change detection from the servers perspective
     for server_file_name, server_file_info in server.items():
@@ -12,12 +15,26 @@ def merge_client_and_server_changes(server, client):
         server_copy.pop(server_file_name)
         if server_file_name in client_copy: client_copy.pop(server_file_name)
 
+
+        # If file unchanged on server
+        if server_file_name in client and server_file_info['status'] == 'unchanged':
+            if client[server_file_name]['status'] in ['new', 'changed']:
+                result['client_push_files'].append(server_file_info)
+
+            elif client[server_file_name]['status'] == 'deleted':
+                result['to_delete_on_server'].append(server_file_info)
+
+            elif client[server_file_name]['status'] == 'unchanged':
+                result['no_op'].append(server_file_info)
+
         # If file new or changed on server and does not exist, or has not changed on the client, push it to the client
-        if server_file_name not in client and server_file_info['status'] in ['new', 'changed']:
+        elif ((server_file_name not in client or client[server_file_name]['status'] == 'unchanged')
+            and server_file_info['status'] in ['new', 'changed', 'unchanged']):
             result['client_pull_files'].append(server_file_info)
 
         # If file deleted on server and unchanged on the client, delete it from the client
-        elif server_file_name not in client and server_file_info['status'] == 'deleted':
+        elif ((server_file_name not in client or client[server_file_name]['status'] == 'unchanged')
+              and server_file_info['status'] == 'deleted'):
             result['to_delete_on_client'].append(server_file_info)
 
         #===================================
@@ -63,6 +80,10 @@ def merge_client_and_server_changes(server, client):
         # If file has not changed on the on server and has been deleted on the client, delete it on the server
         if value['status'] == 'deleted':
             result['to_delete_on_server'].append(value)
+
+        # If file has not changed on the on server and has been deleted on the client, delete it on the server
+        if value['status'] == 'unchanged':
+            result['error_files'].append(value)
 
 
     # Sort the result

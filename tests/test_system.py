@@ -177,16 +177,33 @@ class TestSystem(TestCase):
         # TODO test mid update failiure works as expected
         #==================================================
 
-        """
-        write two files to the repo
+        file_put_contents(DATA_DIR +  'client1/test1',        test_content_2)
+        file_put_contents(DATA_DIR +  'client1/test2',        test_content_3)
+        file_put_contents(DATA_DIR +  'client1/test3',        test_content_4)
 
-        commit them
+        setup_client('client1')
+        session_token = client.authenticate()
+        version_id = client.commit(session_token, 'test partial update')
 
-        perform an update, and kill mid update
+        # =============================
+        setup_client('client2')
+        session_token = client.authenticate()
+        try:
+            client.update(session_token, test_overrides = {'kill_mid_update' : 1})
+            self.fail()
+        except: pass
 
-        continue update, what happens?
-        """
 
+        # ===========================
+        # Ideally, we should continue and download only the files we don't already have
+        # ===========================
+        client.update(session_token)
+
+        # The client should store the timestamp of the server version, or the hash of the server version
+        # (probably a better idea as it can be varified), and send this to the server when doing an update.
+        # Send a list of all files that the client has, with 'not modified' flag. 
+
+        quit()
 
         #==================================================
         # TODO test pull ignore
@@ -196,6 +213,12 @@ class TestSystem(TestCase):
         # TODO test that a file removed from pull ignore
         # is downloaded on next update
         #==================================================
+
+        # This requires sending all client files to the server, with a not modified flag
+        # on unchanged ones, and doing a full diff.
+
+        # Note that we could add a flag to the update routiene to only send the actually
+        # changed files for optimisation, but probably would make little differance.
 
 
         #==================================================

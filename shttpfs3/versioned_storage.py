@@ -345,6 +345,8 @@ class versioned_storage:
         change_logs = []
         seen_pointers: Dict[str, None] = {}
 
+        # TODO, if we are on the first revision, store a complete copy of the files, with type 'unchanged'
+        
         while True:
             if pointer in seen_pointers: raise Exception("Cycle detected")
             commit = self.read_commit_index_object(pointer)
