@@ -101,7 +101,7 @@ def authenticate(previous_token: str = None) -> str:
 
 
 #===============================================================================
-def find_local_changes() -> Tuple[dict, Dict[str, manifestFileDetails]]:
+def find_local_changes(include_unchanged : bool = False) -> Tuple[dict, Dict[str, manifestFileDetails]]:
     """ Find things that have changed since the last run, applying ignore filters """
 
     manifest = data_store.read_local_manifest()
@@ -110,8 +110,8 @@ def find_local_changes() -> Tuple[dict, Dict[str, manifestFileDetails]]:
     current_state = [fle for fle in current_state if not
                      next((True for flter in config['ignore_filters']
                            if fnmatch.fnmatch(fle['path'], flter)), False)]
-    changed_files, unchanged_files = find_manifest_changes(current_state, old_state)
-    return manifest, changed_files, unchanged_files
+    changed_files, unchanged_files = find_manifest_changes(current_state, old_state, include_unchanged = include_unchanged)
+    return manifest, changed_files
 
 
 #===============================================================================
@@ -333,15 +333,14 @@ def update(session_token: str, test_overrides = None):
         }
 
     # Send the changes and the revision of the most recent update to the server to find changes
-    manifest, client_changes, client_unchanged = find_local_changes()
+    manifest, client_changes = find_local_changes(include_unchanged = True)
 
     req_result, headers = server_connection.request("find_changed", {
         "session_token"        : session_token,
         'repository'           : config['repository'],
         "previous_revision"    : manifest['have_revision'],
         }, {
-            "client_changes"       : json.dumps(client_changes),
-            "client_unchanged"     : json.dumps(client_unchanged)
+            "client_changes"       : json.dumps(client_changes)
         })
 
     if headers['status'] != 'ok':
@@ -366,16 +365,18 @@ def update(session_token: str, test_overrides = None):
         changes = resolve_update_conflicts(session_token, changes, test_overrides)
 
     # Pull and delete from remote to local
+
+    affected_files = {
+        'pulled_files'  : [],
+        'deleted_files' : []
+    }
+
     if changes['client_pull_files'] != []:
         # Filter out pull ignore files
         filtered_pull_files = []
         for fle in changes['client_pull_files']:
             if not next((True for flter in config['pull_ignore_filters'] if fnmatch.fnmatch(fle['path'], flter)), False):
                 filtered_pull_files.append(fle)
-            else: # log ignored items to give the opportunity to pull them in the future
-                with open(cpjoin(working_copy_base_path, '.shttpfs', 'pull_ignored_items'), 'a') as pull_ignore_log:
-                    pull_ignore_log.write(json.dumps((result['head'], fle)))
-                    pull_ignore_log.flush()
 
         if filtered_pull_files != []:
             print('Pulling files from server...')
@@ -383,8 +384,6 @@ def update(session_token: str, test_overrides = None):
         #----------
         pulled_items = 0
         for fle in filtered_pull_files:
-            print('Pulling file: ' + fle['path'])
-
             req_result, headers = server_connection.request("pull_file", {
                 'session_token' : session_token,
                 'repository'    : config['repository'],
@@ -396,40 +395,19 @@ def update(session_token: str, test_overrides = None):
                 make_dirs_if_dont_exist(data_store.get_full_file_path(cpjoin(*fle['path'].split('/')[:-1]) + '/'))
                 file_hash = json.loads(headers['file_info_json'])['hash']
                 
-                # read the manifest and check if the hash does not already exist
-                # only download if it does not exist.
+                # ==============
+                manifest = data_store.read_local_manifest()
 
-                """
-                There are actually two different issues here:
-
-
-                # Not downloading the same file multiple times if update is killed part way
-
-                This can be implemented client side by checking if the file hash is already 
-                in the manifest before downloading the file.
-
-
-                # Detecting files that the client does not have due to having been in pull ignore previously
-
-                This can be implemented by sending a complete list of files that the client does already have
-                to the server and diffing it with the complete list of files in the version.
-
-
-                -- Is there any way to merge solving these two problems?
-
-                Possibly we can send the whole list of unchanged files to the server, and find
-                the differance between it and the complete file list.
-
-                When the server does a play diffs forwards, the server needs to also track
-                unchanged files
-
-
-
-
-
-                """
-
-                data_store.fs_put(fle['path'], req_result)
+                # Chech we don't already have the file due to a previous run that failed mid-process
+                have_file = False
+                if fle['path'] in manifest['files'] and 'server_file_hash' in manifest['files'][fle['path']]:
+                    if manifest['files'][fle['path']]['server_file_hash'] == file_hash:
+                        have_file = True
+                
+                if not have_file:
+                    print('Pulling file: ' + fle['path'])
+                    data_store.fs_put(fle['path'], req_result, additional_manifest_data = {'server_file_hash' : file_hash})
+                    affected_files['pulled_files'].append(fle['path'])
 
             # test override to allow testing of checkout being killed part completed
             if test_overrides['kill_mid_update'] > 0:
@@ -447,6 +425,8 @@ def update(session_token: str, test_overrides = None):
 
             try: data_store.fs_delete(fle['path'])
             except OSError: print('Warning: remote deleted file does not exist locally.')
+
+            affected_files['deleted_files'].append(fle['path'])
 
             # Delete the folder if it is now empty
             try: os.removedirs(os.path.dirname(data_store.get_full_file_path(fle['path'])))
@@ -471,16 +451,20 @@ def update(session_token: str, test_overrides = None):
     else:
         print('Update OK')
 
+    return affected_files
+
 
 #===============================================================================
 def commit(session_token: str, commit_message = ''):
-    manifest, client_changes, client_unchanged = find_local_changes()
+    manifest, client_changes = find_local_changes()
 
     changes = {'to_delete_on_server' : [], 'client_push_files' : []} # type: ignore
     for change in list(client_changes.values()):
         if change['status'] in ['new', 'changed']: changes['client_push_files'].append(change)
         elif change['status'] == 'deleted':        changes['to_delete_on_server'].append(change)
         else: raise Exception('Unknown status type')
+
+
 
     # TODO check if any added files would be pull ignored, and also hit files which exist
     # on the server.
@@ -707,7 +691,7 @@ def run():
     #----------------------------
     elif args [0] == 'status':
         init(); 
-        manifest, client_changes, client_unchanged = find_local_changes()
+        manifest, client_changes = find_local_changes()
 
         if headers['status'] == 'ok':
             for fle in json.loads(req_result)['files']:
@@ -719,7 +703,7 @@ def run():
     #----------------------------
     elif args [0] == 'ignore_server_files':
         init(); 
-        manifest, client_changes, client_unchanged = find_local_changes()
+        manifest, client_changes = find_local_changes()
 
         filters = args [1:]
 

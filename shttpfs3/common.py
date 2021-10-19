@@ -148,7 +148,7 @@ class manifestFileDetails(fileDetails):
     status: str
 
 ############################################################################################
-def find_manifest_changes(new_file_state : List[fileDetails], old_file_state : Dict[str, manifestFileDetails]) -> Dict[str, manifestFileDetails]:
+def find_manifest_changes(new_file_state : List[fileDetails], old_file_state : Dict[str, manifestFileDetails], include_unchanged : bool = False) -> Dict[str, manifestFileDetails]:
     """ Find what has changed between two sets of files """
     prev_state_dict = copy.deepcopy(old_file_state)
     changed_files = {}
@@ -164,9 +164,10 @@ def find_manifest_changes(new_file_state : List[fileDetails], old_file_state : D
                 n_itm = cast(manifestFileDetails, itm.copy())
                 n_itm['status'] = 'changed'
                 changed_files[itm['path']] = n_itm
-            else:
+            elif include_unchanged:
                 n_itm = cast(manifestFileDetails, itm.copy())
-                unchanged_files[itm['path']] = n_itm
+                n_itm['status'] = 'unchanged'
+                changed_files[itm['path']] = n_itm
 
         else:
             n_itm = cast(manifestFileDetails, itm.copy())
@@ -179,4 +180,4 @@ def find_manifest_changes(new_file_state : List[fileDetails], old_file_state : D
         n_itm['status'] = 'deleted'
         changed_files[itm['path']] = n_itm
 
-    return changed_files, unchanged_files
+    return changed_files, unchanged_files #TODO get rid of unchanged_files

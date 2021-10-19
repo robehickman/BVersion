@@ -44,17 +44,24 @@ class plain_storage(storage):
         return manifest
 
 #===============================================================================
-    def fs_put(self, rpath, data):
+    def fs_put(self, rpath, data, additional_manifest_data = None):
         """ Add a file to the FS """
+
+        if additional_manifest_data is None:
+            additional_manifest_data = {}
+
         try:
             self.begin()
 
             # Add the file to the fs
-            self.file_put_contents(rpath, data)
+            tmppath = cpjoin('.shttpfs', 'downloading')
+            self.file_put_contents(tmppath, data)
+            self.move_file(tmppath, rpath)
 
             # Add to the manifest
             manifest = self.read_local_manifest()
             manifest['files'][rpath] = self.get_single_file_info(rpath)
+            manifest['files'][rpath].update(additional_manifest_data)
             self.write_local_manifest(manifest)
 
             self.commit()

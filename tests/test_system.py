@@ -193,33 +193,63 @@ class TestSystem(TestCase):
             self.fail()
         except: pass
 
+        time.sleep(0.5) # See above
 
         # ===========================
-        # Ideally, we should continue and download only the files we don't already have
+        # We should continue and download only the files we don't already have
         # ===========================
-        client.update(session_token)
+        affected_files = client.update(session_token)
 
-        # The client should store the timestamp of the server version, or the hash of the server version
-        # (probably a better idea as it can be varified), and send this to the server when doing an update.
-        # Send a list of all files that the client has, with 'not modified' flag. 
-
-        quit()
+        self.assertEqual(['/test3'], affected_files['pulled_files'])
 
         #==================================================
-        # TODO test pull ignore
+        # Test push ignore
         #==================================================
+        file_put_contents(DATA_DIR +  'client1/push_ignored', test_content_4)
+        file_put_contents(DATA_DIR +  'client1/.shttpfs_ignore', b'/push_ignored\n/.shttpfs_ignore')
+
+        setup_client('client1')
+        session_token = client.authenticate()
+        version_id = client.commit(session_token, 'This should not commit')
+
+        self.assertEqual(version_id, None)
+
+        os.remove(DATA_DIR +  'client1/push_ignored')
+        os.remove(DATA_DIR +  'client1/.shttpfs_ignore')
 
         #==================================================
-        # TODO test that a file removed from pull ignore
+        # Test pull ignore
+        #==================================================
+        file_put_contents(DATA_DIR +  'client1/pull_ignored', test_content_4)
+
+        setup_client('client1')
+        session_token = client.authenticate()
+        version_id = client.commit(session_token, 'add a file that will be ignored in the second client')
+
+        # ----------
+        file_put_contents(DATA_DIR +  'client2/.shttpfs_pull_ignore', b'/pull_ignored')
+
+        setup_client('client2')
+        session_token = client.authenticate()
+        version_id = client.update(session_token)
+
+        self.assertFalse(os.path.isfile(DATA_DIR + 'client2/pull_ignored'))
+
+        time.sleep(0.5) # See above
+
+        #==================================================
+        # test that a file removed from pull ignore
         # is downloaded on next update
         #==================================================
+        os.remove(DATA_DIR +  'client2/.shttpfs_pull_ignore')
 
-        # This requires sending all client files to the server, with a not modified flag
-        # on unchanged ones, and doing a full diff.
+        setup_client('client2')
+        session_token = client.authenticate()
+        version_id = client.update(session_token)
 
-        # Note that we could add a flag to the update routiene to only send the actually
-        # changed files for optimisation, but probably would make little differance.
+        self.assertTrue(os.path.isfile(DATA_DIR + 'client2/pull_ignored'))
 
+        time.sleep(0.5) # See above
 
         #==================================================
         # test delete and add
@@ -429,7 +459,7 @@ class TestSystem(TestCase):
             pass
 
         # Update and resolve conflicting files to the server
-        client.update(session_token, test_overrides = {'resolve_to' : 'server'})
+        client.update(session_token, test_overrides = {'resolve_to' : 'server', 'kill_mid_update' : 0})
 
         # check that server files have been downloaded to the client and contents is correct
         test_resolution_to_server(self, DATA_DIR + 'client2/')
