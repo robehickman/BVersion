@@ -3,28 +3,31 @@ from unittest import TestCase
 from tests.helpers import DATA_DIR, make_data_dir, delete_data_dir
 from shttpfs3.common import cpjoin
 
-from shttpfs3.storage import storage
+from shttpfs3.storage.client_db import client_db
+from shttpfs3.storage.journaling_filesystem import journaling_filesystem
 
 CONF_DIR   = 'shttpfs'
 BACKUP_DIR = 'back'
 
 MANIFEST_FILE      = 'manifest_xzf.json'
 
-class TestStorage(TestCase):
+class TestJournalingFilesystem(TestCase):
 ############################################################################################
     def setUp(self):
         delete_data_dir() # Ensure clean start
         make_data_dir()
+        os.makedirs(cpjoin(DATA_DIR, '.shttpfs'))
 
 ############################################################################################
     def tearDown(self):
         delete_data_dir()
 
 ############################################################################################
-    def test_storage_put_rollback(self):
+    def test_journaling_filesystem_put_rollback(self):
         """ Test that file put rolls back correctly """
 
-        s = storage(DATA_DIR, CONF_DIR)
+        cdb = client_db(cpjoin(DATA_DIR, '.shttpfs', 'manifest.db'))
+        s = journaling_filesystem(cdb, DATA_DIR, CONF_DIR)
         s.begin()
         s.file_put_contents('hello', b'test content')
         s.rollback()
@@ -37,10 +40,11 @@ class TestStorage(TestCase):
 
 
 ############################################################################################
-    def test_storage_move_rollback(self):
+    def test_journaling_filesystem_move_rollback(self):
         """ Test file move rolls back correctly """
 
-        s = storage(DATA_DIR, CONF_DIR)
+        cdb = client_db(cpjoin(DATA_DIR, '.shttpfs', 'manifest.db'))
+        s = journaling_filesystem(cdb, DATA_DIR, CONF_DIR)
         s.begin()
         s.file_put_contents('hello', b'test content')
         s.commit(True)
@@ -52,10 +56,11 @@ class TestStorage(TestCase):
 
 
 ############################################################################################
-    def test_storage_move_overwrite_rollback(self):
+    def test_journaling_filesystem_move_overwrite_rollback(self):
         """ Test file move rolls back correctly when move overwrites another file """
 
-        s = storage(DATA_DIR, CONF_DIR)
+        cdb = client_db(cpjoin(DATA_DIR, '.shttpfs', 'manifest.db'))
+        s = journaling_filesystem(cdb, DATA_DIR, CONF_DIR)
         s.begin()
         s.file_put_contents('hello', b'test content')
         s.file_put_contents('hello2', b'test content 2')
@@ -71,13 +76,17 @@ class TestStorage(TestCase):
 
 
 ############################################################################################
-    def test_storage_delete_rollback(self):
+    def test_journaling_filesystem_delete_rollback(self):
         """ Test file delete rolls back correctly """
 
-        s = storage(DATA_DIR, CONF_DIR)
+        cdb = client_db(cpjoin(DATA_DIR, '.shttpfs', 'manifest.db'))
+        s = journaling_filesystem(cdb, DATA_DIR, CONF_DIR)
+
         s.begin()
         s.file_put_contents('hello', b'test content')
-        s.commit(True)
+        s.commit()
+
+        s.begin()
         s.delete_file('hello')
         s.rollback()
 
@@ -86,13 +95,16 @@ class TestStorage(TestCase):
 
 
 ############################################################################################
-    def test_storage_multiple_rollback(self):
+    def test_journaling_filesystem_multiple_rollback(self):
         """ Test rollback of multiple things at once """
 
-        s = storage(DATA_DIR, CONF_DIR)
+        cdb = client_db(cpjoin(DATA_DIR, '.shttpfs', 'manifest.db'))
+        s = journaling_filesystem(cdb, DATA_DIR, CONF_DIR)
         s.begin()
         s.file_put_contents('hello', b'test content')
-        s.commit(True)
+        s.commit()
+
+        s.begin()
         s.file_put_contents('hello2', b'test content 2')
         s.file_put_contents('hello3', b'test content 3')
         s.move_file('hello', 'goodbye')

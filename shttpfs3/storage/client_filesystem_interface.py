@@ -2,8 +2,23 @@ import json
 from shttpfs3.storage import storage
 from shttpfs3.common import cpjoin, get_single_file_info, file_or_default
 
-class plain_storage(storage):
-    """ Plain (non-versioned) data store used by the client """
+class client_filesystem_interface:
+
+# TODO
+# Goal, ensure that the file system and manifest can never be left in an unexpected
+# state if program execution is terminated.
+#
+# The function of the storage class is to create atomic operations on the file system
+# We do not need to reimplement that on the database as it already has atomic
+# semantics through transactions.
+# 
+# We need two transactions. The journaling file system needs to store its journal in
+# the same database as the manifest
+#
+# 1: Write the file to the filesystem, using the journaling filesystem interface.
+# 2: Above commits its actions to the journal as needed.
+# 3: The commit which adds the file referance to the manifest, and deletes the journal
+#    to commit the filesystem operation needs to be done within a single transaction.
 
 #===============================================================================
     def __init__(self, data_dir):

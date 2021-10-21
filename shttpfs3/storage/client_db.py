@@ -1,13 +1,17 @@
 import sqlite3
 
-def prep_result(res):
+#=====================================================
+def prep_manifest_result(res):
     for item in res:
         item['last_mod'] = float(item['last_mod'])
         item['created']  = float(item['created'])
     return res
 
+#=====================================================
 class client_db:
     def __init__(self, db_file_path):
+
+        print(db_file_path)
 
         def dict_factory(cursor, row):
             d = {}
@@ -46,30 +50,55 @@ class client_db:
         # ----------
         self.cur.execute( """
             create table if not exists journal (
-                comand Text,
-                arg1   Text,
-                arg2   Text
+                data Text
             )
             """)
 
         self.con.commit()
+
+    # --------------
+    def commit(self):
+        self.con.commit()
         
+# ===================================================
+# Handling of journal for jornaling filesystem
+# ===================================================
+    def get_fs_journal(self):
+        res = self.cur.execute("select data, rowid from journal order by rowid")
+        return res.fetchall()
+
+    # --------------
+    def write_fs_journal(self, data):
+        self.cur.execute("""
+            insert into journal
+                (data)
+                values
+                (?)
+            """, (data,))
+
+    # --------------
+    def delete_from_fs_journal(self, j_item):
+        self.cur.execute("delete from journal where rowid = ?", (j_item['rowid'],))
+
+    # --------------
+    def clear_fs_journal(self):
+        self.cur.execute("delete from journal")
 
 # ===================================================
 # Handling of file manifest
 # ===================================================
     def get_manifest(self):
         res = self.cur.execute("select * from files")
-        return prep_result(res.fetchall())
+        return prep_manifest_result(res.fetchall())
 
     # --------------
-    def get_file_info(self, path):
+    def get_single_file_from_manifest(self, path):
         res = self.cur.execute("select * from files where path = ?", (path,))
-        res = prep_result(res.fetchall())
+        res = prep_manifest_result(res.fetchall())
         return None if len(res) == 0 else res[0]
 
     # --------------
-    def add_to_manifest(self, file_info):
+    def add_file_to_manifest(self, file_info):
         self.cur.execute("""
             insert into files (
                 path,
@@ -86,4 +115,8 @@ class client_db:
                 file_info['last_modified'],
                 file_info['created'],
                 file_info['server_file_hash']))
-            
+
+    # --------------
+    def remove_file_from_manifest(self, path):
+        self.cur.execute("delete from files where path = ?", (path,))
+ 
