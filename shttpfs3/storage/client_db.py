@@ -11,8 +11,6 @@ def prep_manifest_result(res):
 class client_db:
     def __init__(self, db_file_path):
 
-        print(db_file_path)
-
         def dict_factory(cursor, row):
             d = {}
             for idx, col in enumerate(cursor.description):
@@ -30,10 +28,8 @@ class client_db:
         # ==========================
         self.cur.execute( """
             create table if not exists meta (
-                id int,
-                have_revision  Text,
-                root           Text,
-                format_version Text
+                format_version Text,
+                have_revision  Text
             )
             """)
 
@@ -54,12 +50,40 @@ class client_db:
             )
             """)
 
+        self.init_system_meta()
+
         self.con.commit()
 
 
     # --------------
     def commit(self):
         self.con.commit()
+
+
+# ===================================================
+# Handling of system metadata
+# ===================================================
+    def init_system_meta(self):
+        if self.get_system_meta() is None:
+            res = self.cur.execute("""
+                insert into meta (
+                    format_version,
+                    have_revision
+                ) values (
+                    3,
+                    "root"
+                )""")
+
+    # --------------
+    def get_system_meta(self):
+        res = self.cur.execute("select rowid, have_revision, format_version from meta")
+        return res.fetchone()
+
+    # --------------
+    def update_system_meta(self, data):
+        self.cur.execute("update meta set have_revision = ?, format_version = ? where rowid = 1",
+                            (data['have_revision'], data['format_version']))
+
         
 # ===================================================
 # Handling of journal for jornaling filesystem
@@ -93,12 +117,14 @@ class client_db:
     def clear_fs_journal(self):
         self.cur.execute("delete from journal")
 
+
 # ===================================================
 # Handling of file manifest
 # ===================================================
     def get_manifest(self):
         res = self.cur.execute("select * from files")
-        return prep_manifest_result(res.fetchall())
+        res = prep_manifest_result(res.fetchall())
+        return {fle['path'] : fle for fle in res}
 
     # --------------
     def get_single_file_from_manifest(self, path):
@@ -108,10 +134,13 @@ class client_db:
 
     # --------------
     def add_file_to_manifest(self, file_info):
+        #if self.get_single_file_from_manifest(file_info['path']) != []:
+        self.remove_file_from_manifest(file_info['path'])
+
         self.cur.execute("""
             insert into files (
                 path,
-                last_modeifed,
+                last_mod,
                 created,
                 server_file_hash
             ) values (
@@ -121,7 +150,7 @@ class client_db:
                 ?
             ) """, (
                 file_info['path'],
-                file_info['last_modified'],
+                file_info['last_mod'],
                 file_info['created'],
                 file_info['server_file_hash']))
 

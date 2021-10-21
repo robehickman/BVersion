@@ -152,7 +152,6 @@ def find_manifest_changes(new_file_state : List[fileDetails], old_file_state : D
     """ Find what has changed between two sets of files """
     prev_state_dict = copy.deepcopy(old_file_state)
     changed_files = {}
-    unchanged_files = {}
 
     # Find files which are new on the server
     for itm in new_file_state:
@@ -180,4 +179,4 @@ def find_manifest_changes(new_file_state : List[fileDetails], old_file_state : D
         n_itm['status'] = 'deleted'
         changed_files[itm['path']] = n_itm
 
-    return changed_files, unchanged_files #TODO get rid of unchanged_files
+    return changed_files

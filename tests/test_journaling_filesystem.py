@@ -20,8 +20,7 @@ class TestJournalingFilesystem(TestCase):
 
 ############################################################################################
     def tearDown(self):
-        pass # TODO
-        #delete_data_dir()
+        delete_data_dir()
 
 ############################################################################################
     def test_journaling_filesystem_put_rollback(self):

@@ -34,10 +34,10 @@ class TestCommon(TestCase):
         state_5 = [get_state('/file_2', 20)]
 
         # Do some diffs
-        diff_2, unchanged_2 = find_manifest_changes(state_2, to_dict(state_1))
-        diff_3, unchanged_3 = find_manifest_changes(state_3, to_dict(state_2))
-        diff_4, unchanged_4 = find_manifest_changes(state_4, to_dict(state_3))
-        diff_5, unchanged_5 = find_manifest_changes(state_5, to_dict(state_4))
+        diff_2 = find_manifest_changes(state_2, to_dict(state_1))
+        diff_3 = find_manifest_changes(state_3, to_dict(state_2))
+        diff_4 = find_manifest_changes(state_4, to_dict(state_3))
+        diff_5 = find_manifest_changes(state_5, to_dict(state_4))
 
         self.assertEqual(diff_2, {'/file_1': {'status': 'new', 'path': '/file_1', 'last_mod': 10}})
         self.assertEqual(diff_3, {'/file_1': {'status': 'changed', 'path': '/file_1', 'last_mod': 20}})

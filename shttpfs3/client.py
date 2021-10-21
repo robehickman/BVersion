@@ -12,7 +12,9 @@ from shttpfs3.common import (cpjoin, get_file_list, find_manifest_changes, make_
                              file_put_contents, file_get_contents, ignore, find_shttpfs_dir)
 
 from shttpfs3.client_http_request import client_http_request
-from shttpfs3.plain_storage import plain_storage
+from shttpfs3.storage.client_db   import client_db
+from shttpfs3.storage.journaling_filesystem       import journaling_filesystem
+from shttpfs3.storage.client_filesystem_interface import client_filesystem_interface
 import shttpfs3.crypto as crypto
 
 #===============================================================================
@@ -26,15 +28,16 @@ class clientConfiguration(TypedDict, total=False):
     data_dir:            str
 
 #===============================================================================
-config:            clientConfiguration = None
-data_store:        plain_storage       = None
-server_connection: client_http_request = None
+config:            clientConfiguration         = None
+cdb:               client_db                   = None
+data_store:        client_filesystem_interface = None
+server_connection: client_http_request         = None
 
 working_copy_base_path: str = find_shttpfs_dir()
 
 #===============================================================================
 def init(unlocked = False):
-    global data_store, server_connection, config
+    global cdb, data_store, server_connection, config
     try: config = json.loads(file_get_contents(cpjoin(working_copy_base_path, '.shttpfs', 'client_configuration.json')))
     except IOError:    raise SystemExit('No shttpfs configuration found')
     except ValueError: raise SystemExit('Configuration file syntax error')
@@ -56,7 +59,10 @@ def init(unlocked = False):
 
     if not unlocked: config["private_key"] = crypto.unlock_private_key(config["private_key"])
 
-    data_store = plain_storage(config['data_dir'])
+    cdb = client_db(cpjoin(config['data_dir'], '.shttpfs', 'manifest.db'))
+    journaling_fs = journaling_filesystem(cdb, config['data_dir'], '.shttpfs')
+    data_store = client_filesystem_interface(cdb, journaling_fs)
+
     if server_connection is None:
         server_connection = client_http_request(config['server_domain'])
 
@@ -104,25 +110,23 @@ def authenticate(previous_token: str = None) -> str:
 def find_local_changes(include_unchanged : bool = False) -> Tuple[dict, Dict[str, manifestFileDetails]]:
     """ Find things that have changed since the last run, applying ignore filters """
 
-    manifest = data_store.read_local_manifest()
-    old_state = manifest['files']
+    old_state = cdb.get_manifest()
+    manifest = None
+    #old_state = manifest['files']
     current_state = get_file_list(config['data_dir'])
     current_state = [fle for fle in current_state if not
                      next((True for flter in config['ignore_filters']
                            if fnmatch.fnmatch(fle['path'], flter)), False)]
-    changed_files, unchanged_files = find_manifest_changes(current_state, old_state, include_unchanged = include_unchanged)
-    return manifest, changed_files
+    changed_files = find_manifest_changes(current_state, old_state, include_unchanged = include_unchanged)
+    return changed_files
 
 
 #===============================================================================
-def resolve_update_conflicts(session_token: str, changes: list, test_overrides):
+def resolve_update_conflicts(session_token: str, changes: list, testing: bool, test_overrides: dict):
 
     # The unit test code needs to be able to override some of the function
     # of this code, and cause partial checkout failiures. This var allows
     # that to happen.
-    testing = False
-    if test_overrides is not None:
-        testing = True
 
     # ----------------------------------------------------------------------
     # If this code is being run for the second time after the user has
@@ -327,18 +331,25 @@ def update(session_token: str, test_overrides = None):
 
     # ===========================
     if test_overrides == None:
+        testing = False
         test_overrides = {
             'resolve_to_override' : '',
             'kill_mid_update'     : 0
         }
+    else:
+        testing = True
+
+    print(testing)
+    print(test_overrides)
 
     # Send the changes and the revision of the most recent update to the server to find changes
-    manifest, client_changes = find_local_changes(include_unchanged = True)
+    client_changes = find_local_changes(include_unchanged = True)
 
+    manifest_meta = cdb.get_system_meta()
     req_result, headers = server_connection.request("find_changed", {
         "session_token"        : session_token,
         'repository'           : config['repository'],
-        "previous_revision"    : manifest['have_revision'],
+        "previous_revision"    : manifest_meta['have_revision'],
         }, {
             "client_changes"       : json.dumps(client_changes)
         })
@@ -362,7 +373,7 @@ def update(session_token: str, test_overrides = None):
 
     # Files which are in conflict
     if changes['conflict_files'] != []:
-        changes = resolve_update_conflicts(session_token, changes, test_overrides)
+        changes = resolve_update_conflicts(session_token, changes, testing, test_overrides)
 
     # Pull and delete from remote to local
 
@@ -392,17 +403,16 @@ def update(session_token: str, test_overrides = None):
             if headers['status'] != 'ok':
                 raise SystemExit('Failed to pull file')
             else:
-                make_dirs_if_dont_exist(data_store.get_full_file_path(cpjoin(*fle['path'].split('/')[:-1]) + '/'))
+                make_dirs_if_dont_exist(data_store.jfs.get_full_file_path(cpjoin(*fle['path'].split('/')[:-1]) + '/'))
                 file_hash = json.loads(headers['file_info_json'])['hash']
                 
                 # ==============
-                manifest = data_store.read_local_manifest()
-
+                file_in_manifest = cdb.get_single_file_from_manifest(fle['path'])
+                
                 # Chech we don't already have the file due to a previous run that failed mid-process
                 have_file = False
-                if fle['path'] in manifest['files'] and 'server_file_hash' in manifest['files'][fle['path']]:
-                    if manifest['files'][fle['path']]['server_file_hash'] == file_hash:
-                        have_file = True
+                if file_in_manifest is not None and file_in_manifest['server_file_hash'] == file_hash:
+                    have_file = True
                 
                 if not have_file:
                     print('Pulling file: ' + fle['path'])
@@ -429,19 +439,19 @@ def update(session_token: str, test_overrides = None):
             affected_files['deleted_files'].append(fle['path'])
 
             # Delete the folder if it is now empty
-            try: os.removedirs(os.path.dirname(data_store.get_full_file_path(fle['path'])))
+            try: os.removedirs(os.path.dirname(data_store.jfs.get_full_file_path(fle['path'])))
             except OSError as e:
                 if e.errno not in [errno.ENOTEMPTY, errno.ENOENT]: raise
 
-    # Update the latest revision in the manifest only if there are no conflicts
-    data_store.begin()
-    manifest = data_store.read_local_manifest()
-    manifest['have_revision'] = result['head']
-    data_store.write_local_manifest(manifest)
-    data_store.commit()
+    # Update the latest revision in the manifest
+
+    manifest_meta = cdb.get_system_meta()
+    manifest_meta['have_revision'] = result['head']
+    cdb.update_system_meta(manifest_meta)
+    cdb.commit()
 
     """
-    #delete the conflicts resolution file and recursively delete any conflict files downloaded for comparison
+    # TODO delete the conflicts resolution file and recursively delete any conflict files downloaded for comparison
     ignore(os.remove, conflict_resolution_path)
     ignore(shutil.rmtree, conflict_comparison_file_dest)
     """
@@ -456,7 +466,7 @@ def update(session_token: str, test_overrides = None):
 
 #===============================================================================
 def commit(session_token: str, commit_message = ''):
-    manifest, client_changes = find_local_changes()
+    client_changes = find_local_changes()
 
     changes = {'to_delete_on_server' : [], 'client_push_files' : []} # type: ignore
     for change in list(client_changes.values()):
@@ -474,10 +484,11 @@ def commit(session_token: str, commit_message = ''):
 
 
     # Acquire the commit lock and check we still have the latest revision
+    manifest_meta = cdb.get_system_meta()
     headers = server_connection.request("begin_commit", {
         "session_token"     : session_token,
         'repository'        : config['repository'],
-        "previous_revision" : manifest['have_revision']})[1] # Only care about headers
+        "previous_revision" : manifest_meta['have_revision']})[1] # Only care about headers
 
 
     if headers['status'] != 'ok': raise SystemExit(headers['msg'])
@@ -497,8 +508,10 @@ def commit(session_token: str, commit_message = ''):
             }, {
                 'files'         : json.dumps(changes['to_delete_on_server'])})[1] # Only care about headers
 
-        if headers['status'] == 'ok': changes_made += [{'status' : 'deleted', 'path' : fle['path']} for fle in changes['to_delete_on_server']]
-        else:                         errors.append('Delete failed')
+        if headers['status'] == 'ok':
+            changes_made += [{'status' : 'deleted', 'path' : fle['path']} for fle in changes['to_delete_on_server']]
+        else:
+            errors.append('Delete failed')
 
 
     # Push files
@@ -512,13 +525,24 @@ def commit(session_token: str, commit_message = ''):
                 'path'          : fle['path'],
             }, cpjoin(config['data_dir'], fle['path']))[1] # Only care about headers
 
-            if headers['status'] == 'ok': changes_made.append({'status' : 'new/changed', 'path' : fle['path']})
-            else:                         errors.append(fle['path']); break
+            if headers['status'] == 'ok':
+                changes_made.append({
+                    'status' : 'new/changed',
+                    'path' : fle['path'],
+                    #'file_info' : json.loads(headers['file_info_json'])
+                })
+            else:
+                print(headers)
+                errors.append({
+                    'error' : headers,
+                    'file' : fle['path']})
+                break
 
 
 
     # commit and release the lock. If errors occurred roll back and release the lock
     mode = 'commit' if errors == [] else 'abort'
+
     headers = server_connection.request("commit", {
         "session_token"  : session_token,
         'repository'     : config['repository'],
@@ -534,18 +558,22 @@ def commit(session_token: str, commit_message = ''):
         print('Commit ok')
 
         # Update the manifest
-        data_store.begin()
-        manifest = data_store.read_local_manifest()
-        manifest['have_revision'] = headers['head']
+        manifest_meta = cdb.get_system_meta()
+        manifest_meta['have_revision'] = headers['head']
+        cdb.update_system_meta(manifest_meta)
 
         for change in changes_made:
             if change['status'] == 'deleted':
-                del manifest['files'][change['path']]
-            elif change['status'] == 'new/changed':
-                manifest['files'][change['path']] = get_single_file_info(cpjoin(config['data_dir'], change['path']), change['path'])
+                cdb.remove_file_from_manifest(change['path'])
 
-        data_store.write_local_manifest(manifest)
-        data_store.commit()
+            elif change['status'] == 'new/changed':
+                file_info = get_single_file_info(cpjoin(config['data_dir'], change['path']), change['path'])
+                print(file_info)
+                file_info['server_file_hash'] = '' #change['file_info']['hash']
+                cdb.add_file_to_manifest(file_info)
+                
+        cdb.commit()
+
         return headers['head']
 
 #===============================================================================
@@ -691,11 +719,7 @@ def run():
     #----------------------------
     elif args [0] == 'status':
         init(); 
-        manifest, client_changes = find_local_changes()
-
-        if headers['status'] == 'ok':
-            for fle in json.loads(req_result)['files']:
-                print(fle)
+        client_changes = find_local_changes()
 
         for item in client_changes:
             print(item)
@@ -703,18 +727,17 @@ def run():
     #----------------------------
     elif args [0] == 'ignore_server_files':
         init(); 
-        manifest, client_changes = find_local_changes()
 
-        filters = args [1:]
+        filters = args [2:]
 
-        filtered_files       = []
+        if filters == []:
+            raise SystemExit('No ignore filters provided')
+
         affected_local_files = []
         for fle in manifest['files']:
             affects_existing = next((True for flter in filters if fnmatch.fnmatch(fle['path'], flter)), False)
             if affects_existing:
                 affected_local_files.append(fle['path'])
-            else:
-                filtered_files.append(fle)
 
         if affected_local_files != []:
             for fle in affected_local_files:
@@ -748,11 +771,8 @@ def run():
             pass
 
         # Remove the affected files from the manifest
-        data_store.begin()
-        manifest = data_store.read_local_manifest()
-        manifest['files'] = filtered_files
-        data_store.write_local_manifest(manifest)
-        data_store.commit()
+        for path in affected_local_files:
+            cdb.remove_file_from_manifest(path)
 
 
     #----------------------------

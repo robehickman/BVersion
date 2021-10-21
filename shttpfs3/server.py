@@ -6,7 +6,7 @@ import pysodium # type: ignore
 #====
 from shttpfs3.http_server import Request, Responce, ServeFile
 from shttpfs3.common import cpjoin, file_get_contents
-from shttpfs3.versioned_storage import versioned_storage
+from shttpfs3.storage.versioned_storage import versioned_storage
 from shttpfs3.merge_client_and_server_changes import merge_client_and_server_changes
 
 #===============================================================================
@@ -490,9 +490,14 @@ def push_file(request: Request) -> Responce:
         #===
         data_store.fs_put_from_file(tmp_path, {'path' : file_path})
 
+        #file_info = data_store.get_file_info_from_path(file_path)
+
         # updates the user lock expiry
         update_user_lock(repository_path, session_token)
+
+
         return success()
+        #return success({'file_info_json' : json.dumps(file_info)})
 
     return lock_access(repository_path, with_exclusive_lock)
 

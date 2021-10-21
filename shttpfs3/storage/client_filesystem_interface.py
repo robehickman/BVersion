@@ -1,62 +1,22 @@
 import json
-from shttpfs3.storage import storage
 from shttpfs3.common import cpjoin, get_single_file_info, file_or_default
 
 class client_filesystem_interface:
 
-# TODO
-# Goal, ensure that the file system and manifest can never be left in an unexpected
-# state if program execution is terminated.
-#
-# The function of the storage class is to create atomic operations on the file system
-# We do not need to reimplement that on the database as it already has atomic
-# semantics through transactions.
-# 
-# We need two transactions. The journaling file system needs to store its journal in
-# the same database as the manifest
-#
-# 1: Write the file to the filesystem, using the journaling filesystem interface.
-# 2: Above commits its actions to the journal as needed.
-# 3: The commit which adds the file referance to the manifest, and deletes the journal
-#    to commit the filesystem operation needs to be done within a single transaction.
-
 #===============================================================================
-    def __init__(self, data_dir):
+    def __init__(self, client_db, journaling_filesystem):
         """ Setup and validate file system structure """
 
-        storage.__init__(self, data_dir, '.shttpfs')
-        self.manifest_file = cpjoin('.shttpfs', 'manifest.json')
+        self.client_db     = client_db
+        self.jfs           = journaling_filesystem
+        self.manifest_file = '.shttpfs/manifest.json'
 
 #===============================================================================
     def get_single_file_info(self, rel_path):
         """ Gets last change time for a single file """
 
-        f_path = self.get_full_file_path(rel_path)
+        f_path = self.jfs.get_full_file_path(rel_path)
         return get_single_file_info(f_path, rel_path)
-
-#===============================================================================
-    def read_local_manifest(self):
-        """ Read the file manifest, or create a new one if there isn't one already """
-
-        manifest = json.loads(file_or_default(self.get_full_file_path(self.manifest_file), """{
-            "format_version" : 2,
-            "root"           : "/",
-            "have_revision"  : "root",
-            "files"          : {}}"""))
-
-        if 'format_version' not in manifest or manifest['format_version'] < 2:
-            raise SystemExit('Please update the client manifest format')
-        return manifest
-
-#===============================================================================
-    def write_local_manifest(self, manifest):
-        self.file_put_contents(self.manifest_file, json.dumps(manifest).encode('utf8'))
-
-#===============================================================================
-    def remove_from_manifest(self, manifest, rpath):
-        """ Remove named path from the manifest files array """
-        del manifest['files'][rpath]
-        return manifest
 
 #===============================================================================
     def fs_put(self, rpath, data, additional_manifest_data = None):
@@ -66,22 +26,21 @@ class client_filesystem_interface:
             additional_manifest_data = {}
 
         try:
-            self.begin()
+            self.jfs.begin()
 
             # Add the file to the fs
             tmppath = cpjoin('.shttpfs', 'downloading')
-            self.file_put_contents(tmppath, data)
-            self.move_file(tmppath, rpath)
+            self.jfs.file_put_contents(tmppath, data)
+            self.jfs.move_file(tmppath, rpath)
 
             # Add to the manifest
-            manifest = self.read_local_manifest()
-            manifest['files'][rpath] = self.get_single_file_info(rpath)
-            manifest['files'][rpath].update(additional_manifest_data)
-            self.write_local_manifest(manifest)
+            file_info = self.get_single_file_info(rpath)
+            file_info.update(additional_manifest_data)
+            self.client_db.add_file_to_manifest(file_info)
 
-            self.commit()
+            self.jfs.commit()
         except:
-            self.rollback(); raise
+            self.jfs.rollback(); raise
 
 #===============================================================================
     def fs_get(self, rpath):
@@ -92,33 +51,32 @@ class client_filesystem_interface:
 #===============================================================================
     def fs_move(self, r_src, r_dst):
         try:
-            self.begin()
+            self.jfs.begin()
 
             # Move the file
-            self.move_file(r_src, r_dst)
+            self.jfs.move_file(r_src, r_dst)
 
             # Rename the file in the manifest
-            manifest = self.read_local_manifest()
-            manifest['files'][r_dst] = self.get_single_file_info(r_dst)
-            self.write_local_manifest(manifest)
+            file_info = client_db.get_single_file_from_manifest(r_src)
+            self.client_db.remove_file_from_manifest(r_src)
+            file_info.update(self.get_single_file_info(r_dst))
+            self.client_db.add_file_to_manifest(file_info)
 
-            self.commit()
+            self.jfs.commit()
         except:
-            self.rollback(); raise
+            self.jfs.rollback(); raise
 
 #===============================================================================
     def fs_delete(self, rpath):
         try:
-            self.begin()
+            self.jfs.begin()
 
             # Delete the file
-            self.delete_file(rpath)
+            self.jfs.delete_file(rpath)
 
-            # Rename the file in the manifest
-            manifest = self.read_local_manifest()
-            del manifest['files'][rpath]
-            self.write_local_manifest(manifest)
+            # Remove the file from the manifest
+            self.client_db.remove_file_from_manifest(rpath)
 
-            self.commit()
+            self.jfs.commit()
         except:
-            self.rollback(); raise
+            self.jfs.rollback(); raise
