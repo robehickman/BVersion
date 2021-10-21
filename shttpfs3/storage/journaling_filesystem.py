@@ -1,7 +1,5 @@
 import os.path as p
-import os, shutil, json, errno
-from collections import deque
-from typing import Union, TextIO
+import os, shutil, errno
 
 from shttpfs3.common import cpjoin, ignore, file_or_default, file_put_contents
 
@@ -73,7 +71,7 @@ class journaling_filesystem:
         cmd = 0; src = 1; path = 1; data = 2; dst = 2
 
         if write_journal:
-            self.client_db.write_fs_journal(json.dumps(command['undo']))
+            self.client_db.write_fs_journal(command['undo'])
             self.client_db.commit()
 
         d = command['do']
@@ -89,6 +87,8 @@ class journaling_filesystem:
         """ Do journal rollback """
 
         journ_list = self.client_db.get_fs_journal()
+
+        print(journ_list)
 
         for j_itm in reversed(journ_list):
             try: self.do_action({'do' : j_itm['data']}, write_journal = False)

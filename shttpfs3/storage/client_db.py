@@ -1,4 +1,4 @@
-import sqlite3
+import sqlite3, json
 
 #=====================================================
 def prep_manifest_result(res):
@@ -56,6 +56,7 @@ class client_db:
 
         self.con.commit()
 
+
     # --------------
     def commit(self):
         self.con.commit()
@@ -65,16 +66,24 @@ class client_db:
 # ===================================================
     def get_fs_journal(self):
         res = self.cur.execute("select data, rowid from journal order by rowid")
-        return res.fetchall()
+        journal = []
+        for item in res.fetchall():
+            item['data'] = json.loads(item['data'])
+            journal.append(item)
+
+        return journal
 
     # --------------
     def write_fs_journal(self, data):
+
         self.cur.execute("""
             insert into journal
                 (data)
                 values
                 (?)
-            """, (data,))
+            """, (json.dumps(data),))
+
+        print(self.get_fs_journal())
 
     # --------------
     def delete_from_fs_journal(self, j_item):

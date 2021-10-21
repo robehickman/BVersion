@@ -16,17 +16,18 @@ class TestJournalingFilesystem(TestCase):
     def setUp(self):
         delete_data_dir() # Ensure clean start
         make_data_dir()
-        os.makedirs(cpjoin(DATA_DIR, '.shttpfs'))
+        os.makedirs(cpjoin(DATA_DIR, CONF_DIR))
 
 ############################################################################################
     def tearDown(self):
-        delete_data_dir()
+        pass # TODO
+        #delete_data_dir()
 
 ############################################################################################
     def test_journaling_filesystem_put_rollback(self):
         """ Test that file put rolls back correctly """
 
-        cdb = client_db(cpjoin(DATA_DIR, '.shttpfs', 'manifest.db'))
+        cdb = client_db(cpjoin(DATA_DIR, CONF_DIR, 'manifest.db'))
         s = journaling_filesystem(cdb, DATA_DIR, CONF_DIR)
         s.begin()
         s.file_put_contents('hello', b'test content')
@@ -43,11 +44,13 @@ class TestJournalingFilesystem(TestCase):
     def test_journaling_filesystem_move_rollback(self):
         """ Test file move rolls back correctly """
 
-        cdb = client_db(cpjoin(DATA_DIR, '.shttpfs', 'manifest.db'))
+        cdb = client_db(cpjoin(DATA_DIR, CONF_DIR, 'manifest.db'))
         s = journaling_filesystem(cdb, DATA_DIR, CONF_DIR)
         s.begin()
         s.file_put_contents('hello', b'test content')
-        s.commit(True)
+        s.commit()
+
+        s.begin()
         s.move_file('hello', 'hello2')
         s.rollback()
 
@@ -59,12 +62,14 @@ class TestJournalingFilesystem(TestCase):
     def test_journaling_filesystem_move_overwrite_rollback(self):
         """ Test file move rolls back correctly when move overwrites another file """
 
-        cdb = client_db(cpjoin(DATA_DIR, '.shttpfs', 'manifest.db'))
+        cdb = client_db(cpjoin(DATA_DIR, CONF_DIR, 'manifest.db'))
         s = journaling_filesystem(cdb, DATA_DIR, CONF_DIR)
         s.begin()
         s.file_put_contents('hello', b'test content')
         s.file_put_contents('hello2', b'test content 2')
-        s.commit(True)
+        s.commit()
+
+        s.begin()
         s.move_file('hello', 'hello2')
         s.rollback()
 
@@ -79,7 +84,7 @@ class TestJournalingFilesystem(TestCase):
     def test_journaling_filesystem_delete_rollback(self):
         """ Test file delete rolls back correctly """
 
-        cdb = client_db(cpjoin(DATA_DIR, '.shttpfs', 'manifest.db'))
+        cdb = client_db(cpjoin(DATA_DIR, CONF_DIR, 'manifest.db'))
         s = journaling_filesystem(cdb, DATA_DIR, CONF_DIR)
 
         s.begin()
@@ -98,7 +103,7 @@ class TestJournalingFilesystem(TestCase):
     def test_journaling_filesystem_multiple_rollback(self):
         """ Test rollback of multiple things at once """
 
-        cdb = client_db(cpjoin(DATA_DIR, '.shttpfs', 'manifest.db'))
+        cdb = client_db(cpjoin(DATA_DIR, CONF_DIR, 'manifest.db'))
         s = journaling_filesystem(cdb, DATA_DIR, CONF_DIR)
         s.begin()
         s.file_put_contents('hello', b'test content')
