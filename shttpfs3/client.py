@@ -722,14 +722,13 @@ def run():
 
     #----------------------------
     elif args [0] == 'update':
-        # TODO parse to see if we have a '-a' paramiter, meaning we should run a full update
-        # this will compare all files to the server, which will find anything previously
-        # omitted due to being added to pull ignore.
+        # Should we do a full comparison, including unchanged files?
+        include_unchanged = True if args [1] == '-f' else False
 
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
-        update(session_token)
+        update(session_token, include_unchanged = include_unchanged)
 
     #----------------------------
     elif args [0] == 'commit':
