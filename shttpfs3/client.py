@@ -57,6 +57,11 @@ def init(unlocked = False):
     config['pull_ignore_filters']: List[str] = pull_ignore_filters.splitlines()
     config['data_dir']:            str       = working_copy_base_path
 
+    config['conflict_comparison_file_root']  = cpjoin(config['data_dir'], '.shttpfs', 'conflict_files')
+    config['conflict_resolution_file']       = cpjoin(config['data_dir'], '.shttpfs', 'conflict_resolution')
+
+
+
     if not unlocked: config["private_key"] = crypto.unlock_private_key(config["private_key"])
 
     cdb = client_db(cpjoin(config['data_dir'], '.shttpfs', 'manifest.db'))
@@ -66,17 +71,42 @@ def init(unlocked = False):
     if server_connection is None:
         server_connection = client_http_request(config['server_domain'])
 
+    update_manifest()
+
 #===============================================================================
 def update_manifest():
-    pass
 
-    # Check if the manifest has a version number
+    old_manifest_path = cpjoin(config['data_dir'], '.shttpfs'. 'manifest.json')
 
-    # if the manifest is an old version, we need to download the file hashes
-    # from the server and add them to the manifest data.
+    if file_exists(old_manifest_path):
+        # TODO need to test this code
 
-    # send the current version the client has to the server, and use that to
-    # get the file hashes from the server
+        old_manifest = josn.loads(fine_get_contents(old_manifest_path))
+
+        # Update file hashes
+        files_in_version = get_files_in_version(session_token, old_manifest['have_version'])
+        files_in_version = {fle['path'] : fle for fle in files_in_version}
+
+        new_files = []
+        for path, item in old_manifest['files'].items():
+            item['server_file_hash'] = files_in_version[path]['hash']
+            old_manifest['files'].pop(path)
+            new_files.append(item)
+
+        if len(old_manifest['files']) != 0:
+            raise Exception('a file is in the manifest which is not in the same revision on the server, this should not happen')
+
+        for fle in new_files:
+            cdb.add_file_to_manifest(item)
+
+        # ========================
+        cdb.update_system_meta({
+            'have_revision'  : old_manifest['have_revision'],
+            'format_version' : old_manifest['format_version'],
+        })
+
+        cdb.commit()
+
 
 #===============================================================================
 def authenticate(previous_token: str = None) -> str:
@@ -135,9 +165,7 @@ def resolve_update_conflicts(session_token: str, changes: list, testing: bool, t
     # to resolve the conflicting files.
     # ----------------------------------------------------------------------
     seperator = '------------'
-    conflict_comparison_file_dest = cpjoin(config['data_dir'], '.shttpfs', 'conflict_files')
-    conflict_resolution_path      = cpjoin(config['data_dir'], '.shttpfs', 'conflict_resolution')
-    conflict_resolutions          = file_or_default(conflict_resolution_path, None)
+    conflict_resolutions          = file_or_default(config['conflict_resolution_file'], None)
 
     if conflict_resolutions is not None:
         # Parse the conflict resolution file
@@ -199,11 +227,10 @@ def resolve_update_conflicts(session_token: str, changes: list, testing: bool, t
             resolution = resolution_index[fle['file_info']['path']]
 
             if resolution   == 'client':
-                # Ignore items changed on the server and push the client changes to overwrite them
-                # TODO does this need to pass data about the files to commit?
-                # dont think so, as when we update the local version to latest, it will automatically
-                # discard server changes. May need to handle this when feature to allow downloading
-                # of pull ignored files gets added
+                # We don't need to do anything in this case as when the version id the client has
+                # in the manifest gets set to the latest revision on the server, prior server
+                # changes will be ignored, and the clients versions will be committed on the next
+                # commit.
                 pass
 
             elif resolution == 'server':
@@ -306,13 +333,13 @@ def resolve_update_conflicts(session_token: str, changes: list, testing: bool, t
                         errors.append(fle['path'])
 
                     else:
-                        make_dirs_if_dont_exist(cpjoin(conflict_comparison_file_dest, *fle['path'].split('/')[:-1]) + '/')
-                        result(cpjoin(conflict_comparison_file_dest, fle['path']))
+                        make_dirs_if_dont_exist(cpjoin(config['conflict_comparison_file_root'], *fle['path'].split('/')[:-1]) + '/')
+                        result(cpjoin(config['conflict_comparison_file_root'], fle['path']))
 
                 print('Server versions of conflicting files written to .shttpfs/conflict_files\n')
 
             # ====================
-            file_put_contents(conflict_resolution_path, resolution_file.encode('utf-8'))
+            file_put_contents(config['conflict_resolution_file'], resolution_file.encode('utf-8'))
             raise SystemExit("Conflict resolution file written to .shttpfs/conflict_resolution\n" +
                             "Please edit this file removing 'client', or 'server' to choose which\n" +
                             "version to retain, and then re-run shttpfs update.")
@@ -339,8 +366,6 @@ def update(session_token: str, test_overrides = None):
     else:
         testing = True
 
-    print(testing)
-    print(test_overrides)
 
     # Send the changes and the revision of the most recent update to the server to find changes
     client_changes = find_local_changes(include_unchanged = True)
@@ -357,12 +382,6 @@ def update(session_token: str, test_overrides = None):
     if headers['status'] != 'ok':
         raise SystemExit('Server error:' + headers['msg'])
 
-    # TODO If there are any conflict files, do not send them to the server any more.
-    # instead resolve conflicts on the client. Notify that conflicts exist immidiately
-    # instead of at the end, and offer choices between resolving all conflicts to the server,
-    # all conflicts to the client, or generating a resolution file so the user can choose
-    # as we used to do. Tell the user where this file is if we do make one, and what they need
-    # to do with it
     result = json.loads(req_result)
     changes = result['sorted_changes']
 
@@ -376,7 +395,6 @@ def update(session_token: str, test_overrides = None):
         changes = resolve_update_conflicts(session_token, changes, testing, test_overrides)
 
     # Pull and delete from remote to local
-
     affected_files = {
         'pulled_files'  : [],
         'deleted_files' : []
@@ -443,19 +461,20 @@ def update(session_token: str, test_overrides = None):
             except OSError as e:
                 if e.errno not in [errno.ENOTEMPTY, errno.ENOENT]: raise
 
-    # Update the latest revision in the manifest
 
+    # Update the latest revision in the manifest
     manifest_meta = cdb.get_system_meta()
     manifest_meta['have_revision'] = result['head']
     cdb.update_system_meta(manifest_meta)
     cdb.commit()
 
-    """
-    # TODO delete the conflicts resolution file and recursively delete any conflict files downloaded for comparison
-    ignore(os.remove, conflict_resolution_path)
-    ignore(shutil.rmtree, conflict_comparison_file_dest)
-    """
 
+    # Delete the conflicts resolution file and recursively delete any conflict files downloaded for comparison
+    ignore(os.remove, config['conflict_resolution_file'])
+    ignore(shutil.rmtree, config['conflict_comparison_file_root'])
+
+
+    # ==================
     if changes['to_delete_on_server'] != [] or changes['client_push_files'] != []:
         print('There are local changes to commit')
     else:
@@ -527,9 +546,9 @@ def commit(session_token: str, commit_message = ''):
 
             if headers['status'] == 'ok':
                 changes_made.append({
-                    'status' : 'new/changed',
-                    'path' : fle['path'],
-                    #'file_info' : json.loads(headers['file_info_json'])
+                    'status'    : 'new/changed',
+                    'path'      : fle['path'],
+                    'file_info' : json.loads(headers['file_info_json'])
                 })
             else:
                 print(headers)
@@ -639,10 +658,6 @@ def run():
 
     #----------------------------
     elif args [0] == 'checkout':
-        # TODO If we do not already have a working copy, this should allow the user to setup a new repo
-        # if we do have a checkout, it should allow the user to revert one or more files to a previous
-        # version.
-
         plain_input = get_if_set_or_quit(args, 1, 'URL is missing')
 
         result = urllib.parse.urlparse(plain_input)

@@ -1,6 +1,6 @@
 import sqlite3 as db
 from typing import Dict, Callable, Union, Optional
-import fcntl, os, json, time, base64, re
+import fcntl, os, json, time, base64, re, errno
 import pysodium # type: ignore
 
 #====
@@ -83,8 +83,11 @@ def lock_access(repository_path: str, callback: Callable[[], Responce]):
             returned = callback()
             fcntl.flock(fd, fcntl.LOCK_UN)
             return returned
-        except IOError:
-            return fail(lock_fail_msg)
+        except IOError as e:
+            if e.errno in [errno.EACCES, errno.EAGAIN]:
+                return fail(lock_fail_msg)
+            else:
+                raise
 
 
 #===============================================================================
@@ -488,16 +491,13 @@ def push_file(request: Request) -> Responce:
 
 
         #===
-        data_store.fs_put_from_file(tmp_path, {'path' : file_path})
-
-        #file_info = data_store.get_file_info_from_path(file_path)
+        file_info = data_store.fs_put_from_file(tmp_path, {'path' : file_path})
 
         # updates the user lock expiry
         update_user_lock(repository_path, session_token)
 
-
-        return success()
-        #return success({'file_info_json' : json.dumps(file_info)})
+        return success({'file_info_json' : json.dumps(file_info)})
+        #return success()
 
     return lock_access(repository_path, with_exclusive_lock)
 
