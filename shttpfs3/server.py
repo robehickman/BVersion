@@ -321,15 +321,16 @@ def find_changed(request: Request) -> Responce:
     server_changes = data_store.get_changes_since(request.headers["previous_revision"], head)
 
     # Figure out which files have not been changed
-    unchanged = data_store.get_commit_files(head)
+    if bool(int(request.headers['include_unchanged'])):
+        unchanged = data_store.get_commit_files(head)
 
-    for path, info in server_changes.items():
-        if path in unchanged:
-            unchanged.pop(path)
+        for path, info in server_changes.items():
+            if path in unchanged:
+                unchanged.pop(path)
 
-    for path, info in unchanged.items():
-        info['status'] = 'unchanged'
-        server_changes[path] = info
+        for path, info in unchanged.items():
+            info['status'] = 'unchanged'
+            server_changes[path] = info
 
     # ==================
     sorted_changes = merge_client_and_server_changes(server_changes, client_changes)

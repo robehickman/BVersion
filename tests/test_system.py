@@ -250,7 +250,7 @@ class TestSystem(TestCase):
 
         setup_client('client2')
         session_token = client.authenticate()
-        version_id = client.update(session_token)
+        version_id = client.update(session_token, include_unchanged = True)
 
         self.assertTrue(os.path.isfile(DATA_DIR + 'client2/pull_ignored'))
 

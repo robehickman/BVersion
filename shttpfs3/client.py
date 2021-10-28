@@ -71,41 +71,64 @@ def init(unlocked = False):
     if server_connection is None:
         server_connection = client_http_request(config['server_domain'])
 
-    update_manifest()
 
 #===============================================================================
-def update_manifest():
+def update_manifest(session_token):
 
     old_manifest_path = cpjoin(config['data_dir'], '.shttpfs', 'manifest.json')
 
     if os.path.isfile(old_manifest_path):
-        # TODO need to test this code
+        old_manifest = json.loads(file_get_contents(old_manifest_path))
 
-        old_manifest = josn.loads(fine_get_contents(old_manifest_path))
+        # As the old manifest format did not store server file hashes, we need to get
+        # them from the server and add them to the manifest
+        req_result, headers = get_files_in_version(session_token, old_manifest['have_revision'])
 
-        # Update file hashes
-        files_in_version = get_files_in_version(session_token, old_manifest['have_version'])
-        files_in_version = {fle['path'] : fle for fle in files_in_version}
+        if headers['status'] != 'ok':
+            raise Exception('server error')
+
+        # Get file hashes from the server
+        server_file_info_for_version = json.loads(req_result)['files']
+
+        # Apply pull ignore filters to the server data
+        new_server_file_info_for_version = {}
+        for path, file_info in server_file_info_for_version.items():
+            if not next((True for flter in config['pull_ignore_filters'] if fnmatch.fnmatch(path, flter)), False):
+                new_server_file_info_for_version[path] = file_info
+        server_file_info_for_version = new_server_file_info_for_version
+
+        # The number of items in the local manifest may be more than the
+        # remote in case the client did a partial update, then shttpfs version
+        # was updated, but should never be less
+        if len(old_manifest['files']) < len(server_file_info_for_version):
+            raise Exception('local manifest error')
 
         new_files = []
-        for path, item in old_manifest['files'].items():
-            item['server_file_hash'] = files_in_version[path]['hash']
+        for path, file_info in server_file_info_for_version.items():
+            item = old_manifest['files'][path]
+            item['server_file_hash'] = file_info['hash']
             old_manifest['files'].pop(path)
             new_files.append(item)
 
         if len(old_manifest['files']) != 0:
-            raise Exception('a file is in the manifest which is not in the same revision on the server, this should not happen')
+            Print('Warning: There are files in the local manifest that are not on the server. These will be ' +
+                  'removed from the manifest. Probably an update failed without completing, or additional filters ' +
+                  'have been added to the pull ignore file. Should resolve on next update.')
 
-        for fle in new_files:
+        for item in new_files:
             cdb.add_file_to_manifest(item)
 
         # ========================
+        meta = cdb.get_system_meta()
+
         cdb.update_system_meta({
             'have_revision'  : old_manifest['have_revision'],
-            'format_version' : old_manifest['format_version'],
+            'format_version' : meta['format_version']
         })
 
         cdb.commit()
+
+        shutil.move(old_manifest_path, old_manifest_path + '.old.back')
 
 
 #===============================================================================
@@ -351,7 +374,7 @@ def resolve_update_conflicts(session_token: str, changes: list, testing: bool, t
 
 
 #===============================================================================
-def update(session_token: str, test_overrides = None):
+def update(session_token: str, test_overrides = None, include_unchanged = False):
     """ Compare changes on the client to changes on the server and update local files
     which have changed on the server. """
 
@@ -367,13 +390,14 @@ def update(session_token: str, test_overrides = None):
 
 
     # Send the changes and the revision of the most recent update to the server to find changes
-    client_changes = find_local_changes(include_unchanged = True)
+    client_changes = find_local_changes(include_unchanged)
 
     manifest_meta = cdb.get_system_meta()
     req_result, headers = server_connection.request("find_changed", {
         "session_token"        : session_token,
         'repository'           : config['repository'],
         "previous_revision"    : manifest_meta['have_revision'],
+        "include_unchanged"    : str(int(include_unchanged))
         }, {
             "client_changes"       : json.dumps(client_changes)
         })
@@ -702,17 +726,27 @@ def run():
         # this will compare all files to the server, which will find anything previously
         # omitted due to being added to pull ignore.
 
-        init(); update(authenticate())
+        init()
+        session_token: str = authenticate()
+        update_manifest(session_token)
+        update(session_token)
 
     #----------------------------
     elif args [0] == 'commit':
         commit_message = ''
         if get_if_set_or_default(args, 1, '') == '-m': commit_message = get_if_set_or_quit(args, 2, 'Please specify a commit message after -m')
-        init(); commit(authenticate(), commit_message)
+
+        init()
+        session_token: str = authenticate()
+        update_manifest(session_token)
+
+        commit(session_token, commit_message)
 
     #----------------------------
     elif args [0] == 'sync':
-        init(); session_token: str = authenticate()
+        init()
+        session_token: str = authenticate()
+        update_manifest(session_token)
 
         commit_message = ''
         if get_if_set_or_default(args, 1, '') == '-m': commit_message = get_if_set_or_quit(args, 2, 'Please specify a commit message after -m')
@@ -722,7 +756,10 @@ def run():
 
     #----------------------------
     elif args [0] == 'autosync':
-        init(); session_token: str = None
+        init()
+        session_token: str = authenticate()
+        update_manifest(session_token)
+
         while True:
             session_token = authenticate(session_token)
             update(session_token)
@@ -731,7 +768,10 @@ def run():
 
     #----------------------------
     elif args [0] == 'status':
-        init(); 
+        init()
+        session_token: str = authenticate()
+        update_manifest(session_token)
+
         client_changes = find_local_changes()
 
         for item in client_changes:
@@ -739,8 +779,11 @@ def run():
 
     #----------------------------
     elif args [0] == 'ignore_server_files':
-        init(); 
-
+        init()
+        session_token: str = authenticate()
+        update_manifest(session_token)
+        
+        # ===============
         filters = args [2:]
 
         if filters == []:
@@ -790,7 +833,10 @@ def run():
 
     #----------------------------
     elif args [0] == 'list_versions':
-        init(); session_token: str = authenticate()
+        init()
+        session_token: str = authenticate()
+        update_manifest(session_token)
+
         req_result, headers = get_versions(session_token)
 
         if headers['status'] == 'ok':
@@ -803,7 +849,10 @@ def run():
 
     #----------------------------
     elif args [0] == 'list_changes':
-        init(); session_token: str = authenticate()
+        init()
+        session_token: str = authenticate()
+        update_manifest(session_token)
+
         version_id = get_if_set_or_quit(args, 1, 'Please specify a version id')
         req_result, headers = get_changes_in_version(session_token, version_id)
 
@@ -813,10 +862,14 @@ def run():
 
     #----------------------------
     elif args [0] == 'list_files':
-        init(); session_token: str = authenticate()
+        init()
+        session_token: str = authenticate()
+        update_manifest(session_token)
+
         version_id = get_if_set_or_quit(args, 1, 'Please specify a version id')
         req_result, headers = get_files_in_version(session_token, version_id)
 
         if headers['status'] == 'ok':
             for fle in json.loads(req_result)['files']:
                 print(fle)
+
