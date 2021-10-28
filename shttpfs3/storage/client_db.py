@@ -107,8 +107,6 @@ class client_db:
                 (?)
             """, (json.dumps(data),))
 
-        print(self.get_fs_journal())
-
     # --------------
     def delete_from_fs_journal(self, j_item):
         self.cur.execute("delete from journal where rowid = ?", (j_item['rowid'],))
@@ -150,8 +148,8 @@ class client_db:
                 ?
             ) """, (
                 file_info['path'],
-                file_info['last_mod'],
-                file_info['created'],
+                str(file_info['last_mod']),
+                str(file_info['created']),
                 file_info['server_file_hash']))
 
     # --------------

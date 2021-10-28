@@ -76,9 +76,9 @@ def init(unlocked = False):
 #===============================================================================
 def update_manifest():
 
-    old_manifest_path = cpjoin(config['data_dir'], '.shttpfs'. 'manifest.json')
+    old_manifest_path = cpjoin(config['data_dir'], '.shttpfs', 'manifest.json')
 
-    if file_exists(old_manifest_path):
+    if os.path.isfile(old_manifest_path):
         # TODO need to test this code
 
         old_manifest = josn.loads(fine_get_contents(old_manifest_path))
@@ -141,9 +141,8 @@ def find_local_changes(include_unchanged : bool = False) -> Tuple[dict, Dict[str
     """ Find things that have changed since the last run, applying ignore filters """
 
     old_state = cdb.get_manifest()
-    manifest = None
-    #old_state = manifest['files']
     current_state = get_file_list(config['data_dir'])
+
     current_state = [fle for fle in current_state if not
                      next((True for flter in config['ignore_filters']
                            if fnmatch.fnmatch(fle['path'], flter)), False)]
@@ -587,8 +586,7 @@ def commit(session_token: str, commit_message = ''):
 
             elif change['status'] == 'new/changed':
                 file_info = get_single_file_info(cpjoin(config['data_dir'], change['path']), change['path'])
-                print(file_info)
-                file_info['server_file_hash'] = '' #change['file_info']['hash']
+                file_info['server_file_hash'] = change['file_info']['hash']
                 cdb.add_file_to_manifest(file_info)
                 
         cdb.commit()

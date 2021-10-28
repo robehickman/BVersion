@@ -134,6 +134,8 @@ class TestSystem(TestCase):
         #==================================================
         # test_initial commit
         #==================================================
+
+
         file_put_contents(DATA_DIR +  'client1/test1',        test_content_1)
         file_put_contents(DATA_DIR +  'client1/test2',        test_content_2) # test with a binary blob
         #file_put_contents(DATA_DIR + u'client1/GȞƇØzǠ☸k😒♭',  test_content_2) # test unicode file name
@@ -173,10 +175,10 @@ class TestSystem(TestCase):
 
         time.sleep(0.5) # See above
 
+
         #==================================================
         # TODO test mid update failiure works as expected
         #==================================================
-
         file_put_contents(DATA_DIR +  'client1/test1',        test_content_2)
         file_put_contents(DATA_DIR +  'client1/test2',        test_content_3)
         file_put_contents(DATA_DIR +  'client1/test3',        test_content_4)
@@ -184,6 +186,7 @@ class TestSystem(TestCase):
         setup_client('client1')
         session_token = client.authenticate()
         version_id = client.commit(session_token, 'test partial update')
+
 
         # =============================
         setup_client('client2')
@@ -193,7 +196,9 @@ class TestSystem(TestCase):
             self.fail()
         except: pass
 
+
         time.sleep(0.5) # See above
+
 
         # ===========================
         # We should continue and download only the files we don't already have

@@ -88,8 +88,6 @@ class journaling_filesystem:
 
         journ_list = self.client_db.get_fs_journal()
 
-        print(journ_list)
-
         for j_itm in reversed(journ_list):
             try: self.do_action({'do' : j_itm['data']}, write_journal = False)
             except IOError: pass

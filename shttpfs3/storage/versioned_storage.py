@@ -360,7 +360,7 @@ class versioned_storage:
 
 
 #===============================================================================
-    def get_commit_chain(self):
+    def get_commit_chain(self, commit_limit = 50):
         pointer = self.get_head()
         if pointer == 'root': return []
 
@@ -425,9 +425,28 @@ class versioned_storage:
 #===============================================================================
     def verify_fs() -> str:
         """
-        Read and rehash the entire filesystem starting from the earliest revision,
-        to the latest revision, ensuring that file hashes are actually valid.
+        Read and rehash the entire filesystem and ensure than hashes have not changed
         """
+
+        index_objects = {}
+
+        pointer = self.get_head()
+        if pointer == 'root': return True
+
+        while True:
+            # store the id of this commit, not it's parent
+            commit = self.read_commit_index_object(pointer)
+
+
+            commit_tree = read_dir_tree(self, commit['tree_root'])
+
+            pointer = commit['parent']
+            if pointer == 'root': break
+
+
+        return commits
+
+        head = get_head()
 
         # walk up the commit change to the first version
 
