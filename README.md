@@ -184,6 +184,8 @@ Note that these are evaluated top to bottom so be careful with wildcards.  If a 
 
 In addition to adding files that you do not wish to push, you can add files that you do not wish to pull from the server as well. This file is called .shttpfs_pull_ignore' and is also created in the root of a working copy. It's internal format is the same as above.
 
+Note, if you wish to download files from the server that were previously in pull ignore, and have been removed, you need to run update -a. Normally update compares only the files which have been changed, and adding this flag includes unchanged files.
+
 
 
 ## Conflict resolution

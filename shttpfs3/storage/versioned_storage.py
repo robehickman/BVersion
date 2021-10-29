@@ -227,6 +227,8 @@ class versioned_storage:
             return contents
         self.update_system_file('active_commit_files', helper2)
 
+        return file_info
+
 
 #===============================================================================
     def fs_delete(self, file_info) -> None:
@@ -358,7 +360,7 @@ class versioned_storage:
 
 
 #===============================================================================
-    def get_commit_chain(self):
+    def get_commit_chain(self, commit_limit = 50):
         pointer = self.get_head()
         if pointer == 'root': return []
 
@@ -419,3 +421,40 @@ class versioned_storage:
 #===============================================================================
     def get_file_directory_path(self, file_hash: str) -> str:
         return sfs.cpjoin(self.base_path, 'files', file_hash[:2])
+
+#===============================================================================
+    def verify_fs() -> str:
+        """
+        Read and rehash the entire filesystem and ensure than hashes have not changed
+        """
+
+        index_objects = {}
+
+        pointer = self.get_head()
+        if pointer == 'root': return True
+
+        while True:
+            # store the id of this commit, not it's parent
+            commit = self.read_commit_index_object(pointer)
+
+
+            commit_tree = read_dir_tree(self, commit['tree_root'])
+
+            pointer = commit['parent']
+            if pointer == 'root': break
+
+
+        return commits
+
+        head = get_head()
+
+        # walk up the commit change to the first version
+
+        # Read tree objects
+
+        # While reading tree objects rehash the files too
+
+        # all file hashes should match the name of the file, if not, something is wrong.
+
+        pass
+

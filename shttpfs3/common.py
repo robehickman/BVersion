@@ -3,9 +3,41 @@ from typing import List, Dict, Any, cast
 from typing_extensions import TypedDict
 from termcolor import colored
 
+#===============================================================================
+def find_shttpfs_dir() -> str:
+    """ Looks up the directory tree from the pwd to find a directory containing
+    a .shttpfs directory, and returns that path """
+
+    cwd:        str = os.getcwd() + '/'
+    split_path: str = cwd.split('/')
+
+    while True:
+        joined_path = '/'.join(split_path)
+        joined_path = '/' if joined_path == '' else '/' + joined_path + '/'
+
+        if os.path.isdir(joined_path + '.shttpfs'):
+            return joined_path
+            break
+
+        if joined_path == []:
+            raise SystemExit('Not a shttpfs checkout, could not find a .shttpfs directory in parent dirs')
+
+        split_path.pop()
+
+#===============================================================================
+def question_user(prompt_text: str, valid_choices) -> str:
+    choice = None
+    while True:
+        print(prompt_text)
+        choice = input('> ')
+        if choice.lower() in valid_choices: break
+
+    return choice
+
 ############################################################################
 def ignore(*args):
     """ Calls function passed as argument zero and ignores any exceptions raised by it """
+
     try: return args[0](*args[1:])
     except Exception: pass # pylint: disable=broad-except
 
@@ -116,7 +148,7 @@ class manifestFileDetails(fileDetails):
     status: str
 
 ############################################################################################
-def find_manifest_changes(new_file_state : List[fileDetails], old_file_state : Dict[str, manifestFileDetails]) -> Dict[str, manifestFileDetails]:
+def find_manifest_changes(new_file_state : List[fileDetails], old_file_state : Dict[str, manifestFileDetails], include_unchanged : bool = False) -> Dict[str, manifestFileDetails]:
     """ Find what has changed between two sets of files """
     prev_state_dict = copy.deepcopy(old_file_state)
     changed_files = {}
@@ -131,8 +163,10 @@ def find_manifest_changes(new_file_state : List[fileDetails], old_file_state : D
                 n_itm = cast(manifestFileDetails, itm.copy())
                 n_itm['status'] = 'changed'
                 changed_files[itm['path']] = n_itm
-            else:
-                pass # The file has not changed
+            elif include_unchanged:
+                n_itm = cast(manifestFileDetails, itm.copy())
+                n_itm['status'] = 'unchanged'
+                changed_files[itm['path']] = n_itm
 
         else:
             n_itm = cast(manifestFileDetails, itm.copy())
