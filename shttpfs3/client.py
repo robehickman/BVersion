@@ -15,7 +15,7 @@ from shttpfs3.client_http_request import client_http_request
 from shttpfs3.storage.client_db   import client_db
 from shttpfs3.storage.journaling_filesystem       import journaling_filesystem
 from shttpfs3.storage.client_filesystem_interface import client_filesystem_interface
-import shttpfs3.crypto as crypto
+from shttpfs3 import crypto
 
 #===============================================================================
 class clientConfiguration(TypedDict, total=False):
@@ -111,7 +111,7 @@ def update_manifest(session_token):
             new_files.append(item)
 
         if len(old_manifest['files']) != 0:
-            Print('Warning: There are files in the local manifest that are not on the server. These will be ' +
+            print('Warning: There are files in the local manifest that are not on the server. These will be ' +
                   'removed from the manifest. Probably an update failed without completing, or additional filters ' +
                   'have been added to the pull ignore file. Should resolve on next update.')
 
@@ -200,7 +200,7 @@ def resolve_update_conflicts(session_token: str, changes: list, testing: bool, t
             if line == seperator:
                 chunks.append(chunk)
                 chunk  = []
-            else: 
+            else:
                 chunk.append(line)
 
         if chunk != []:
@@ -230,8 +230,8 @@ def resolve_update_conflicts(session_token: str, changes: list, testing: bool, t
             })
 
         # Verify that the file resolves all conflicts, and that the paths match exactly the paths of conflicting items
-        conflicting_paths = set([f['file_info']['path'] for f in changes['conflict_files']])
-        resolved_paths = set([f['path'] for f in resolutions])
+        conflicting_paths = {f['file_info']['path'] for f in changes['conflict_files']}
+        resolved_paths    = {f['path'] for f in resolutions}
 
         unresolved_paths = conflicting_paths ^ resolved_paths
 
@@ -258,7 +258,7 @@ def resolve_update_conflicts(session_token: str, changes: list, testing: bool, t
             elif resolution == 'server':
                 # Download the changed files from the server
 
-                if fle['server_status'] == 'Changed': 
+                if fle['server_status'] == 'Changed':
                     changes['client_pull_files'].append({'path' : fle['file_info']['path']})
 
                 elif fle['server_status'] == 'Deleted':
@@ -300,7 +300,7 @@ def resolve_update_conflicts(session_token: str, changes: list, testing: bool, t
         #-----------------------------------
         if choice == 'server':
             for fle in changes['conflict_files']:
-                if fle['server_status'] == 'Changed': 
+                if fle['server_status'] == 'Changed':
                     changes['client_pull_files'].append({'path' : fle['file_info']['path']})
 
                 elif fle['server_status'] == 'Deleted':
@@ -379,7 +379,7 @@ def update(session_token: str, test_overrides = None, include_unchanged = False)
     which have changed on the server. """
 
     # ===========================
-    if test_overrides == None:
+    if test_overrides is None:
         testing = False
         test_overrides = {
             'resolve_to_override' : '',
@@ -446,15 +446,15 @@ def update(session_token: str, test_overrides = None, include_unchanged = False)
             else:
                 make_dirs_if_dont_exist(data_store.jfs.get_full_file_path(cpjoin(*fle['path'].split('/')[:-1]) + '/'))
                 file_hash = json.loads(headers['file_info_json'])['hash']
-                
+
                 # ==============
                 file_in_manifest = cdb.get_single_file_from_manifest(fle['path'])
-                
+
                 # Chech we don't already have the file due to a previous run that failed mid-process
                 have_file = False
                 if file_in_manifest is not None and file_in_manifest['server_file_hash'] == file_hash:
                     have_file = True
-                
+
                 if not have_file:
                     print('Pulling file: ' + fle['path'])
                     data_store.fs_put(fle['path'], req_result, additional_manifest_data = {'server_file_hash' : file_hash})
@@ -612,7 +612,7 @@ def commit(session_token: str, commit_message = ''):
                 file_info = get_single_file_info(cpjoin(config['data_dir'], change['path']), change['path'])
                 file_info['server_file_hash'] = change['file_info']['hash']
                 cdb.add_file_to_manifest(file_info)
-                
+
         cdb.commit()
 
         return headers['head']
@@ -723,7 +723,7 @@ def run():
     #----------------------------
     elif args [0] == 'update':
         # Should we do a full comparison, including unchanged files?
-        include_unchanged = True if args [1] == '-f' else False
+        include_unchanged = bool(len(args) > 1 and args [1] == '-f')
 
         init()
         session_token: str = authenticate()
@@ -778,10 +778,12 @@ def run():
 
     #----------------------------
     elif args [0] == 'ignore_server_files':
+        # TODO needs testing
+
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
-        
+
         # ===============
         filters = args [2:]
 
@@ -789,7 +791,7 @@ def run():
             raise SystemExit('No ignore filters provided')
 
         affected_local_files = []
-        for fle in manifest['files']:
+        for fle in cdb.get_manifest():
             affects_existing = next((True for flter in filters if fnmatch.fnmatch(fle['path'], flter)), False)
             if affects_existing:
                 affected_local_files.append(fle['path'])
@@ -803,7 +805,7 @@ def run():
                   '".shttpfs_ignore"  file, or left as is? Note that leaving the \n ' +
                   'will cause them to be removed from the server the next time commit is run')
 
-        # Ask the user if we should delete the local files, 
+        # Ask the user if we should delete the local files
         choice = question_user(
             "type 'ignore'  to add files to '.shttpfs_ignore'\n" +
             "type 'delete'  to delete the files from the working copy\n" +
@@ -871,4 +873,3 @@ def run():
         if headers['status'] == 'ok':
             for fle in json.loads(req_result)['files']:
                 print(fle)
-

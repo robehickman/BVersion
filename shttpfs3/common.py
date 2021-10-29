@@ -17,7 +17,6 @@ def find_shttpfs_dir() -> str:
 
         if os.path.isdir(joined_path + '.shttpfs'):
             return joined_path
-            break
 
         if joined_path == []:
             raise SystemExit('Not a shttpfs checkout, could not find a .shttpfs directory in parent dirs')
@@ -105,9 +104,10 @@ def cpjoin(*args: str) -> str:
 
 ############################################################################################
 class fileDetails (TypedDict):
-    path:     str
-    created:  float
-    last_mod: float
+    path:             str
+    created:          float
+    last_mod:         float
+    server_file_hash: str
 
 ############################################################################################
 def get_single_file_info(f_path: str, int_path: str) -> fileDetails:

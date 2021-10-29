@@ -5,6 +5,9 @@ from shttpfs3.http_common import read_body, generate_headers, parse_http_responc
 
 #=====================================================================
 class HTTPClient:
+    def __init__(self):
+        self.s = None
+
     def connect(self, host: str, port: int, tls: bool = False):
         self.s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         if tls: self.s = ssl.wrap_socket(self.s, ssl_version=ssl.PROTOCOL_TLS)
