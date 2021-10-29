@@ -1,12 +1,12 @@
 import sqlite3 as db
 from typing import Dict, Callable, Union, Optional
-import fcntl, os, json, time, base64, re
+import fcntl, os, json, time, base64, re, errno
 import pysodium # type: ignore
 
 #====
 from shttpfs3.http_server import Request, Responce, ServeFile
 from shttpfs3.common import cpjoin, file_get_contents
-from shttpfs3.versioned_storage import versioned_storage
+from shttpfs3.storage.versioned_storage import versioned_storage
 from shttpfs3.merge_client_and_server_changes import merge_client_and_server_changes
 
 #===============================================================================
@@ -83,8 +83,11 @@ def lock_access(repository_path: str, callback: Callable[[], Responce]):
             returned = callback()
             fcntl.flock(fd, fcntl.LOCK_UN)
             return returned
-        except IOError:
-            return fail(lock_fail_msg)
+        except IOError as e:
+            if e.errno in [errno.EACCES, errno.EAGAIN]:
+                return fail(lock_fail_msg)
+            else:
+                raise
 
 
 #===============================================================================
@@ -317,18 +320,21 @@ def find_changed(request: Request) -> Responce:
     client_changes = json.loads(body_data['client_changes'])
     server_changes = data_store.get_changes_since(request.headers["previous_revision"], head)
 
-    # Resolve conflicts
-    conflict_resolutions = json.loads(body_data['conflict_resolutions'])
-    if conflict_resolutions != []:
-        resolutions = {'server' : {},'client' : {}} # type: ignore
-        for r in conflict_resolutions:
-            if len(r['4_resolution']) != 1 or r['4_resolution'][0] not in ['client', 'server']: return fail(conflict_msg)
-            resolutions[r['4_resolution'][0]][r['1_path']] = None
+    # Figure out which files have not been changed
+    if bool(int(request.headers['include_unchanged'])):
+        unchanged = data_store.get_commit_files(head)
 
-        client_changes = {k : v for k,v in client_changes.items() if v['path'] not in resolutions['server']}
-        server_changes = {k : v for k,v in server_changes.items() if v['path'] not in resolutions['client']}
+        for path, info in server_changes.items():
+            if path in unchanged:
+                unchanged.pop(path)
 
+        for path, info in unchanged.items():
+            info['status'] = 'unchanged'
+            server_changes[path] = info
+
+    # ==================
     sorted_changes = merge_client_and_server_changes(server_changes, client_changes)
+
     return success({}, {'head' : head, 'sorted_changes': sorted_changes})
 
 
@@ -475,6 +481,7 @@ def push_file(request: Request) -> Responce:
         file_path = request.headers['path']
         if any(True for item in re.split(r'\\|/', file_path) if item in ['..', '.']): return fail()
 
+
         #===
         tmp_path = cpjoin(repository_path, 'tmp_file')
         with open(tmp_path, 'wb') as f:
@@ -483,12 +490,15 @@ def push_file(request: Request) -> Responce:
                 if chunk is None: break
                 f.write(chunk)
 
+
         #===
-        data_store.fs_put_from_file(tmp_path, {'path' : file_path})
+        file_info = data_store.fs_put_from_file(tmp_path, {'path' : file_path})
 
         # updates the user lock expiry
         update_user_lock(repository_path, session_token)
-        return success()
+
+        return success({'file_info_json' : json.dumps(file_info)})
+        #return success()
 
     return lock_access(repository_path, with_exclusive_lock)
 

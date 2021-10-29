@@ -20,7 +20,7 @@ setup(
     author='Robert Hickman',
     author_email='robehickman@gmail.com',
     license='MIT',
-    packages=['shttpfs3'],
+    packages=['shttpfs3', 'shttpfs3.storage'],
     test_suite='nose.collector',
     tests_require=['nose'],
     install_requires=[

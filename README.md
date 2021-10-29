@@ -1,32 +1,40 @@
-Simple HTTP File Sync (SHTTPFS) is a file synchroniser and basic version control system designed for managing binary files such as images, it follows a centralised design and has a strong emphasis on code simplicity, being inspired by the 'suckless philosophy'. It is configured using text files and intentionally does not have a web or graphical interface. Note that this has only been tested using linux ext 3 and 4, and that the system currently only works with unix file paths. The server will also only work on a unix style os as it depends on flock.
+Simple HTTP File Sync (SHTTPFS) is a version control system designed for managing binary files like images, audio, and video. It follows a centralised design and has a strong emphasis on code simplicity, being inspired by the 'suckless philosophy'. It is configured with text files, intentionally has no grapgical interface, and does not use the system tray at all.
 
 
-SHTTPFS has the following features:
+SHTTPFS offers the following benifits:
+
+### Very low working copy overhead:
+
+Working copies (checkouts) store only the minimum data required to detect changed files, with an overhead of only a few megabytes on a repository of thousands of files. It uses vastly less disk space than Subversion (which stores two copies of everything), and vastly less than git (which stores the whole change history).
 
 
-### HTTP(S) based sync protocol.
+### Partial checkouts
 
-Uses a simple HTTP(S) based sync protocol and public key authentication.
+You can specify arbitary rules for ommitting files from a working copy, while leaving them alone on the server.
 
 
 ### Automatic or manual syncing:
 
-SHTTPFS can operate in two modes, either supporting manual commit and update similar to a version control system, or periodically checking a file system for changes and updating automatically.
+SHTTPFS can operate in two modes, either supporting manual commit and update, or periodically checking a file system for changes and updating automatically.
 
 
-### Simplicity first design:
+### Effortless system upgrades and migration:
 
-SHTTPFS is configured using text files, does not have a web or graphical interface and does not depend on the system tray. All back end data is stored in a single directory. Most data about files and versioning is stored in a data structure similar to git, with sqlite used for transient authentication data. Thus it is trivial to move when doing a system upgrade, just copy the files. A nice side effect of the data structure used is that it inherently performs whole file de-duplication.
+Server updates and migrations are effortless as all server data is stored under a single directory, with no dependency on an external SQL database. Thus moving the server only requires copying one directory tree. Versions are stored on the server in a data structure similar to git, with sqlite used for transient authentication data.
+
+### Server side whole file deduplication:
+
+A nice side effect of the data structure used on the server is that it inherently performs whole file de-duplication.
 
 
 ### Atomic commits
 
-All commits are atomic, meaning that we cannot have a half complete commit leaving the server in an inconsistent state. Failed commits are automatically reverted before the next user commits. Commits always store the current system time in UTC and can be labeled with a commit message.
+All commits are atomic, meaning that we cannot have a half complete commit leaving the server in an inconsistent state. Failed commits are automatically reverted before the next user commits. Commits always store the committing user, current system time in UTC and can be labeled with a commit message.
 
 
 ### Atomic client side file system operations through journaling. 
 
-The client needs to store both the files in the working copy, and also a manifest of there modification times in order to detect changes. When files are downloaded from the server, if a file was added to the manifest before adding it to the file system, should the system crash in-between these two operations shttpfs would detect the file as deleted, as it is missing from the file system and would subsequently delete it from the server. In order to avoid this kind of problem client side file operations are first written to a journal and flushed to disk so that SHTTPFS can detect and correctly resolve this kind of problem.
+The client needs to store both the files in the working copy, and also a manifest of there modification times in order to detect changes. When files are downloaded from the server, if a file was added to the manifest before adding it to the file system, should the system crash in-between these two operations shttpfs would detect the file as deleted, as it is missing from the file system and would subsequently delete it from the server erroniously. In order to avoid this kind of problem client side file operations are first written to a journal and flushed to disk.
 
 Note that this system does nothing to help you if the file system is being modified by another program simultaneously. There is no sensible way to resolve this issues at the current time because common file systems do not support snapshotting. Common version control systems work around this by assuming that you will not edit the files while doing a commit.
 
@@ -175,6 +183,8 @@ Note that these are evaluated top to bottom so be careful with wildcards.  If a 
 ## Pull ignore filters
 
 In addition to adding files that you do not wish to push, you can add files that you do not wish to pull from the server as well. This file is called .shttpfs_pull_ignore' and is also created in the root of a working copy. It's internal format is the same as above.
+
+Note, if you wish to download files from the server that were previously in pull ignore, and have been removed, you need to run update -a. Normally update compares only the files which have been changed, and adding this flag includes unchanged files.
 
 
 

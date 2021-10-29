@@ -3,7 +3,7 @@ from unittest import TestCase
 
 from tests.helpers import DATA_DIR, make_data_dir, delete_data_dir
 from shttpfs3.common import cpjoin, file_put_contents
-from shttpfs3.versioned_storage import versioned_storage
+from shttpfs3.storage.versioned_storage import versioned_storage
 
 CONF_DIR   = 'shttpfs'
 BACKUP_DIR = 'back'
