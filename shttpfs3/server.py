@@ -525,12 +525,13 @@ def delete_files(request: Request) -> Responce:
 
             #-------------
             for fle in json.loads(body_data['files']):
-                data_store.fs_delete(fle)
+                data_store.fs_delete(fle['path'])
 
             # updates the user lock expiry
             update_user_lock(repository_path, session_token)
             return success()
-        except Exception: return fail() # pylint: disable=broad-except
+        except Exception:
+            return fail() # pylint: disable=broad-except
     return lock_access(repository_path, with_exclusive_lock)
 
 

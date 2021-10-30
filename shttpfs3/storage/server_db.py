@@ -41,7 +41,7 @@ class server_db:
         self.con.execute("""
             create table if not exists tokens (
                 expires int,
-                token text,
+                token text unique,
                 ip text
             )
             """)
@@ -49,7 +49,7 @@ class server_db:
         self.con.execute("""
             create table if not exists session_tokens (
                 expires int,
-                token text,
+                token text unique,
                 ip text,
                 username text
             )
@@ -68,7 +68,7 @@ class server_db:
         self.con.execute("""
             create table if not exists active_commit_files (
                 hash    Text,
-                path    Text,
+                path    Text unique,
                 status  Text
             )
             """)
@@ -78,7 +78,7 @@ class server_db:
         self.con.execute("""
             create table if not exists active_commit_changes (
                 hash    Text,
-                path    Text,
+                path    Text unique,
                 status  Text
             )
             """)
@@ -223,11 +223,12 @@ class server_db:
 
 
     #===============================================================================
-    def remove_from_commit(self, file_info):
+    def remove_from_commit(self, file_path):
 
         # We don't need to do anything if the file doesnt exist
-        the_file = self.file_exists_in_commit(file_info['path'])
+        the_file = self.file_exists_in_commit(file_path)
         if the_file == []: return
+        file_info = the_file[0]
 
         # Update commit changes
         file_info['status'] = 'deleted'

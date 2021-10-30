@@ -572,6 +572,7 @@ def commit(session_token: str, commit_message = ''):
         if headers['status'] == 'ok':
             changes_made += [{'status' : 'deleted', 'path' : fle['path']} for fle in changes['to_delete_on_server']]
         else:
+            raise Exception('delete failed')
             errors.append('Delete failed')
 
 

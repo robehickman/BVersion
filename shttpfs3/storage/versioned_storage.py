@@ -203,15 +203,13 @@ class versioned_storage:
 
 
 #===============================================================================
-    def fs_delete(self, file_info) -> None:
+    def fs_delete(self, file_path) -> None:
         if not self.have_active_commit(): raise Exception()
-
-        file_info['status'] = 'deleted'
 
         # As we always store all history, simply removing the file from the manifest
         # of this commit is all we need to do
         sdb = get_server_db_instance_for_thread(self.base_path)
-        sdb.remove_from_commit(file_info)
+        sdb.remove_from_commit(file_path)
 
 
 #===============================================================================

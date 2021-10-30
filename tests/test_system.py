@@ -207,6 +207,10 @@ class TestSystem(TestCase):
 
         self.assertEqual(['/test3'], affected_files['pulled_files'])
 
+
+        time.sleep(0.5) # See above
+
+
         #==================================================
         # Test push ignore
         #==================================================
@@ -221,6 +225,8 @@ class TestSystem(TestCase):
 
         os.remove(DATA_DIR +  'client1/push_ignored')
         os.remove(DATA_DIR +  'client1/.shttpfs_ignore')
+
+        time.sleep(0.5) # See above
 
         #==================================================
         # Test pull ignore
@@ -242,6 +248,7 @@ class TestSystem(TestCase):
 
         time.sleep(0.5) # See above
 
+
         #==================================================
         # test that a file removed from pull ignore
         # is downloaded on next update
@@ -256,6 +263,7 @@ class TestSystem(TestCase):
 
         time.sleep(0.5) # See above
 
+
         #==================================================
         # test delete and add
         #==================================================
@@ -268,13 +276,14 @@ class TestSystem(TestCase):
         session_token = client.authenticate()
         version_id = client.commit(session_token, 'create and delete some files')
 
+
         # check change is reflected correctly in the commit log
         req_result = client.get_changes_in_version(session_token, version_id)[0]
         res_index = { v['path'] : v for v in json.loads(req_result)['changes']}
-        self.assertEqual('deleted', res_index['/test1']['status'])
-        self.assertEqual('new'    , res_index['/test2']['status'])
-        self.assertEqual('new'    , res_index['/test3']['status'])
-        self.assertEqual('new'    , res_index['/test4']['status'])
+        self.assertEqual('deleted' , res_index['/test1']['status'])
+        self.assertEqual('changed' , res_index['/test2']['status'])
+        self.assertEqual('changed' , res_index['/test3']['status'])
+        self.assertEqual('new'     , res_index['/test4']['status'])
 
         # update first repo, file should be deleted and new file added
         setup_client('client1')
@@ -288,6 +297,7 @@ class TestSystem(TestCase):
         self.assertEqual(test_content_4,   file_get_contents(DATA_DIR + 'client1/test4'))
 
         time.sleep(0.5) # See above
+
 
 
         #==================================================
@@ -537,7 +547,7 @@ class TestSystem(TestCase):
         res_index = { v['path'] : v for v in json.loads(req_result)['changes']}
 
         self.assertEqual('deleted', res_index['/test2']['status'])
-        self.assertEqual('new', res_index['/test4']['status'])
+        self.assertEqual('changed', res_index['/test4']['status'])
 
         #==================================================
         delete_data_dir()
