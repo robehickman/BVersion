@@ -4,22 +4,28 @@ import fcntl, os, json, time, base64, re, errno
 import pysodium # type: ignore
 
 #====
-from shttpfs3.http_server import Request, Responce, ServeFile
+from shttpfs3.http.http_server import Request, Responce, ServeFile
 from shttpfs3.common import cpjoin, file_get_contents
 from shttpfs3.storage.versioned_storage import versioned_storage
 from shttpfs3.merge_client_and_server_changes import merge_client_and_server_changes
 
+from shttpfs3 import version_numbers
+
+# TODO server can become stuck in an infinite loop, needs to be fixed
+
+
 #===============================================================================
-# NOTE to use this must be replaced with a valid configuration, see 'shttpfs_server'
+# NOTE This must be replaced with a valid configuration, see 'shttpfs_server'
 config = {} # type: ignore
 
 #===============================================================================
-lock_fail_msg        = 'Could not acquire exclusive lock'
-no_such_repo_msg     = "The requested repository does not exist"
-user_auth_fail_msg   = "Could not authenticate user"
-conflict_msg         = 'Please resolve conflicts'
-need_to_update_msg   = "Please update to latest revision"
-no_active_commit_msg = "A commit must be started before attempting this operation."
+lock_fail_msg         = 'Could not acquire exclusive lock'
+no_such_repo_msg      = "The requested repository does not exist"
+user_auth_fail_msg    = "Could not authenticate user"
+conflict_msg          = 'Please resolve conflicts'
+need_to_update_msg    = "Please update to latest revision"
+no_active_commit_msg  = "A commit must be started before attempting this operation."
+unsuported_client_msg = "Please update your shttpfs client."
 
 extend_session_duration = (60 * 60) * 2 # 2 hours
 
@@ -202,9 +208,14 @@ def authenticate(request: Request) -> Responce:
     """ This does two things, either validate a pre-existing session token
     or create a new one from a signed authentication token. """
 
+    if int(request.headers['client_version']) < version_numbers.minimum_client_version:
+        return fail(unsuported_client_msg)
+
+    # ==
     client_ip     = request.remote_addr
     repository    = request.headers['repository']
-    if repository not in config['repositories']: return fail(no_such_repo_msg)
+    if repository not in config['repositories']:
+        return fail(no_such_repo_msg)
 
     # ==
     repository_path = config['repositories'][repository]['path']
@@ -217,8 +228,13 @@ def authenticate(request: Request) -> Responce:
 
         conn.execute("delete from session_tokens where expires < ?", (time.time(),)); conn.commit()
         res = conn.execute("select * from session_tokens where token = ? and ip = ?", (session_token, client_ip)).fetchall()
-        if res != []: return success({'session_token'  : session_token})
-        else:         return fail(user_auth_fail_msg)
+        if res != []:
+            return success({
+                'server_version' : version_numbers.server_version,
+                'session_token'  : session_token
+            })
+        else:
+            return fail(user_auth_fail_msg)
 
     # Create a new session
     else:
@@ -250,7 +266,10 @@ def authenticate(request: Request) -> Responce:
                          (session_token, time.time() + extend_session_duration, client_ip, user))
             conn.commit()
 
-            return success({'session_token'  : session_token})
+            return success({
+                'server_version' : version_numbers.server_version,
+                'session_token'  : session_token
+            })
 
         except Exception: # pylint: disable=broad-except
             return fail(user_auth_fail_msg)

@@ -1,7 +1,7 @@
 import socket, ssl
 from typing import Dict
 
-from shttpfs3.http_common import read_body, generate_headers, parse_http_responce_preamble
+from shttpfs3.http.http_common import read_body, generate_headers, parse_http_responce_preamble
 
 #=====================================================================
 class HTTPClient:

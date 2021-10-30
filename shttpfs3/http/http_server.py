@@ -4,7 +4,7 @@ import socket
 from typing import Union
 import _thread
 
-from shttpfs3.http_common import read_body, parse_http_request_preamble
+from shttpfs3.http.http_common import read_body, parse_http_request_preamble
 
 #=====================
 class Request:
@@ -56,7 +56,7 @@ def HTTPServer(host, port, connection_handler):
                 request_headers = {k.lower() : v for k,v in dict(request['headers']).items()}
 
                 # handle the request
-                print('Connecction from:', addr[0], ':', addr[1],' ', request['path'])
+                print('Connection from:', addr[0], ':', addr[1],' ', request['path'])
 
                 body_length = int(request_headers['content-length'])
                 body_reader = read_body(c.recv, body_length, body_partial)
@@ -99,6 +99,7 @@ def HTTPServer(host, port, connection_handler):
 
     #============
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # TODO add timeout
     s.bind((host, port))
     print("socket bound to port", port)
 

@@ -11,11 +11,12 @@ from shttpfs3.common import (cpjoin, get_file_list, find_manifest_changes, make_
                              manifestFileDetails, get_single_file_info, file_or_default, question_user,
                              file_put_contents, file_get_contents, ignore, find_shttpfs_dir)
 
-from shttpfs3.client_http_request import client_http_request
+from shttpfs3.http.client_http_request import client_http_request
 from shttpfs3.storage.client_db   import client_db
 from shttpfs3.storage.journaling_filesystem       import journaling_filesystem
 from shttpfs3.storage.client_filesystem_interface import client_filesystem_interface
 from shttpfs3 import crypto
+from shttpfs3 import version_numbers
 
 #===============================================================================
 class clientConfiguration(TypedDict, total=False):
@@ -138,11 +139,18 @@ def authenticate(previous_token: str = None) -> str:
     # if we already have a session token, try to authenticate with it
     if previous_token is not None:
         headers = server_connection.request("authenticate", {
-            'session_token' : previous_token,
-            'repository'    : config['repository']})[1] # Only care about headers
+            'client_version' : str(version_numbers.client_version),
+            'session_token'  : previous_token,
+            'repository'     : config['repository']})[1] # Only care about headers
 
         if headers['status'] == 'ok':
+            if int(headers['server_version']) < version_numbers.minimum_server_version:
+                raise SystemExit("Please update your SHTTPFS client")
+
             return previous_token
+
+        else:
+            raise SystemExit(headers['msg'])
 
     # If the session token has expired, or if we don't have one, re-authenticate
     headers = server_connection.request("begin_auth", {'repository' : config['repository']})[1] # Only care about headers
@@ -150,12 +158,23 @@ def authenticate(previous_token: str = None) -> str:
     if headers['status'] == 'ok':
         signature: bytes = base64.b64encode(pysodium.crypto_sign_detached(headers['auth_token'], config['private_key']))
         headers = server_connection.request("authenticate", {
-            'auth_token' : headers['auth_token'],
-            'signature'  : signature,
-            'user'       : config['user'],
-            'repository' : config['repository']})[1] # Only care about headers
+            'client_version' : str(version_numbers.client_version),
+            'auth_token'     : headers['auth_token'],
+            'signature'      : signature,
+            'user'           : config['user'],
+            'repository'     : config['repository']})[1] # Only care about headers
 
-        if headers['status'] == 'ok': return headers['session_token']
+        if headers['status'] == 'ok':
+            if int(headers['server_version']) < version_numbers.minimum_server_version:
+                raise SystemExit("Please update your SHTTPFS client")
+
+            else:
+                return headers['session_token']
+
+        else:
+            raise SystemExit(headers['msg'])
+
+
     raise SystemExit('Authentication failed')
 
 
@@ -665,7 +684,6 @@ def run():
     if len(args) == 0 or args[0] == '-h': print("""
     update,   update the working copy to the current state on the server
     commit,   commit any changes to the working copy to the server
-    sync,     periodically sync the working copy with the server automatically
 
     Setup:
     keygen,   generate a new public and private keypiar
@@ -742,31 +760,16 @@ def run():
         commit(session_token, commit_message)
 
     #----------------------------
-    elif args [0] == 'sync':
-        init()
-        session_token: str = authenticate()
-        update_manifest(session_token)
+    elif args [0] == 'revert':
+        # Revert file or files to a prior version
 
-        commit_message = ''
-        if get_if_set_or_default(args, 1, '') == '-m': commit_message = get_if_set_or_quit(args, 2, 'Please specify a commit message after -m')
+        # -v version number, or head if omitted            
 
-        update(session_token)
-        commit(session_token, commit_message)
+        # list of one or more files to revert
+        pass # TODO
 
     #----------------------------
-    elif args [0] == 'autosync':
-        init()
-        session_token: str = authenticate()
-        update_manifest(session_token)
-
-        while True:
-            session_token = authenticate(session_token)
-            update(session_token)
-            commit(session_token)
-            time.sleep(60)
-
-    #----------------------------
-    elif args [0] == 'status':
+    elif args [0] == 'status': # TODO test this
         init()
         session_token: str = authenticate()
         update_manifest(session_token)

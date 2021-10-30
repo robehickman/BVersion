@@ -174,6 +174,9 @@ class versioned_storage:
             commit = self.read_commit_index_object(head)
             active_files = self.flatten_dir_tree(self.read_dir_tree(commit['tree_root']))
 
+
+        # TODO should be storing this transient data in sqlite as it would perform way better
+
         # Active commit files stores all of the files which will be in this revision,
         # including ones carried over from the previous revision
         sfs.file_put_contents(sfs.cpjoin(self.base_path, 'active_commit_files'), bytes(json.dumps(active_files), encoding='utf8'))

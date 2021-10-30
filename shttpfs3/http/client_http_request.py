@@ -1,6 +1,6 @@
 import os, json, urllib.parse
 from typing import Dict
-from shttpfs3.http_client import HTTPClient
+from shttpfs3.http.http_client import HTTPClient
 
 class client_http_request:
 ############################################################################################
