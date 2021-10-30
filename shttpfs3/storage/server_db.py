@@ -1,6 +1,8 @@
 import sqlite3, base64, pysodium, threading, time
 from threading import current_thread
 
+from shttpfs3.common import cpjoin, file_get_contents
+
 #=====================================================
 threadLocal = threading.local()
 
@@ -14,7 +16,7 @@ def get_server_db_instance_for_thread(db_file_path):
 
 #=====================================================
 class server_db:
-    def __init__(self, db_file_path : str):
+    def __init__(self, base_path : str):
 
         def dict_factory(cursor, row):
             d = {}
@@ -22,6 +24,7 @@ class server_db:
                 d[col[0]] = row[idx]
             return d
 
+        db_file_path = cpjoin(base_path, 'server_transient.db')
         con = sqlite3.connect(db_file_path)
         con.row_factory = dict_factory
 
@@ -52,12 +55,21 @@ class server_db:
             )
             """)
 
+
+        # Stores a list of all files in the current commit
+        self.con.execute("""
+            create table if not exists gc_log (
+                item_type  Text,
+                item_hash  Text
+            )
+            """)
+
         # Stores a list of all files in the current commit
         self.con.execute("""
             create table if not exists active_commit_files (
-                path     Text,
-                last_mod Text,
-                created  Text
+                hash    Text,
+                path    Text,
+                status  Text
             )
             """)
 
@@ -65,20 +77,21 @@ class server_db:
         # or deleted in this revision
         self.con.execute("""
             create table if not exists active_commit_changes (
-                path     Text,
-                last_mod Text,
-                created  Text
+                hash    Text,
+                path    Text,
+                status  Text
             )
             """)
 
-        # Store that there is an active commit
+        # Table to store if there is an active commit
         self.con.execute("""
-            create table if not exists active_commit_changes (
-                user     Text
+            create table if not exists active_commit_exists (
+                state  int
             )
             """)
 
         self.con.commit()
+
 
 #===============================================================================
 # Authentication tokens
@@ -92,14 +105,17 @@ class server_db:
 
         return auth_token
 
+
     #===============================================================================
     def get_token(self, auth_token, client_ip):
         return self.con.execute("select * from tokens where token = ? and ip = ? ", (auth_token, client_ip)).fetchall()
+
 
     #===============================================================================
     def delete_token(self, auth_token):
         self.con.execute("delete from tokens where token = ?", (auth_token,))
         self.con.commit()
+
 
     #===============================================================================
     def gc_tokens(self):
@@ -156,111 +172,101 @@ class server_db:
 #===============================================================================
 # Storage for transient commit data
 #===============================================================================
-def begin_commit():
-    # TODO should be storing this transient data in sqlite as it would perform way better
-
-    # Active commit files stores all of the files which will be in this revision,
-    # including ones carried over from the previous revision
-    sfs.file_put_contents(sfs.cpjoin(self.base_path, 'active_commit_files'), bytes(json.dumps(active_files), encoding='utf8'))
-
-    # Active commit changes stores a log of files which have been added, changed
-    # or deleted in this revision
-    sfs.file_put_contents(sfs.cpjoin(self.base_path, 'active_commit_changes'), bytes(json.dumps([]), encoding='utf8'))
-
-    # Store that there is an active commit
-    sfs.file_put_contents(sfs.cpjoin(self.base_path, 'active_commit'), b'true')
+    def have_active_commit(self):
+        res = self.con.execute("select * from active_commit_exists").fetchall()
+        return res != []
 
 
-#===============================================================================
-def begin_commit():
-    pass
+    #===============================================================================
+    def begin_commit(self, active_files):
+        # Add the existing files to the commit
+        for path, file_info in active_files.items():
+            res = self.con.execute("insert into active_commit_files (hash, path, status) values (?, ?, ?)",
+                                   (file_info['hash'], file_info['path'], file_info['status']))
+
+        # Ensure commit changes is empty
+        res = self.con.execute("delete from active_commit_changes")
+
+        # flag that there is a commit in progress
+        self.con.execute("insert into active_commit_exists (state) values (1)")
+
+        # ----------
+        self.con.commit()
+        
+
+    #===============================================================================
+    def file_exists_in_commit(self, file_path):
+        res = self.con.execute("select * from active_commit_files where path = ?", (file_path,))
+        return res.fetchall()
+        
+
+    #===============================================================================
+    def add_to_commit(self, file_info):
+
+        file_info['status'] = 'changed' if self.file_exists_in_commit (file_info['path']) != [] else 'new'
+
+        # Update commit changes
+        res = self.con.execute("insert into active_commit_changes (hash, path, status) values (?, ?, ?)",
+                               (file_info['hash'], file_info['path'], file_info['status']))
+
+        # Update commit files
+        if self.file_exists_in_commit(file_info['path']) == []:
+            res = self.con.execute("insert into active_commit_files (hash, path, status) values (?, ?, ?)",
+                                   (file_info['hash'], file_info['path'], file_info['status']))
+        else:
+            res = self.con.execute("update active_commit_files set hash = ?, status = ? where path = ?",
+                                   (file_info['hash'], file_info['status'], file_info['path']))
+
+        self.con.commit()
+
+        return file_info
 
 
+    #===============================================================================
+    def remove_from_commit(self, file_info):
 
+        # We don't need to do anything if the file doesnt exist
+        the_file = self.file_exists_in_commit(file_info['path'])
+        if the_file == []: return
 
-#===============================================================================
-def gc_log_item(self, item_type: str, item_hash: str) -> None:
-    with open(sfs.cpjoin(self.base_path, 'gc_log'), 'a') as gc_log:
-        gc_log.write(item_type + ' ' + item_hash + '\n'); gc_log.flush()
-
-
-#===============================================================================
-def begin_commit():
-    #=======================================================
-    # Update commit changes
-    #=======================================================
-    def helper(contents):
-        file_info['status'] = 'changed' if file_info['path'] in contents else 'new'
-        return  contents + [file_info]
-    self.update_system_file('active_commit_changes', helper)
-
-    #=======================================================
-    # Update commit files
-    #=======================================================
-    def helper2(contents):
-        contents[file_info['path']] = file_info
-        return contents
-    self.update_system_file('active_commit_files', helper2)
-
-    return file_info
-
-
-#===============================================================================
-def fs_delete():
-    #=======================================================
-    # Check if the file actually exists in the commit
-    #=======================================================
-    file_exists = False
-    def helper2(contents):
-        nonlocal file_exists
-        file_exists = file_info['path'] in contents
-        return contents
-    self.update_system_file('active_commit_files', helper2)
-
-    if not file_exists: return
-
-    #=======================================================
-    # Update commit changes
-    #=======================================================
-    def helper(contents):
+        # Update commit changes
         file_info['status'] = 'deleted'
-        return  contents + [file_info]
-    self.update_system_file('active_commit_changes', helper)
+        res = self.con.execute("insert into active_commit_changes (hash, path, status) values (?, ?, ?)",
+                               (file_info['hash'], file_info['path'], file_info['status']))
 
-    #=======================================================
-    # Update commit files
-    #=======================================================
-    def helper2(contents):
-        del contents[file_info['path']]
-        return contents
-    self.update_system_file('active_commit_files', helper2)
+        # Update commit files
+        res = self.con.execute("delete from active_commit_files where path = ?",
+                                (file_info['path'],))
+
+        self.con.commit()
 
 
-#===============================================================================
-def get_changes():
-    current_changes = json.loads(sfs.file_get_contents(sfs.cpjoin(self.base_path, 'active_commit_changes')))
-    active_files    = json.loads(sfs.file_get_contents(sfs.cpjoin(self.base_path, 'active_commit_files')))
+    #===============================================================================
+    def get_commit_state(self):
+        current_changes = self.con.execute("select * from active_commit_changes").fetchall()
+        active_files    = self.con.execute("select * from active_commit_files").fetchall()
+        active_files = {fle['path'] : fle for fle in active_files}
+
+        return current_changes, active_files
 
 
-#===============================================================================
-def commit_changes():
-    #and clean up working state
-    os.remove(sfs.cpjoin(self.base_path, 'active_commit_changes'))
-    os.remove(sfs.cpjoin(self.base_path, 'active_commit_files'))
-    sfs.ignore(os.remove, sfs.cpjoin(self.base_path, 'gc_log'))
-    os.remove(sfs.cpjoin(self.base_path, 'active_commit'))
-
-
-#===============================================================================
-def get_gc_log():
-    gc_log_contents: str = sfs.file_or_default(sfs.cpjoin(self.base_path, 'gc_log'), b'').decode('utf8')
+    #===============================================================================
+    def clean_commit_state(self):
+        self.con.execute("delete from active_commit_changes")
+        self.con.execute("delete from active_commit_files")
+        self.con.execute("delete from gc_log")
+        self.con.execute("delete from active_commit_exists")
 
 
 #===============================================================================
-def rollback_cleanup():
-    sfs.ignore(os.remove, sfs.cpjoin(self.base_path, 'active_commit_changes'))
-    sfs.ignore(os.remove, sfs.cpjoin(self.base_path, 'active_commit_files'))
-    sfs.ignore(os.remove, sfs.cpjoin(self.base_path, 'gc_log'))
-    os.remove(sfs.cpjoin(self.base_path, 'active_commit')) # if this is being called, this file should always exist
+# Storage of GC log
+#===============================================================================
+    def gc_log_item(self, item_type: str, item_hash: str) -> None:
+        self.con.execute("insert into gc_log (item_type, item_hash) values (?,?)",
+                         (item_type, item_hash))
+        self.con.commit()
 
 
+    #===============================================================================
+    def get_gc_log(self):
+        return self.con.execute("select * from gc_log").fetchall()

@@ -6,6 +6,7 @@ from typing import List, Dict, Any, cast
 from typing_extensions import TypedDict
 
 import shttpfs3.common as sfs
+from shttpfs3.storage.server_db import get_server_db_instance_for_thread
 
 #+++++++++++++++++++++++++++++++++
 class indexObject(TypedDict):
@@ -36,22 +37,20 @@ class versioned_storage:
 
 
 #===============================================================================
-    def gc_log_item(self, item_type: str, item_hash: str) -> None:
-        with open(sfs.cpjoin(self.base_path, 'gc_log'), 'a') as gc_log:
-            gc_log.write(item_type + ' ' + item_hash + '\n'); gc_log.flush()
-
-
-#===============================================================================
     def write_index_object(self, object_type: str, contents: Dict[str, Any]) -> str:
         new_object: indexObject = {'type' : object_type}
         new_object.update(contents) #type: ignore
         serialised = json.dumps(new_object)
         object_hash = hashlib.sha256(bytes(serialised, encoding='utf8')).hexdigest()
         target_base = sfs.cpjoin(self.base_path, 'index',object_hash[:2])
-        if os.path.isfile(sfs.cpjoin(target_base, object_hash[2:])): return object_hash
+
+        # Does an object with this hash already exist?
+        if os.path.isfile(sfs.cpjoin(target_base, object_hash[2:])):
+            return object_hash
 
         # log items which do not exist for garbage collection
-        self.gc_log_item(object_type, object_hash)
+        sdb = get_server_db_instance_for_thread(self.base_path)
+        sdb.gc_log_item(object_type, object_hash)
 
         #----
         sfs.make_dirs_if_dont_exist(target_base)
@@ -147,9 +146,8 @@ class versioned_storage:
     def have_active_commit(self) -> bool:
         """ Checks if there is an active commit owned by the specified user """
 
-        commit_state = sfs.file_or_default(sfs.cpjoin(self.base_path, 'active_commit'), None)
-        if commit_state is not None: return True
-        return False
+        sdb = get_server_db_instance_for_thread(self.base_path)
+        return sdb.have_active_commit()
 
 
 #===============================================================================
@@ -174,26 +172,8 @@ class versioned_storage:
             commit = self.read_commit_index_object(head)
             active_files = self.flatten_dir_tree(self.read_dir_tree(commit['tree_root']))
 
-
-        # TODO should be storing this transient data in sqlite as it would perform way better
-
-        # Active commit files stores all of the files which will be in this revision,
-        # including ones carried over from the previous revision
-        sfs.file_put_contents(sfs.cpjoin(self.base_path, 'active_commit_files'), bytes(json.dumps(active_files), encoding='utf8'))
-
-        # Active commit changes stores a log of files which have been added, changed
-        # or deleted in this revision
-        sfs.file_put_contents(sfs.cpjoin(self.base_path, 'active_commit_changes'), bytes(json.dumps([]), encoding='utf8'))
-
-        # Store that there is an active commit
-        sfs.file_put_contents(sfs.cpjoin(self.base_path, 'active_commit'), b'true')
-
-
-#===============================================================================
-    def update_system_file(self, file_name: str, callback) -> None:
-        contents = json.loads(sfs.file_get_contents(sfs.cpjoin(self.base_path, file_name)))
-        contents = callback(contents)
-        sfs.file_put_contents(sfs.cpjoin(self.base_path, file_name), bytes(json.dumps(contents), encoding='utf8'))
+        sdb = get_server_db_instance_for_thread(self.base_path)
+        sdb.begin_commit(active_files)
 
 
 #===============================================================================
@@ -201,12 +181,14 @@ class versioned_storage:
         if not self.have_active_commit(): raise Exception()
         file_info['hash'] = file_hash = sfs.hash_file(source_file)
 
+        sdb = get_server_db_instance_for_thread(self.base_path)
+
         target_base = sfs.cpjoin(self.base_path, 'files',file_hash[:2])
         target = sfs.cpjoin(target_base, file_hash[2:])
         if not os.path.isfile(target):
             # log items which don't already exist so that we do not have to read the objects referenced in
             # all existing commits to determine if the new objects are garbage in case of a commit roll back
-            self.gc_log_item('file', file_hash)
+            sdb.gc_log_item('file', file_hash)
 
             # ---
             sfs.make_dirs_if_dont_exist(target_base)
@@ -214,21 +196,8 @@ class versioned_storage:
         else:
             os.remove(source_file)
 
-        #=======================================================
         # Update commit changes
-        #=======================================================
-        def helper(contents):
-            file_info['status'] = 'changed' if file_info['path'] in contents else 'new'
-            return  contents + [file_info]
-        self.update_system_file('active_commit_changes', helper)
-
-        #=======================================================
-        # Update commit files
-        #=======================================================
-        def helper2(contents):
-            contents[file_info['path']] = file_info
-            return contents
-        self.update_system_file('active_commit_files', helper2)
+        sdb.add_to_commit(file_info)
 
         return file_info
 
@@ -237,41 +206,20 @@ class versioned_storage:
     def fs_delete(self, file_info) -> None:
         if not self.have_active_commit(): raise Exception()
 
-        #=======================================================
-        # Check if the file actually exists in the commit
-        #=======================================================
-        file_exists = False
-        def helper2(contents):
-            nonlocal file_exists
-            file_exists = file_info['path'] in contents
-            return contents
-        self.update_system_file('active_commit_files', helper2)
+        file_info['status'] = 'deleted'
 
-        if not file_exists: return
-
-        #=======================================================
-        # Update commit changes
-        #=======================================================
-        def helper(contents):
-            file_info['status'] = 'deleted'
-            return  contents + [file_info]
-        self.update_system_file('active_commit_changes', helper)
-
-        #=======================================================
-        # Update commit files
-        #=======================================================
-        def helper2(contents):
-            del contents[file_info['path']]
-            return contents
-        self.update_system_file('active_commit_files', helper2)
+        # As we always store all history, simply removing the file from the manifest
+        # of this commit is all we need to do
+        sdb = get_server_db_instance_for_thread(self.base_path)
+        sdb.remove_from_commit(file_info)
 
 
 #===============================================================================
     def commit(self, commit_message, commit_by, commit_datetime = None) -> str:
         if not self.have_active_commit(): raise Exception()
 
-        current_changes = json.loads(sfs.file_get_contents(sfs.cpjoin(self.base_path, 'active_commit_changes')))
-        active_files    = json.loads(sfs.file_get_contents(sfs.cpjoin(self.base_path, 'active_commit_files')))
+        sdb = get_server_db_instance_for_thread(self.base_path)
+        current_changes, active_files = sdb.get_commit_state()
 
         if current_changes == []: raise Exception('Empty commit')
 
@@ -305,10 +253,8 @@ class versioned_storage:
         os.rename(sfs.cpjoin(self.base_path, 'new_head'), sfs.cpjoin(self.base_path, 'head'))
 
         #and clean up working state
-        os.remove(sfs.cpjoin(self.base_path, 'active_commit_changes'))
-        os.remove(sfs.cpjoin(self.base_path, 'active_commit_files'))
-        sfs.ignore(os.remove, sfs.cpjoin(self.base_path, 'gc_log'))
-        os.remove(sfs.cpjoin(self.base_path, 'active_commit'))
+        sdb.clean_commit_state()
+        sdb.con.commit()
 
         return commit_object_hash
 
@@ -317,29 +263,26 @@ class versioned_storage:
     def rollback(self) -> None:
         if not self.have_active_commit(): raise Exception()
 
-        gc_log_contents: str = sfs.file_or_default(sfs.cpjoin(self.base_path, 'gc_log'), b'').decode('utf8')
-
-        gc_log_items = [file_row.split(' ') for file_row in gc_log_contents.splitlines()]
-
+        sdb = get_server_db_instance_for_thread(self.base_path)
+        gc_log_items = sdb.get_gc_log()
+        
         if gc_log_items != []:
             # If a commit exists and it's hash matches the current head we do not need to do anything
             # The commit succeeded but we failed before deleting the active commit file for some reason
-            is_commit = next((item for item in gc_log_items if item[0] == 'commit'), None)
-            if is_commit is not None and is_commit[1] == self.get_head():
+            is_commit = next((item for item in gc_log_items if item['item_type'] == 'commit'), None)
+            if is_commit is not None and is_commit['item_hash'] == self.get_head():
                 pass # commit actually ok
 
-            else:# commit not ok
+            else:# commit not ok, need to clean up
                 for item in gc_log_items:
                     # delete the object for this file, noting that it may not exist
-                    object_dir = 'files' if item[0] == 'file' else 'index'
-                    target_base = sfs.cpjoin(self.base_path, object_dir, item[1][:2])
-                    sfs.ignore(os.remove, sfs.cpjoin(target_base, item[1][2:]))
+                    object_dir = 'files' if item['item_type'] == 'file' else 'index'
+                    target_base = sfs.cpjoin(self.base_path, object_dir, item['item_hash'][:2])
+                    sfs.ignore(os.remove, sfs.cpjoin(target_base, item['item_hash'][2:]))
                     sfs.ignore(os.rmdir, target_base)
 
-        sfs.ignore(os.remove, sfs.cpjoin(self.base_path, 'active_commit_changes'))
-        sfs.ignore(os.remove, sfs.cpjoin(self.base_path, 'active_commit_files'))
-        sfs.ignore(os.remove, sfs.cpjoin(self.base_path, 'gc_log'))
-        os.remove(sfs.cpjoin(self.base_path, 'active_commit')) # if this is being called, this file should always exist
+        sdb.clean_commit_state()
+        sdb.con.commit()
 
 
 #===============================================================================

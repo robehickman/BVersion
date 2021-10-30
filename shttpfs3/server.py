@@ -16,7 +16,6 @@ from shttpfs3 import version_numbers
 
 #===============================================================================
 config = {} # type: ignore
-server_db_file_name = 'server_transient.db'
 
 #===============================================================================
 lock_fail_msg         = 'Could not acquire exclusive lock'
@@ -38,7 +37,7 @@ def init_server(new_config : dict):
 
     for repo_name, data in config['repositories'].items():
         repository_path = data['path']
-        sdb = get_server_db_instance_for_thread(cpjoin(repository_path, server_db_file_name))
+        sdb = get_server_db_instance_for_thread(repository_path)
         sdb.db_init()
 
 
@@ -180,7 +179,7 @@ def begin_auth(request: Request) -> Responce:
     # ==
     repository_path = config['repositories'][repository]['path']
 
-    sdb = get_server_db_instance_for_thread(cpjoin(repository_path, server_db_file_name))
+    sdb = get_server_db_instance_for_thread(repository_path)
     sdb.gc_tokens()
 
     # Issue a new token
@@ -206,7 +205,7 @@ def authenticate(request: Request) -> Responce:
 
     # ==
     repository_path = config['repositories'][repository]['path']
-    sdb = get_server_db_instance_for_thread(cpjoin(repository_path, server_db_file_name))
+    sdb = get_server_db_instance_for_thread(repository_path)
     sdb.gc_tokens()
 
     # Allow resume of an existing session
@@ -265,7 +264,7 @@ def have_authenticated_user(client_ip: str, repository: str, session_token: byte
     if repository not in config['repositories']: return False
 
     repository_path = config['repositories'][repository]['path']
-    sdb = get_server_db_instance_for_thread(cpjoin(repository_path, server_db_file_name))
+    sdb = get_server_db_instance_for_thread(repository_path)
 
     # Garbage collect session tokens. We must not garbage collect the authentication token of the client
     # which is currently doing a commit. Large files can take a long time to upload and during this time,
