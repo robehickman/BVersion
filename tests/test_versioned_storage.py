@@ -4,6 +4,7 @@ from unittest import TestCase
 from tests.helpers import DATA_DIR, make_data_dir, delete_data_dir
 from shttpfs3.common import cpjoin, file_put_contents
 from shttpfs3.storage.versioned_storage import versioned_storage
+from shttpfs3.storage.server_db import get_server_db_instance_for_thread
 
 CONF_DIR   = 'shttpfs'
 BACKUP_DIR = 'back'
@@ -15,6 +16,9 @@ class TestVersionedStorage(TestCase):
     def setUp(self):
         delete_data_dir() # Ensure clean start
         make_data_dir()
+
+        sdb = get_server_db_instance_for_thread(DATA_DIR, True)
+        sdb.db_init()
 
 ############################################################################################
     def tearDown(self):

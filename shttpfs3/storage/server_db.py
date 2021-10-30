@@ -6,10 +6,19 @@ from shttpfs3.common import cpjoin, file_get_contents
 #=====================================================
 threadLocal = threading.local()
 
-def get_server_db_instance_for_thread(db_file_path):
+def get_server_db_instance_for_thread(db_file_path, need_to_recreate = False):
+
+    old_db_path = getattr(threadLocal, 'old_db_path', '')
+    if old_db_path != db_file_path:
+        need_to_recreate = True
+
     db_instance = getattr(threadLocal, 'db_instance', None)
     if db_instance is None:
+        need_to_recreate = True
+
+    if need_to_recreate:
         threadLocal.db_instance = server_db(db_file_path)
+        threadLocal.old_db_path = db_file_path
 
     return threadLocal.db_instance
     
