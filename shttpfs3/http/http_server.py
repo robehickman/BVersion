@@ -93,7 +93,7 @@ def HTTPServer(host, port, connection_handler):
 
         except:
             c.close()
-            #raise
+            print('Connection handler thread crashed')
 
         c.close()
 

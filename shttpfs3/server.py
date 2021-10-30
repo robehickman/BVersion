@@ -214,7 +214,7 @@ def authenticate(request: Request) -> Responce:
 
         if sdb.validate_session(session_token, client_ip) != []:
             return success({
-                'server_version' : version_numbers.server_version,
+                'server_version' : str(version_numbers.server_version).encode('utf8'),
                 'session_token'  : session_token
             })
         else:
@@ -249,7 +249,7 @@ def authenticate(request: Request) -> Responce:
             session_token = sdb.create_session(extend_session_duration, client_ip, user)
 
             return success({
-                'server_version' : version_numbers.server_version,
+                'server_version' : str(version_numbers.server_version).encode('utf8'),
                 'session_token'  : session_token
             })
 
