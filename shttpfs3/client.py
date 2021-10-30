@@ -195,6 +195,49 @@ def find_local_changes(include_unchanged : bool = False) -> Tuple[dict, Dict[str
 
 
 #===============================================================================
+def checkout():
+    plain_input = get_if_set_or_quit(args, 1, 'URL is missing')
+
+    result = urllib.parse.urlparse(plain_input)
+    repository_name = [f for f in result.path.split('/') if f != ""]
+    server_domain = result.scheme + '://' + result.netloc
+    if result.scheme not in ['http', 'https'] or result.netloc == '' or len(repository_name) != 1:
+        raise SystemExit ("Invalid URL, usage: http(s)//:domain:optional port/[repository name]. Repository names cannot contain '/'.")
+
+    # get user
+    print('Please enter the user name for this repository, then press enter.')
+    user = input('> ').strip(' \t\n\r')
+    if user == '': raise SystemExit('Key is blank, exiting.')
+
+    # get private key
+    print('Please enter the private key for this repository, then press enter.')
+    private_key = input('> ').strip(' \t\n\r')
+    if private_key == '': raise SystemExit('Key is blank, exiting.')
+
+    #---------------
+    config = {"server_domain" : server_domain,
+                "repository"    : repository_name[0],
+                "user"          : "test",
+                "private_key"   : private_key}
+
+    # Validate info is correct by attempting to authenticate
+    server_connection = client_http_request(config['server_domain'])
+    unlocked_key = config["private_key"] = crypto.unlock_private_key(config["private_key"])
+    session_token: str = authenticate()
+    config["private_key"] = private_key
+
+    # create repo dir
+    try: os.makedirs(repository_name)
+    except: raise SystemExit('Directory already exists')
+    os.makedirs(cpjoin(repository_name, '.shttpfs'))
+    file_put_contents(cpjoin(repository_name, '.shttpfs', 'client_configuration.json'), json.dumps(config, indent=4))
+
+    config["private_key"] = unlocked_key
+    os.chdir(repository_name); init(True)
+    update(session_token)
+
+
+#===============================================================================
 def resolve_update_conflicts(session_token: str, changes: list, testing: bool, test_overrides: dict):
 
     # The unit test code needs to be able to override some of the function
@@ -639,6 +682,54 @@ def commit(session_token: str, commit_message = ''):
 
         return headers['head']
 
+
+#===============================================================================
+def pull_ignore(filters):
+    print(filters)
+    quit()
+
+    affected_local_files = []
+    for fle in cdb.get_manifest():
+        affects_existing = next((True for flter in filters if fnmatch.fnmatch(fle['path'], flter)), False)
+        if affects_existing:
+            affected_local_files.append(fle['path'])
+
+    if affected_local_files != []:
+        for fle in affected_local_files:
+            print(fle)
+
+        print('\nThe files listed above would be affected by this opperation.\n' +
+                'Should these files be deleted from the working copy, added to the\n ' +
+                '".shttpfs_ignore"  file, or left as is? Note that leaving the \n ' +
+                'will cause them to be removed from the server the next time commit is run')
+
+    # Ask the user if we should delete the local files
+    choice = question_user(
+        "type 'ignore'  to add files to '.shttpfs_ignore'\n" +
+        "type 'delete'  to delete the files from the working copy\n" +
+        "type 'nothing' to remove the files from the local manifest,\n" +
+        "and leave the files alone\n",
+        valid_choices=['ignore', 'delete', 'nothing'])
+
+    # read args
+    if choice == 'ignore':
+        ignore_fle = file_get_contents(working_copy_base_path + '.shttpfs_ignore')
+        ignore_fle += "\n".join(filters)
+        file_put_contents(working_copy_base_path + '.shttpfs_ignore', ignore_fle)
+
+    elif choice == 'delete':
+        for path in affected_local_files:
+            os.remove(cpjoin(working_copy_base_path, path))
+
+    elif choice == 'nothing':
+        # We do not need to do anything in this case
+        pass
+
+    # Remove the affected files from the manifest
+    for path in affected_local_files:
+        cdb.remove_file_from_manifest(path)
+
+
 #===============================================================================
 def get_versions(session_token: str):
     req_result, headers = server_connection.request("list_versions", {
@@ -702,13 +793,49 @@ def run():
 
     #----------------------------
     if len(args) == 0 or args[0] == '-h': print("""
-    update,   update the working copy to the current state on the server
-    commit,   commit any changes to the working copy to the server
+    Optional paramiters are shown after the command they can be used with.
 
-    Setup:
-    keygen,   generate a new public and private keypiar
-    checkout, check out a working copy from a server
-        """)
+    Usage: shttpfs [command] [data or flags]
+
+
+    Setup commands:
+
+    keygen                       : Generate a new public and private keypiar.
+    checkout                     : Check out a working copy from a server.
+
+
+    Common commands:
+
+    update                       : Update the working copy to the latest revision on the server.
+
+           -f                    - Optionally perform a full comparison including unchanged
+                                   files, must be used when downloading previously pull
+                                   ignored files. 
+
+
+    commit                       : Commit any changes to the working copy to the server
+
+           -m "<your msg>"       - Append an optional commit message
+
+
+    revert [path] ...            : Revert the specified files to the version stored on the server.
+
+
+    status                       : Display a list of files that have been changed locally since
+                                   the most recient commit.
+
+    pull-ignore
+
+
+    list-versions                : Lists all revisions on the server;
+
+
+    list-files   [version id]    : Lists all files in the specified revision
+    
+
+    list-changes [version id]    : Lists all changes in the specified revision
+
+    """)
 
     #----------------------------
     elif args[0] == 'keygen':
@@ -718,45 +845,8 @@ def run():
 
     #----------------------------
     elif args [0] == 'checkout':
-        plain_input = get_if_set_or_quit(args, 1, 'URL is missing')
+        checkout()
 
-        result = urllib.parse.urlparse(plain_input)
-        repository_name = [f for f in result.path.split('/') if f != ""]
-        server_domain = result.scheme + '://' + result.netloc
-        if result.scheme not in ['http', 'https'] or result.netloc == '' or len(repository_name) != 1:
-            raise SystemExit ("Invalid URL, usage: http(s)//:domain:optional port/[repository name]. Repository names cannot contain '/'.")
-
-        # get user
-        print('Please enter the user name for this repository, then press enter.')
-        user = input('> ').strip(' \t\n\r')
-        if user == '': raise SystemExit('Key is blank, exiting.')
-
-        # get private key
-        print('Please enter the private key for this repository, then press enter.')
-        private_key = input('> ').strip(' \t\n\r')
-        if private_key == '': raise SystemExit('Key is blank, exiting.')
-
-        #---------------
-        config = {"server_domain" : server_domain,
-                  "repository"    : repository_name[0],
-                  "user"          : "test",
-                  "private_key"   : private_key}
-
-        # Validate info is correct by attempting to authenticate
-        server_connection = client_http_request(config['server_domain'])
-        unlocked_key = config["private_key"] = crypto.unlock_private_key(config["private_key"])
-        session_token: str = authenticate()
-        config["private_key"] = private_key
-
-        # create repo dir
-        try: os.makedirs(repository_name)
-        except: raise SystemExit('Directory already exists')
-        os.makedirs(cpjoin(repository_name, '.shttpfs'))
-        file_put_contents(cpjoin(repository_name, '.shttpfs', 'client_configuration.json'), json.dumps(config, indent=4))
-
-        config["private_key"] = unlocked_key
-        os.chdir(repository_name); init(True)
-        update(session_token)
 
     #----------------------------
     elif args [0] == 'update':
@@ -794,7 +884,7 @@ def run():
         pass # TODO
 
     #----------------------------
-    elif args [0] == 'status': # TODO test this
+    elif args [0] == 'status':
         init()
 
         client_changes = find_local_changes()
@@ -823,46 +913,8 @@ def run():
         if filters == []:
             raise SystemExit('No ignore filters provided')
 
-        affected_local_files = []
-        for fle in cdb.get_manifest():
-            affects_existing = next((True for flter in filters if fnmatch.fnmatch(fle['path'], flter)), False)
-            if affects_existing:
-                affected_local_files.append(fle['path'])
-
-        if affected_local_files != []:
-            for fle in affected_local_files:
-                print(fle)
-
-            print('\nThe files listed above would be affected by this opperation.\n' +
-                  'Should these files be deleted from the working copy, added to the\n ' +
-                  '".shttpfs_ignore"  file, or left as is? Note that leaving the \n ' +
-                  'will cause them to be removed from the server the next time commit is run')
-
-        # Ask the user if we should delete the local files
-        choice = question_user(
-            "type 'ignore'  to add files to '.shttpfs_ignore'\n" +
-            "type 'delete'  to delete the files from the working copy\n" +
-            "type 'nothing' to remove the files from the local manifest,\n" +
-            "and leave the files alone\n",
-            valid_choices=['ignore', 'delete', 'nothing'])
-
-        # read args
-        if choice == 'ignore':
-            ignore_fle = file_get_contents(working_copy_base_path + '.shttpfs_ignore')
-            ignore_fle += "\n".join(filters)
-            file_put_contents(working_copy_base_path + '.shttpfs_ignore', ignore_fle)
-
-        elif choice == 'delete':
-            for path in affected_local_files:
-                os.remove(cpjoin(working_copy_base_path, path))
-
-        elif choice == 'nothing':
-            # We do not need to do anything in this case
-            pass
-
-        # Remove the affected files from the manifest
-        for path in affected_local_files:
-            cdb.remove_file_from_manifest(path)
+        # ===============
+        pull_ignore(session_token, filters)
 
 
     #----------------------------
@@ -888,6 +940,23 @@ def run():
             else:
                 print ('There are no commits')
 
+
+    #----------------------------
+    elif args [0] == 'list-files':
+        init()
+        session_token: str = authenticate()
+        update_manifest(session_token)
+
+        version_id = get_if_set_or_quit(args, 1, 'Please specify a version id')
+        req_result, headers = get_files_in_version(session_token, version_id)
+
+        if headers['status'] == 'ok':
+            print()
+            for fle in json.loads(req_result)['files']:
+                print(fle)
+            print()
+
+
     #----------------------------
     elif args [0] == 'list-changes':
         init()
@@ -903,20 +972,4 @@ def run():
 
             print()
             draw_changeset(changes)
-            print()
-
-
-    #----------------------------
-    elif args [0] == 'list-files':
-        init()
-        session_token: str = authenticate()
-        update_manifest(session_token)
-
-        version_id = get_if_set_or_quit(args, 1, 'Please specify a version id')
-        req_result, headers = get_files_in_version(session_token, version_id)
-
-        if headers['status'] == 'ok':
-            print()
-            for fle in json.loads(req_result)['files']:
-                print(fle)
             print()
