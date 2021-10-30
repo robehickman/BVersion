@@ -1,47 +1,38 @@
-Simple HTTP File Sync (SHTTPFS) is a version control system designed for managing binary files like images, audio, and video. It follows a centralised design and has a strong emphasis on code simplicity, being inspired by the 'suckless philosophy'. It is configured with text files, intentionally has no grapgical interface, and does not use the system tray at all.
+Simple HTTP File Sync (SHTTPFS) is a version control system designed for managing binary files like images, audio, and video. It follows a centralised design and has a strong emphasis on code simplicity, being inspired by the 'suckless philosophy'. It is configured with text files, intentionally has no graphical interface, and does not use the system tray at all.
 
 
-SHTTPFS offers the following benifits:
+SHTTPFS offers the following benefits:
 
 ### Very low working copy overhead:
 
-Working copies (checkouts) store only the minimum data required to detect changed files, with an overhead of only a few megabytes on a repository of thousands of files. It uses vastly less disk space than Subversion (which stores two copies of everything), and vastly less than git (which stores the whole change history).
+All version history is stored on the server and working copies (checkouts) store only the minimum data required to detect changed files, with an overhead of only a few megabytes on a repository of thousands of files. It uses less disk space than Subversion (which stores two copies of everything), and vastly less than git (which stores the whole change history).
 
 
 ### Partial checkouts
 
-You can specify arbitary rules for ommitting files from a working copy, while leaving them alone on the server.
-
-
-### Automatic or manual syncing:
-
-SHTTPFS can operate in two modes, either supporting manual commit and update, or periodically checking a file system for changes and updating automatically.
+You can specify arbitrary rules for omitting files from a working copy, while leaving them alone on the server.
 
 
 ### Effortless system upgrades and migration:
 
-Server updates and migrations are effortless as all server data is stored under a single directory, with no dependency on an external SQL database. Thus moving the server only requires copying one directory tree. Versions are stored on the server in a data structure similar to git, with sqlite used for transient authentication data.
+Server updates and migrations are effortless as all server data is stored under a single directory, with no dependency on an external SQL database.
+
+
+### Atomic commits
+
+All commits are atomic, it is imposable to have a cancelled commit leave the server in an inconsistent state.
+
 
 ### Server side whole file deduplication:
 
 A nice side effect of the data structure used on the server is that it inherently performs whole file de-duplication.
 
 
-### Atomic commits
-
-All commits are atomic, meaning that we cannot have a half complete commit leaving the server in an inconsistent state. Failed commits are automatically reverted before the next user commits. Commits always store the committing user, current system time in UTC and can be labeled with a commit message.
-
-
 ### Atomic client side file system operations through journaling. 
 
-The client needs to store both the files in the working copy, and also a manifest of there modification times in order to detect changes. When files are downloaded from the server, if a file was added to the manifest before adding it to the file system, should the system crash in-between these two operations shttpfs would detect the file as deleted, as it is missing from the file system and would subsequently delete it from the server erroniously. In order to avoid this kind of problem client side file operations are first written to a journal and flushed to disk.
+The client needs to store both the files in the working copy, and also a manifest of there modification times in order to detect changes. When files are downloaded from the server, if a file was added to the manifest before adding it to the file system, should the system crash in-between these two operations shttpfs would detect the file as deleted, as it is missing from the file system and would subsequently delete it from the server erroneously. In order to avoid this kind of problem client side file operations are first written to a journal.
 
 Note that this system does nothing to help you if the file system is being modified by another program simultaneously. There is no sensible way to resolve this issues at the current time because common file systems do not support snapshotting. Common version control systems work around this by assuming that you will not edit the files while doing a commit.
-
-
-### Client/server architecture
-
-SHTTPFS uses a client/server architecture with version history stored exclusively on the server. While the general trend towards decentralised version control for source code is a good thing, there are problems with using that model for large volumes of binary data. I wrote SHTTPFS mainly due to storage bloat caused by subversion storing two copies of every file in a working copy, and this problem is even worse with a decentralised versioning system. Storing history on a central server is more practical as one only needs a single large hard drive array instead of one per client.
 
 
 ### Conflict detection.
