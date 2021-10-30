@@ -8,15 +8,15 @@ from shttpfs3.http.http_server import Request, Responce, ServeFile
 from shttpfs3.common import cpjoin, file_get_contents
 from shttpfs3.storage.versioned_storage import versioned_storage
 from shttpfs3.merge_client_and_server_changes import merge_client_and_server_changes
+from shttpfs3.storage.server_db import get_server_db_instance_for_thread
 
 from shttpfs3 import version_numbers
 
 # TODO server can become stuck in an infinite loop, needs to be fixed
 
-
 #===============================================================================
-# NOTE This must be replaced with a valid configuration, see 'shttpfs_server'
 config = {} # type: ignore
+server_db_file_name = 'server_transient.db'
 
 #===============================================================================
 lock_fail_msg         = 'Could not acquire exclusive lock'
@@ -28,6 +28,19 @@ no_active_commit_msg  = "A commit must be started before attempting this operati
 unsuported_client_msg = "Please update your shttpfs client."
 
 extend_session_duration = (60 * 60) * 2 # 2 hours
+
+#===============================================================================
+# Ensure that the servers transient database tables are created
+#===============================================================================
+def init_server(new_config : dict):
+    global config
+    config = new_config
+
+    for repo_name, data in config['repositories'].items():
+        repository_path = data['path']
+        sdb = get_server_db_instance_for_thread(cpjoin(repository_path, server_db_file_name))
+        sdb.db_init()
+
 
 #===============================================================================
 # Decorator to make defining routes easy
@@ -156,49 +169,23 @@ def varify_user_lock(repository_path: str, session_token: bytes):
 #===============================================================================
 # Authentication
 #===============================================================================
-auth_db_initilised = False
-def auth_db_connect(db_path: str) -> db.Connection:
-    """ An SQLite database is used to store authentication transient data,
-    this is tokens, strings of random data which are signed by the client,
-    and session_tokens which identify authenticated users """
-
-    global auth_db_initilised
-
-    def dict_factory(cursor, row): return {col[0] : row[idx] for idx,col in enumerate(cursor.description)}
-    conn = db.connect(db_path)
-    conn.row_factory = dict_factory
-    if not auth_db_initilised:
-        conn.execute('create table if not exists tokens (expires int, token text, ip text)')
-        conn.execute('create table if not exists session_tokens (expires int, token text, ip text, username text)')
-        auth_db_initilised = True
-    return conn
-
-
-#===============================================================================
-def gc_tokens(conn):
-    """ Garbage collection for expired authentication tokens """
-
-    conn.execute("delete from tokens where expires < ?", (time.time(),))
-    conn.commit()
-
-#===============================================================================
 @route('begin_auth')
 def begin_auth(request: Request) -> Responce:
     """ Request authentication token to sign """
 
     repository    = request.headers['repository']
-    if repository not in config['repositories']: return fail(no_such_repo_msg)
+    if repository not in config['repositories']:
+        return fail(no_such_repo_msg)
 
     # ==
     repository_path = config['repositories'][repository]['path']
-    conn = auth_db_connect(cpjoin(repository_path, 'auth_transient.db')); gc_tokens(conn)
+
+    sdb = get_server_db_instance_for_thread(cpjoin(repository_path, server_db_file_name))
+    sdb.gc_tokens()
 
     # Issue a new token
-    auth_token = base64.b64encode(pysodium.randombytes(35)).decode('utf-8')
-    conn.execute("insert into tokens (expires, token, ip) values (?,?,?)",
-                 (time.time() + 30, auth_token, request.remote_addr))
-    conn.commit()
-
+    auth_token = sdb.issue_token(request.remote_addr)
+    
     return success({'auth_token' : auth_token})
 
 
@@ -219,16 +206,14 @@ def authenticate(request: Request) -> Responce:
 
     # ==
     repository_path = config['repositories'][repository]['path']
-    conn = auth_db_connect(cpjoin(repository_path, 'auth_transient.db')); gc_tokens(conn)
-    gc_tokens(conn)
+    sdb = get_server_db_instance_for_thread(cpjoin(repository_path, server_db_file_name))
+    sdb.gc_tokens()
 
     # Allow resume of an existing session
     if 'session_token' in request.headers:
         session_token = request.headers['session_token']
 
-        conn.execute("delete from session_tokens where expires < ?", (time.time(),)); conn.commit()
-        res = conn.execute("select * from session_tokens where token = ? and ip = ?", (session_token, client_ip)).fetchall()
-        if res != []:
+        if sdb.validate_session(session_token, client_ip) != []:
             return success({
                 'server_version' : version_numbers.server_version,
                 'session_token'  : session_token
@@ -248,23 +233,21 @@ def authenticate(request: Request) -> Responce:
             # signature
             pysodium.crypto_sign_verify_detached(base64.b64decode(signiture), auth_token, base64.b64decode(public_key))
 
-            # check token was previously issued by this system and is still valid
-            res = conn.execute("select * from tokens where token = ? and ip = ? ", (auth_token, client_ip)).fetchall()
-
             # Validate token matches one we sent
-            if res == [] or len(res) > 1: return fail(user_auth_fail_msg)
+            res = sdb.get_token(auth_token, client_ip)
+            if res == [] or len(res) > 1:
+                return fail(user_auth_fail_msg)
 
             # Does the user have permission to use this repository?
-            if repository not in config['users'][user]['uses_repositories']: return fail(user_auth_fail_msg)
+            if repository not in config['users'][user]['uses_repositories']:
+                return fail(user_auth_fail_msg)
 
-            # Everything OK
-            conn.execute("delete from tokens where token = ?", (auth_token,)); conn.commit()
 
-            # generate a session token and send it to the client
-            session_token = base64.b64encode(pysodium.randombytes(35))
-            conn.execute("insert into session_tokens (token, expires, ip, username) values (?,?,?, ?)",
-                         (session_token, time.time() + extend_session_duration, client_ip, user))
-            conn.commit()
+            # Everything OK, clean up transient token and
+            # generate a session token for the client
+            sdb.delete_token(auth_token)
+
+            session_token = sdb.create_session(extend_session_duration, client_ip, user)
 
             return success({
                 'server_version' : version_numbers.server_version,
@@ -282,7 +265,7 @@ def have_authenticated_user(client_ip: str, repository: str, session_token: byte
     if repository not in config['repositories']: return False
 
     repository_path = config['repositories'][repository]['path']
-    conn = auth_db_connect(cpjoin(repository_path, 'auth_transient.db'))
+    sdb = get_server_db_instance_for_thread(cpjoin(repository_path, server_db_file_name))
 
     # Garbage collect session tokens. We must not garbage collect the authentication token of the client
     # which is currently doing a commit. Large files can take a long time to upload and during this time,
@@ -293,22 +276,18 @@ def have_authenticated_user(client_ip: str, repository: str, session_token: byte
     # lock for this reason.
     user_lock = read_user_lock(repository_path)
     active_commit = user_lock['session_token'] if user_lock is not None else None
-
-    if active_commit is not None: conn.execute("delete from session_tokens where expires < ? and token != ?", (time.time(), active_commit))
-    else:                         conn.execute("delete from session_tokens where expires < ?", (time.time(),))
+    sdb.gc_session_tokens(active_commit)
 
     # Get the session token
-    res = conn.execute("select * from session_tokens where token = ? and ip = ?", (session_token, client_ip)).fetchall()
+    res = sdb.get_session_token(session_token, client_ip)
 
     if res != [] and repository in config['users'][res[0]['username']]['uses_repositories']:
-        conn.execute("update session_tokens set expires = ? where token = ? and ip = ?",
-                     (time.time() + extend_session_duration, session_token, client_ip))
-
-        conn.commit() # to make sure the update and delete have the same view
+        sdb.update_session_token_expiry(extend_session_duration, session_token, client_ip)
+        sdb.con.commit() # we commit at the end to make sure that all opperations have the same view
 
         return res[0]
 
-    conn.commit()
+    sdb.con.commit()
     return False
 
 

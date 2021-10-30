@@ -8,7 +8,8 @@ from shttpfs3.common import file_get_contents
 conf_path = '/etc/shttpfs/server.json'
 if len(sys.argv) > 1 and sys.argv[1] == '-c':
     conf_path = sys.argv[2]
-server.config = json.loads(file_get_contents(conf_path))
+
+server.init_server(json.loads(file_get_contents(conf_path)))
 
 #===============================================================================
 listen      = ''
@@ -21,6 +22,7 @@ if 'listen_port' in server.config:
     listen_port = server.config['listen_port']
 
 
+# ------------------------------
 if __name__ == "__main__":
     HTTPServer(listen, listen_port, server.endpoint)
 

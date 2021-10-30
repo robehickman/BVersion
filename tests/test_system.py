@@ -33,7 +33,7 @@ def setup():
 def setup_client(name):
     client.working_copy_base_path = DATA_DIR + name
 
-    server.config = {
+    server.init_server({
         "repositories" : {
             repo_name : {
                 "path" : DATA_DIR + 'server'
@@ -45,7 +45,7 @@ def setup_client(name):
                 "uses_repositories" : [repo_name]
             }
         }
-    }
+    })
 
 
     # Mock data reader that reads from a bytesio object instead of a socket
