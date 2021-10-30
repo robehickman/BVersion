@@ -93,13 +93,12 @@ def HTTPServer(host, port, connection_handler):
 
         except:
             c.close()
-            print('Connection handler thread crashed')
+            raise
 
         c.close()
 
     #============
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # TODO add timeout
     s.bind((host, port))
     print("socket bound to port", port)
 

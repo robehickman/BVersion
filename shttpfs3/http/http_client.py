@@ -10,6 +10,7 @@ class HTTPClient:
 
     def connect(self, host: str, port: int, tls: bool = False):
         self.s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+
         if tls: self.s = ssl.wrap_socket(self.s, ssl_version=ssl.PROTOCOL_TLS)
         self.s.connect((host,port))
 

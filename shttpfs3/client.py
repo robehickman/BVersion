@@ -1,6 +1,8 @@
 from pprint import pprint
 import os, sys, time, json, base64, fnmatch, shutil, fcntl, errno, urllib.parse
 
+from termcolor import colored
+from collections import defaultdict
 from typing import List, Dict, Tuple
 from typing_extensions import TypedDict
 
@@ -675,6 +677,23 @@ def get_if_set_or_default(array, item, default):
     try: return array[item]
     except IndexError: return default
 
+def draw_changeset(changes):
+    binned_changes = defaultdict(list)
+
+    for path, file_info in changes.items():
+        binned_changes[file_info['status']].append(file_info)
+
+    for status, group in binned_changes.items():
+        for item in group:
+            if status == 'deleted':
+                color = 'red'
+            elif status == 'changed':
+                color = 'yellow'
+            else:
+                color = 'green'
+
+            print(colored(status + ' : ' +  item['path'], color))
+
 #===============================================================================
 def run():
     global server_connection, config
@@ -747,7 +766,10 @@ def run():
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
+
+        print()
         update(session_token, include_unchanged = include_unchanged)
+        print()
 
     #----------------------------
     elif args [0] == 'commit':
@@ -758,7 +780,9 @@ def run():
         session_token: str = authenticate()
         update_manifest(session_token)
 
+        print()
         commit(session_token, commit_message)
+        print()
 
     #----------------------------
     elif args [0] == 'revert':
@@ -772,16 +796,21 @@ def run():
     #----------------------------
     elif args [0] == 'status': # TODO test this
         init()
-        session_token: str = authenticate()
-        update_manifest(session_token)
 
         client_changes = find_local_changes()
 
-        for item in client_changes:
-            print(item)
+        print()
+        
+        if len(client_changes) != 0:
+            draw_changeset(client_changes)
+
+        else:
+            print('Nothing changed')
+
+        print()
 
     #----------------------------
-    elif args [0] == 'ignore_server_files':
+    elif args [0] == 'pull-ignore':
         # TODO needs testing
 
         init()
@@ -837,7 +866,7 @@ def run():
 
 
     #----------------------------
-    elif args [0] == 'list_versions':
+    elif args [0] == 'list-versions':
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
@@ -845,15 +874,22 @@ def run():
         req_result, headers = get_versions(session_token)
 
         if headers['status'] == 'ok':
-            for vers in reversed(json.loads(req_result)['versions']):
-                print('Commit:  ' + vers['id'])
-                print('Date:    ' + vers['utc_date_time'] + ' (UTC) ')
-                print('By user: ' + vers['commit_by'])
-                print('\n'        + vers['commit_message'])
-                print()
+            versions = list(reversed(json.loads(req_result)['versions']))
+
+            print()
+
+            if len(versions) != 0:
+                for vers in versions:
+                    print(colored('Commit:  ' + vers['id'], 'yellow'))
+                    print('Date:    ' + vers['utc_date_time'] + ' (UTC) ')
+                    print('By user: ' + vers['commit_by'])
+                    print('\n'        + vers['commit_message'])
+                    print()
+            else:
+                print ('There are no commits')
 
     #----------------------------
-    elif args [0] == 'list_changes':
+    elif args [0] == 'list-changes':
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
@@ -862,11 +898,16 @@ def run():
         req_result, headers = get_changes_in_version(session_token, version_id)
 
         if headers['status'] == 'ok':
-            for change in json.loads(req_result)['changes']:
-                print(change['status'] + '     ' + change['path'])
+            changes = json.loads(req_result)['changes']
+            changes = {item['path'] : item for item in changes}
+
+            print()
+            draw_changeset(changes)
+            print()
+
 
     #----------------------------
-    elif args [0] == 'list_files':
+    elif args [0] == 'list-files':
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
@@ -875,5 +916,7 @@ def run():
         req_result, headers = get_files_in_version(session_token, version_id)
 
         if headers['status'] == 'ok':
+            print()
             for fle in json.loads(req_result)['files']:
                 print(fle)
+            print()
