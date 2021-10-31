@@ -1,4 +1,4 @@
-Simple HTTP File Sync (SHTTPFS) is a version control system designed for managing binary files like images, audio, and video. It follows a centralised design and has a strong emphasis on code simplicity, being inspired by the 'suckless philosophy'. It is configured with text files, intentionally has no graphical interface, and does not use the system tray at all.
+Simple HTTP File Sync (SHTTPFS) is a version control system designed for managing binary files like images, audio, and video. It follows a centralised design and has a strong emphasis on code simplicity. Shttpfs is configured with text files, intentionally has no graphical interface, and does not use the system tray at all.
 
 
 SHTTPFS offers the following benefits:
@@ -32,7 +32,7 @@ A nice side effect of the data structure used on the server is that it inherentl
 
 The client needs to store both the files in the working copy, and also a manifest of there modification times in order to detect changes. When files are downloaded from the server, if a file was added to the manifest before adding it to the file system, should the system crash in-between these two operations shttpfs would detect the file as deleted, as it is missing from the file system and would subsequently delete it from the server erroneously. In order to avoid this kind of problem client side file operations are first written to a journal.
 
-Note that this system does nothing to help you if the file system is being modified by another program simultaneously. There is no sensible way to resolve this issues at the current time because common file systems do not support snapshotting. Common version control systems work around this by assuming that you will not edit the files while doing a commit.
+Note that this system does nothing to help you if the file system is being modified by another program simultaneously. There is no sensible way to resolve this issues at the current time because common file systems do not support snapshotting. It is assumed that you will not edit the files while doing a commit.
 
 
 ### Conflict detection.
