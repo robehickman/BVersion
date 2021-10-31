@@ -151,7 +151,7 @@ class TestSystem(TestCase):
         self.assertEqual('test commit', json.loads(req_result)['versions'][0]['commit_message'])
 
         # file should show up in list_changes
-        req_result = client.get_files_in_version(session_token, version_id)[0]
+        req_result = client.get_files_in_version(session_token, False, version_id)[0]
         self.assertTrue('/test1' in json.loads(req_result)['files'])
         self.assertTrue('/test2' in json.loads(req_result)['files'])
 
@@ -278,7 +278,7 @@ class TestSystem(TestCase):
 
 
         # check change is reflected correctly in the commit log
-        req_result = client.get_changes_in_version(session_token, version_id)[0]
+        req_result = client.get_changes_in_version(session_token, False, version_id)[0]
         res_index = { v['path'] : v for v in json.loads(req_result)['changes']}
         self.assertEqual('deleted' , res_index['/test1']['status'])
         self.assertEqual('changed' , res_index['/test2']['status'])
@@ -543,7 +543,7 @@ class TestSystem(TestCase):
         test_selective_conflict_resolve(self, DATA_DIR + 'client1/')
 
         # Test change log is correct
-        req_result = client.get_changes_in_version(session_token, version_id)[0]
+        req_result = client.get_changes_in_version(session_token, False, version_id)[0]
         res_index = { v['path'] : v for v in json.loads(req_result)['changes']}
 
         self.assertEqual('deleted', res_index['/test2']['status'])

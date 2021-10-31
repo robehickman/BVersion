@@ -10,18 +10,23 @@ def find_shttpfs_dir() -> str:
 
     cwd:        str = os.getcwd() + '/'
     split_path: str = cwd.split('/')
+    relative_cwd = []
 
     while True:
-        joined_path = '/'.join(split_path)
-        joined_path = '/' if joined_path == '' else '/' + joined_path + '/'
+        joined_path = '/' + cpjoin(*split_path) + '/'
 
         if os.path.isdir(joined_path + '.shttpfs'):
-            return joined_path
+            if relative_cwd != []:
+                joined_cwd = '/' + cpjoin(*reversed(relative_cwd)) + '/'
+            else:
+                joined_cwd = ''
+
+            return joined_path, joined_cwd
 
         if joined_path == []:
             raise SystemExit('Not a shttpfs checkout, could not find a .shttpfs directory in parent dirs')
 
-        split_path.pop()
+        relative_cwd.append(split_path.pop())
 
 #===============================================================================
 def question_user(prompt_text: str, valid_choices) -> str:
@@ -95,12 +100,22 @@ def make_dirs_if_dont_exist(path: str) -> None:
 ############################################################################################
 def cpjoin(*args: str) -> str:
     """ custom path join """
-    rooted = bool(args[0].startswith('/'))
-    def deslash(a): return a[1:] if a.startswith('/') else a
-    newargs = [deslash(arg) for arg in args]
-    path = os.path.join(*newargs)
-    if rooted: path = os.path.sep + path
-    return path
+    rooted = bool(args[0].strip().startswith('/'))
+    ended = bool(args[-1].strip().endswith('/'))
+
+    split_items = []
+
+    for path in args:
+        for item in path.split('/'):
+            if item != '':
+                split_items.append(item)
+
+    joined = '/'.join(split_items)
+
+    if rooted: joined = '/' + joined
+    if ended:  joined = joined + '/'
+    
+    return joined
 
 ############################################################################################
 class fileDetails (TypedDict):

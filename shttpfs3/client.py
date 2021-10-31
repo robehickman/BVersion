@@ -37,10 +37,9 @@ cdb:               client_db                   = None
 data_store:        client_filesystem_interface = None
 server_connection: client_http_request         = None
 
-working_copy_base_path: str = find_shttpfs_dir()
-
-
-
+working_copy_base_path: str
+relative_cwd: str
+working_copy_base_path, relative_cwd = find_shttpfs_dir()
 
 #===============================================================================
 def init(unlocked = False):
@@ -168,6 +167,21 @@ def get_files_in_version(session_token: str, show_head: bool, version_id: Option
         'version_id'    : '' if version_id is None else version_id})
     return req_result, headers
 
+
+#===============================================================================
+def normalise_filters(filters):
+    normalised_filters = []
+    for flter in filters:
+        if flter[0] != '*' and flter[0] != '/':
+            normalised_filters.append(cpjoin(relative_cwd, flter))
+        else:
+            normalised_filters.append(flter)
+
+    print(normalised_filters)
+    quit()
+
+    return normalised_filters
+
 #===============================================================================
 def get_if_set_or_quit(array, item, error):
     try: return array[item]
@@ -249,9 +263,12 @@ def find_local_changes(include_unchanged : bool = False) -> Tuple[dict, Dict[str
     old_state = cdb.get_manifest()
     current_state = get_file_list(config['data_dir'])
 
+    #Apply ignore filters
     current_state = [fle for fle in current_state if not
                      next((True for flter in config['ignore_filters']
                            if fnmatch.fnmatch(fle['path'], flter)), False)]
+
+    # ---------
     changed_files = find_manifest_changes(current_state, old_state, include_unchanged = include_unchanged)
     return changed_files
 
@@ -741,7 +758,98 @@ def commit(session_token: str, commit_message = ''):
 
 #===============================================================================
 def revert_files(session_token, args):
-    pass # TODO
+    meta = cdb.get_system_meta()
+
+    # Parse arguments
+    revert_all: bool          = False
+    use_head: bool            = False
+    version_id: Optional[str] = meta['have_revision']
+    stop_duplicate: bool      = False
+
+    while True:
+        if len(args) > 2 and args [1] == '--v': # Provide a version id to display
+            if stop_duplicate: raise SystemExit('Cannot use --v and -h at the same time')
+            stop_duplicate = True
+
+            version_id = get_if_set_or_quit(args, 2, 'Please specify a version id')
+            args = [args[0]] + args[3:]
+
+
+        elif len(args) > 1 and args [1] == '-h': # Use the head revision
+            if stop_duplicate: raise SystemExit('Cannot use --v and -h at the same time')
+            stop_duplicate = True
+
+            use_head = True
+            args = [args[0]] + args[2:]
+
+        elif len(args) > 1 and args [1] == '--all': # Revert all files
+            revert_all = True
+            args = [args[0]] + args[2:]
+
+        else:
+            break
+
+
+    # Get a list of all files in the specified version from the server
+    req_result, headers = get_files_in_version(session_token, use_head, version_id)
+
+    if headers['status'] != 'ok':
+        raise SystemExit('Could not get a list of files from the server.')
+
+    files_in_revision = json.loads(req_result)['files']
+
+
+    # Apply filters if needed
+    files_to_revert = []
+
+    if revert_all:
+        for path, fle in files_in_revision.items():
+            files_to_revert.append(fle['path'])
+
+    else:
+        filters = args[1:]
+
+        if filters == []:
+            raise SystemExit('No files provided')
+
+        filters = normalise_filters(filters)
+
+        # Work out which files are impacted by the filters
+        affected_local_files = []
+        for path, fle in files_in_revision.items():
+            matches_file = next((True for flter in filters if fnmatch.fnmatch(fle['path'], flter)), False)
+            if matches_file:
+                files_to_revert.append(fle['path'])
+
+    for fle in files_to_revert:
+        print(colored(fle, 'red'))
+
+    answer = question_user('You are about to revert all of the above files and local changes will be lost. is that OK?', ['Yes', 'No'])
+
+    if not answer:
+        raise SystemExit('Opperation Abort')
+
+    quit()
+
+    # ===============================
+    for fle in server_versions:
+        print('Pulling file: ' + fle['path'])
+
+        result, headers = server_connection.request("pull_file", {
+            'session_token' : session_token,
+            'repository'    : config['repository'],
+            'path'          : fle['path']}, gen = True)
+
+        # TODO if we are using the local revision, we need to add the file to the manifest,
+        # otherwise just download it.
+
+        if headers['status'] != 'ok':
+            errors.append(fle['path'])
+
+        else:
+            result(cpjoin(config['conflict_comparison_file_root'], fle['path']))
+
+    print(errors)
 
 
 #===============================================================================
@@ -769,14 +877,7 @@ def pull_ignore(filters):
     if len(client_changes) != 0:
         raise SystemExit("Please commit your local changes first.")
 
-    # Normalise filters
-    normalised_filters = []
-    for flter in filters:
-        if flter[0] != '*' and flter[0] != '/':
-            normalised_filters.append('/' + flter)
-        else:
-            normalised_filters.append(flter)
-    filters = normalised_filters
+    filters = normalise_filters(filters)
 
     # Work out which files are impacted by the filters
     affected_local_files = []
@@ -867,11 +968,18 @@ def list_versions(session_token):
 
 #===============================================================================
 def list_ignored_files():
-    pass
-    # TODO
-    # Get all local files
-    # Apply ignore filters to the list of files
-    # Display
+
+    current_state = get_file_list(config['data_dir'])
+
+    #Apply ignore filters
+    current_state = [fle for fle in current_state if
+                     next((True for flter in config['ignore_filters']
+                           if fnmatch.fnmatch(fle['path'], flter)), False)]
+
+    for fle in current_state:
+        print(fle['path'])
+    print()
+
 
 #===============================================================================
 def list_remote_files(session_token, args):
@@ -980,9 +1088,11 @@ def run():
 
     #----------------------------
     if len(args) == 0 or args[0] == '-h': print("""
-    Optional paramiters are shown after the command they can be used with.
 
-    Usage: shttpfs [command] [data or flags]
+    Usage: shttpfs [command] [optional paramiters] [various (see below)]
+
+    Optional paramiters are shown after the command they can be used with.
+    They MUST be placed before other paramiter data.
 
 
     Setup commands:
@@ -999,6 +1109,8 @@ def run():
                                    files, must be used when downloading previously pull
                                    ignored files. 
 
+    status                       : Display a list of files that have been changed locally since
+                                   the most recient commit.
 
     commit                       : Commit any changes to the working copy to the server
 
@@ -1006,22 +1118,36 @@ def run():
 
 
     revert [path] ...            : Revert the specified files to the version stored on the server.
+                                   When no optional paramiers are provided, gets files from the
+                                   revision the client has checked out.
+
+           --v [Version ID]      - Specify a version id. 
+
+           -h                    - Use the current head commit (most recient commit on the server)
 
 
-    status                       : Display a list of files that have been changed locally since
-                                   the most recient commit.
+    pull-ignore [filter] ...     : Remove the files specified by the provided filters from the manifest,
+                                   optionally delete them from the working copy, and add the provided
+                                   filters to the pull ignore file. Useful for saving disk space.
 
-    pull-ignore
+    list-ignored-files           : Lists files in the working copy that are being ignored due to .shttpfs_ignore
 
+    list-versions                : Lists all revisions on the server.
 
-    list-versions                : Lists all revisions on the server;
+    list-revision-files          : Lists all files in the specified revision.
 
+           --v [Version ID]      - Specify a version id (default head).
 
-    list-files   [version id]    : Lists all files in the specified revision
+           -l                    - Show changes in the revision the client currently has checked out.
+
+           -i                    - Show only items which have not beed pulled due to your pull ignore file.
     
 
-    list-changes [version id]    : Lists all changes in the specified revision
+    list-revision-changes        : Lists all changes in the specified revision.
 
+           --v [Version ID]      - Specify a version id (default head).
+
+           -l                    - Show changes in the revision the client currently has checked out.
     """)
 
     #----------------------------
@@ -1030,9 +1156,11 @@ def run():
         print('\nPrivate key:\n' + private_key.decode('utf8'))
         print('\nPublic key: \n' + public_key.decode('utf8') + '\n')
 
+
     #----------------------------
     elif args [0] == 'checkout':
         checkout(args)
+
 
     #----------------------------
     elif args [0] == 'update':
@@ -1047,6 +1175,14 @@ def run():
         update(session_token, include_unchanged = include_unchanged)
         print()
 
+
+    #----------------------------
+    elif args [0] == 'status':
+        init()
+
+        display_status()
+
+
     #----------------------------
     elif args [0] == 'commit':
         commit_message = ''
@@ -1060,6 +1196,7 @@ def run():
         commit(session_token, commit_message)
         print()
 
+
     #----------------------------
     elif args [0] == 'revert':
         init()
@@ -1068,11 +1205,6 @@ def run():
 
         revert_files(session_token, args)
 
-    #----------------------------
-    elif args [0] == 'status':
-        init()
-
-        display_status()
 
     #----------------------------
     elif args [0] == 'pull-ignore':
@@ -1091,6 +1223,13 @@ def run():
 
 
     #----------------------------
+    elif args [0] == 'list-ignored-files':
+        init()
+
+        list_ignored_files()
+
+
+    #----------------------------
     elif args [0] == 'list-versions':
         init()
         session_token: str = authenticate()
@@ -1100,14 +1239,7 @@ def run():
 
 
     #----------------------------
-    elif args [0] == 'list-ignored-files':
-        init()
-
-        list_ignored_files()
-
-
-    #----------------------------
-    elif args [0] == 'list-remote-files':
+    elif args [0] == 'list-revision-files':
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
