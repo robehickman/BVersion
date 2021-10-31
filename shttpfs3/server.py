@@ -1,4 +1,3 @@
-import sqlite3 as db
 from typing import Dict, Callable, Union, Optional
 import fcntl, os, json, time, base64, re, errno
 import pysodium # type: ignore
@@ -35,7 +34,7 @@ def init_server(new_config : dict):
     global config
     config = new_config
 
-    for repo_name, data in config['repositories'].items():
+    for data in config['repositories'].values():
         repository_path = data['path']
         sdb = get_server_db_instance_for_thread(repository_path)
         sdb.db_init()
@@ -184,7 +183,7 @@ def begin_auth(request: Request) -> Responce:
 
     # Issue a new token
     auth_token = sdb.issue_token(request.remote_addr)
-    
+
     return success({'auth_token' : auth_token})
 
 
@@ -530,8 +529,8 @@ def delete_files(request: Request) -> Responce:
             # updates the user lock expiry
             update_user_lock(repository_path, session_token)
             return success()
-        except Exception:
-            return fail() # pylint: disable=broad-except
+        except Exception: # pylint: disable=broad-except
+            return fail()
     return lock_access(repository_path, with_exclusive_lock)
 
 

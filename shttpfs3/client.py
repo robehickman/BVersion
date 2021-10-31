@@ -1,10 +1,11 @@
 from pprint import pprint
-import os, sys, time, json, base64, fnmatch, shutil, fcntl, errno, urllib.parse
+import os, sys, json, base64, fnmatch, shutil, fcntl, errno, urllib.parse
 
-from termcolor import colored
 from collections import defaultdict
 from typing import List, Dict, Tuple
 from typing_extensions import TypedDict
+
+from termcolor import colored
 
 import pysodium #type: ignore
 
@@ -58,7 +59,7 @@ def init(unlocked = False):
     #-----------
     config['ignore_filters']:      List[str] = ['/.shttpfs/*', '/.shttpfs_pull_ignore'] + ignore_filters.splitlines()
     config['pull_ignore_filters']: List[str] = pull_ignore_filters.splitlines()
-    
+
     # We append the pull ignore filters to the ignore filters in order to stop the client
     # sending files to the server that cannot be pulled
     config['ignore_filters'] += config['pull_ignore_filters']
@@ -200,7 +201,9 @@ def find_local_changes(include_unchanged : bool = False) -> Tuple[dict, Dict[str
 
 
 #===============================================================================
-def checkout():
+def checkout(args):
+    global config, server_connection
+
     plain_input = get_if_set_or_quit(args, 1, 'URL is missing')
 
     result = urllib.parse.urlparse(plain_input)
@@ -617,7 +620,6 @@ def commit(session_token: str, commit_message = ''):
         if headers['status'] == 'ok':
             changes_made += [{'status' : 'deleted', 'path' : fle['path']} for fle in changes['to_delete_on_server']]
         else:
-            raise Exception('delete failed')
             errors.append('Delete failed')
 
 
@@ -682,15 +684,15 @@ def commit(session_token: str, commit_message = ''):
 
 
 #===============================================================================
-def pull_ignore(session_token, filters):
+def pull_ignore(filters):
 
     # Normalise filters
     normalised_filters = []
-    for filter in filters:
-        if filter[0] != '*' and filter[0] != '/':
-            normalised_filters.append('/' + filter)
+    for flter in filters:
+        if flter[0] != '*' and flter[0] != '/':
+            normalised_filters.append('/' + flter)
         else:
-            normalised_filters.append(filter)
+            normalised_filters.append(flter)
     filters = normalised_filters
 
     # Work out which files are impacted by the filters
@@ -726,13 +728,13 @@ def pull_ignore(session_token, filters):
                 affected_dirs[os.path.dirname(full_path)] = None
 
             # Walk up the directory tree and remove any dirs that are now empty
-            for affected_path in affected_dirs.keys():
+            for affected_path in affected_dirs:
                 split_path = affected_path.split('/')
 
                 while True:
                     walking_path = '/' + '/'.join(split_path)
                     contents = os.listdir(walking_path)
-                    
+
                     if len(contents) == 0:
                         print(colored('Deleting empty directory: ' + walking_path, 'red'))
                         os.rmdir(walking_path)
@@ -807,7 +809,7 @@ def get_if_set_or_default(array, item, default):
 def draw_changeset(changes):
     binned_changes = defaultdict(list)
 
-    for path, file_info in changes.items():
+    for file_info in changes.values():
         binned_changes[file_info['status']].append(file_info)
 
     for status, group in binned_changes.items():
@@ -823,8 +825,6 @@ def draw_changeset(changes):
 
 #===============================================================================
 def run():
-    global server_connection, config
-
     args = list(sys.argv)[1:]
 
     #----------------------------
@@ -881,7 +881,7 @@ def run():
 
     #----------------------------
     elif args [0] == 'checkout':
-        checkout()
+        checkout(args)
 
 
     #----------------------------
@@ -914,7 +914,7 @@ def run():
     elif args [0] == 'revert':
         # Revert file or files to a prior version
 
-        # -v version number, or head if omitted            
+        # -v version number, or head if omitted
 
         # list of one or more files to revert
         pass # TODO
@@ -926,7 +926,7 @@ def run():
         client_changes = find_local_changes()
 
         print()
-        
+
         if len(client_changes) != 0:
             draw_changeset(client_changes)
 
@@ -937,8 +937,6 @@ def run():
 
     #----------------------------
     elif args [0] == 'pull-ignore':
-        # TODO needs testing
-
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
@@ -950,7 +948,7 @@ def run():
             raise SystemExit('No ignore filters provided')
 
         # ===============
-        pull_ignore(session_token, filters)
+        pull_ignore(filters)
 
 
     #----------------------------
@@ -976,6 +974,13 @@ def run():
             else:
                 print ('There are no commits')
 
+    #----------------------------
+    elif args [0] == 'list-ignored-files':
+        pass # TODO
+
+    #----------------------------
+    elif args [0] == 'list-pull-ignored-files':
+        pass # TODO
 
     #----------------------------
     elif args [0] == 'list-files':
