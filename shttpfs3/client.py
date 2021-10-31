@@ -686,6 +686,13 @@ def commit(session_token: str, commit_message = ''):
 #===============================================================================
 def pull_ignore(filters):
 
+    # Pull ignoring a file that has been changed, and using the delete
+    # option would result in data loss. We force a commit in this
+    # case so that cannot happen.
+    client_changes = find_local_changes()
+    if len(client_changes) != 0:
+        raise SystemExit("Please commit your local changes first.")
+
     # Normalise filters
     normalised_filters = []
     for flter in filters:
