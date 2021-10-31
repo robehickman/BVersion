@@ -58,6 +58,11 @@ def init(unlocked = False):
     #-----------
     config['ignore_filters']:      List[str] = ['/.shttpfs/*', '/.shttpfs_pull_ignore'] + ignore_filters.splitlines()
     config['pull_ignore_filters']: List[str] = pull_ignore_filters.splitlines()
+    
+    # We append the pull ignore filters to the ignore filters in order to stop the client
+    # sending files to the server that cannot be pulled
+    config['ignore_filters'] += config['pull_ignore_filters']
+
     config['data_dir']:            str       = working_copy_base_path
 
     config['conflict_comparison_file_root']  = cpjoin(config['data_dir'], '.shttpfs', 'conflict_files')
@@ -520,7 +525,7 @@ def update(session_token: str, test_overrides = None, include_unchanged = False)
                     have_file = True
 
                 if not have_file:
-                    print('Pulling file: ' + fle['path'])
+                    print(colored('Pulling file: ' + fle['path'], 'green'))
                     data_store.fs_put(fle['path'], req_result, additional_manifest_data = {'server_file_hash' : file_hash})
                     affected_files['pulled_files'].append(fle['path'])
 
@@ -536,7 +541,7 @@ def update(session_token: str, test_overrides = None, include_unchanged = False)
         print('Removing files deleted on the server...')
 
         for fle in changes['to_delete_on_client']:
-            print('Deleting file: ' + fle['path'])
+            print(colored('Deleting file: ' + fle['path'], 'red'))
 
             try: data_store.fs_delete(fle['path'])
             except OSError: print('Warning: remote deleted file does not exist locally.')
@@ -580,11 +585,6 @@ def commit(session_token: str, commit_message = ''):
         elif change['status'] == 'deleted':        changes['to_delete_on_server'].append(change)
         else: raise Exception('Unknown status type')
 
-
-
-    # TODO check if any added files would be pull ignored, and also hit files which exist
-    # on the server.
-
     if all(v == [] for k,v in changes.items()):
         print('Nothing to commit'); return None
 
@@ -606,7 +606,7 @@ def commit(session_token: str, commit_message = ''):
     # Files which have been deleted on the client and need deleting on server
     if changes['to_delete_on_server'] != []:
         for fle in changes['to_delete_on_server']:
-            print('Deleting: ' + fle['path'])
+            print(colored('Deleting: ' + fle['path'], 'red'))
 
         headers = server_connection.request("delete_files", {
             'session_token' : session_token,
@@ -624,7 +624,7 @@ def commit(session_token: str, commit_message = ''):
     # Push files
     if changes['client_push_files'] != [] and errors == []:
         for fle in changes['client_push_files']:
-            print('Sending: ' + fle['path'])
+            print(colored('Sending: ' + fle['path'], 'green'))
 
             headers = server_connection.send_file("push_file", {
                 'session_token' : session_token,
@@ -644,8 +644,6 @@ def commit(session_token: str, commit_message = ''):
                     'error' : headers,
                     'file' : fle['path']})
                 break
-
-
 
     # commit and release the lock. If errors occurred roll back and release the lock
     mode = 'commit' if errors == [] else 'abort'
@@ -684,12 +682,20 @@ def commit(session_token: str, commit_message = ''):
 
 
 #===============================================================================
-def pull_ignore(filters):
-    print(filters)
-    quit()
+def pull_ignore(session_token, filters):
 
+    # Normalise filters
+    normalised_filters = []
+    for filter in filters:
+        if filter[0] != '*' and filter[0] != '/':
+            normalised_filters.append('/' + filter)
+        else:
+            normalised_filters.append(filter)
+    filters = normalised_filters
+
+    # Work out which files are impacted by the filters
     affected_local_files = []
-    for fle in cdb.get_manifest():
+    for path, fle in cdb.get_manifest().items():
         affects_existing = next((True for flter in filters if fnmatch.fnmatch(fle['path'], flter)), False)
         if affects_existing:
             affected_local_files.append(fle['path'])
@@ -698,36 +704,66 @@ def pull_ignore(filters):
         for fle in affected_local_files:
             print(fle)
 
-        print('\nThe files listed above would be affected by this opperation.\n' +
-                'Should these files be deleted from the working copy, added to the\n ' +
-                '".shttpfs_ignore"  file, or left as is? Note that leaving the \n ' +
-                'will cause them to be removed from the server the next time commit is run')
+        print('\nThe files listed above in this working copy are affected by the provided\n' +
+                'filters. Should these files be deleted from the working copy, or left alone?\n ')
 
-    # Ask the user if we should delete the local files
-    choice = question_user(
-        "type 'ignore'  to add files to '.shttpfs_ignore'\n" +
-        "type 'delete'  to delete the files from the working copy\n" +
-        "type 'nothing' to remove the files from the local manifest,\n" +
-        "and leave the files alone\n",
-        valid_choices=['ignore', 'delete', 'nothing'])
+        # Ask the user if we should delete the local files
+        choice = question_user(
+            "type 'delete'  to delete the files from the working copy \n"+
+            "type 'nothing' to leave the files in the filesystem \n" +
+            "They will be added to your pull ignore file in either case.\n",
+            valid_choices=['delete', 'nothing'])
 
-    # read args
-    if choice == 'ignore':
-        ignore_fle = file_get_contents(working_copy_base_path + '.shttpfs_ignore')
-        ignore_fle += "\n".join(filters)
-        file_put_contents(working_copy_base_path + '.shttpfs_ignore', ignore_fle)
+        if choice == 'delete':
 
-    elif choice == 'delete':
+            affected_dirs = {}
+
+            for path in affected_local_files:
+                full_path = cpjoin(working_copy_base_path, path)
+                print(colored('Deleting local file: ' + full_path, 'red'))
+                os.remove(full_path)
+
+                affected_dirs[os.path.dirname(full_path)] = None
+
+            # Walk up the directory tree and remove any dirs that are now empty
+            for affected_path in affected_dirs.keys():
+                split_path = affected_path.split('/')
+
+                while True:
+                    walking_path = '/' + '/'.join(split_path)
+                    contents = os.listdir(walking_path)
+                    
+                    if len(contents) == 0:
+                        print(colored('Deleting empty directory: ' + walking_path, 'red'))
+                        os.rmdir(walking_path)
+                        split_path.pop()
+                    else:
+                        break
+
+        elif choice == 'nothing':
+            # We do not need to do anything in this case
+            pass
+
+        # Remove the affected files from the manifest
         for path in affected_local_files:
-            os.remove(cpjoin(working_copy_base_path, path))
+            cdb.remove_file_from_manifest(path)
+        cdb.commit()
 
-    elif choice == 'nothing':
-        # We do not need to do anything in this case
-        pass
+    # Add the filters to the pull ignore file
+    pull_ignore_file_path = cpjoin(working_copy_base_path, '.shttpfs_pull_ignore')
+    pull_ignore_filters: str = file_or_default(pull_ignore_file_path, b'').decode('utf8')
+    pull_ignore_filters += "\n"
 
-    # Remove the affected files from the manifest
-    for path in affected_local_files:
-        cdb.remove_file_from_manifest(path)
+    for flter in filters:
+        pull_ignore_filters += flter + "\n"
+
+    file_put_contents(pull_ignore_file_path, pull_ignore_filters.encode('utf8'))
+
+#===============================================================================
+def get_pull_ignored():
+    # TODO show a list of server files that are being ignored
+
+    pass
 
 
 #===============================================================================
@@ -908,7 +944,7 @@ def run():
         update_manifest(session_token)
 
         # ===============
-        filters = args [2:]
+        filters = args [1:]
 
         if filters == []:
             raise SystemExit('No ignore filters provided')
