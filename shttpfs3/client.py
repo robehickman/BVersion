@@ -2,7 +2,7 @@ from pprint import pprint
 import os, sys, json, base64, fnmatch, shutil, fcntl, errno, urllib.parse
 
 from collections import defaultdict
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from typing_extensions import TypedDict
 
 from termcolor import colored
@@ -38,6 +38,9 @@ data_store:        client_filesystem_interface = None
 server_connection: client_http_request         = None
 
 working_copy_base_path: str = find_shttpfs_dir()
+
+
+
 
 #===============================================================================
 def init(unlocked = False):
@@ -91,7 +94,8 @@ def update_manifest(session_token):
 
         # As the old manifest format did not store server file hashes, we need to get
         # them from the server and add them to the manifest
-        req_result, headers = get_files_in_version(session_token, old_manifest['have_revision'])
+        req_result, headers = get_files_in_version(session_token, show_head = False,
+                                                   version_id = old_manifest['have_revision'])
 
         if headers['status'] != 'ok':
             raise Exception('server error')
@@ -139,6 +143,58 @@ def update_manifest(session_token):
 
         shutil.move(old_manifest_path, old_manifest_path + '.old.back')
 
+#===============================================================================
+def get_versions(session_token: str):
+    req_result, headers = server_connection.request("list_versions", {
+        'session_token' : session_token,
+        'repository'    : config['repository']})
+    return req_result, headers
+
+#===============================================================================
+def get_changes_in_version(session_token: str, show_head: bool, version_id: Optional[str]):
+    req_result, headers = server_connection.request("list_changes", {
+        'session_token' : session_token,
+        'repository'    : config['repository'],
+        'show_head'     : str(int(show_head)).encode('utf8'),
+        'version_id'    : '' if version_id is None else version_id})
+    return req_result, headers
+
+#===============================================================================
+def get_files_in_version(session_token: str, show_head: bool, version_id: Optional[str]):
+    req_result, headers = server_connection.request("list_files", {
+        'session_token' : session_token,
+        'repository'    : config['repository'],
+        'show_head'     : str(int(show_head)).encode('utf8'),
+        'version_id'    : '' if version_id is None else version_id})
+    return req_result, headers
+
+#===============================================================================
+def get_if_set_or_quit(array, item, error):
+    try: return array[item]
+    except IndexError: raise SystemExit(error)
+
+#===============================================================================
+def get_if_set_or_default(array, item, default):
+    try: return array[item]
+    except IndexError: return default
+
+#===============================================================================
+def draw_changeset(changes):
+    binned_changes = defaultdict(list)
+
+    for file_info in changes.values():
+        binned_changes[file_info['status']].append(file_info)
+
+    for status, group in binned_changes.items():
+        for item in group:
+            if status == 'deleted':
+                color = 'red'
+            elif status == 'changed':
+                color = 'yellow'
+            else:
+                color = 'green'
+
+            print(colored(status + ' : ' +  item['path'], color))
 
 #===============================================================================
 def authenticate(previous_token: str = None) -> str:
@@ -684,6 +740,26 @@ def commit(session_token: str, commit_message = ''):
 
 
 #===============================================================================
+def revert_files(session_token, args):
+    pass # TODO
+
+
+#===============================================================================
+def display_status():
+    client_changes = find_local_changes()
+
+    print()
+
+    if len(client_changes) != 0:
+        draw_changeset(client_changes)
+
+    else:
+        print('Nothing changed')
+
+    print()
+
+
+#===============================================================================
 def pull_ignore(filters):
 
     # Pull ignoring a file that has been changed, and using the delete
@@ -768,67 +844,134 @@ def pull_ignore(filters):
 
     file_put_contents(pull_ignore_file_path, pull_ignore_filters.encode('utf8'))
 
-#===============================================================================
-def get_pull_ignored():
-    # TODO show a list of server files that are being ignored
 
+#===============================================================================
+def list_versions(session_token):
+    req_result, headers = get_versions(session_token)
+
+    if headers['status'] == 'ok':
+        versions = list(reversed(json.loads(req_result)['versions']))
+
+        print()
+
+        if len(versions) != 0:
+            for vers in versions:
+                print(colored('Commit:  ' + vers['id'], 'yellow'))
+                print('Date:    ' + vers['utc_date_time'] + ' (UTC) ')
+                print('By user: ' + vers['commit_by'])
+                print('\n'        + vers['commit_message'])
+                print()
+        else:
+            print ('There are no commits')
+
+
+#===============================================================================
+def list_ignored_files():
     pass
+    # TODO
+    # Get all local files
+    # Apply ignore filters to the list of files
+    # Display
+
+#===============================================================================
+def list_remote_files(session_token, args):
+    meta = cdb.get_system_meta()
+
+    # Parse arguments
+    show_head: bool           = True
+    version_id: Optional[str] = None
+    only_show_ignored: bool   = False
+    stop_duplicate : bool     = False
+
+    while True:
+        if len(args) > 2 and args [1] == '--v': # Provide a version id to display
+            if stop_duplicate: raise SystemExit('Cannot use --v and -l at the same time')
+            stop_duplicate = True
+
+            show_head = False
+            version_id = get_if_set_or_quit(args, 2, 'Please specify a version id')
+            args = [args[0]] + args[3:]
+
+
+        elif len(args) > 1 and args [1] == '-l': # Show files relitive to the revision the client is currently on
+            if stop_duplicate: raise SystemExit('Cannot use --v and -l at the same time')
+            stop_duplicate = True
+
+            show_head = False
+            version_id = meta['have_revision']
+            args = [args[0]] + args[2:]
+
+
+        elif len(args) > 1 and args [1] == '-i': # Only show pull ignored files
+            only_show_ignored = True
+            args = [args[0]] + args[2:]
+
+        else:
+            break
+
+    # -----------
+    req_result, headers = get_files_in_version(session_token, show_head, version_id)
+
+    if headers['status'] == 'ok':
+
+        files_in_revision = json.loads(req_result)['files']
+
+        if only_show_ignored:
+            filtered_files_in_revision = {}
+            for path, fle in files_in_revision.items():
+                if next((True for flter in config['pull_ignore_filters'] if fnmatch.fnmatch(fle['path'], flter)), False):
+                    filtered_files_in_revision[path] = fle
+            files_in_revision = filtered_files_in_revision
+
+        for fle in files_in_revision:
+            print(fle)
+        print()
+
+        if only_show_ignored:
+            print("Showing remote files ommited from this working copy due to your pull ignore filters\n")
 
 
 #===============================================================================
-def get_versions(session_token: str):
-    req_result, headers = server_connection.request("list_versions", {
-        'session_token' : session_token,
-        'repository'    : config['repository']})
-    return req_result, headers
+def list_changes_in_revision(session_token, args):
+    meta = cdb.get_system_meta()
 
-#===============================================================================
-def get_changes_in_version(session_token: str, version_id):
-    req_result, headers = server_connection.request("list_changes", {
-        'session_token' : session_token,
-        'repository'    : config['repository'],
-        'version_id'    : version_id })
-    return req_result, headers
+    # Parse arguments
+    show_head: bool           = True
+    version_id: Optional[str] = None
 
-#===============================================================================
-def get_files_in_version(session_token, version_id):
-    req_result, headers = server_connection.request("list_files", {
-        'session_token' : session_token,
-        'repository'    : config['repository'],
-        'version_id'    : version_id})
+    while True:
+        if len(args) > 2 and args [1] == '--v': # Provide a version id to display
+            if stop_duplicate: raise SystemExit('Cannot use --v and -l at the same time')
+            stop_duplicate = True
 
-    return req_result, headers
+            show_head = False
+            version_id = get_if_set_or_quit(args, 2, 'Please specify a version id')
+            args = [args[0]] + args[3:]
 
 
-#===============================================================================
-#===============================================================================
-#===============================================================================
-#===============================================================================
-#===============================================================================
-def get_if_set_or_quit(array, item, error):
-    try: return array[item]
-    except IndexError: raise SystemExit(error)
+        elif len(args) > 1 and args [1] == '-l': # Show files relitive to the revision the client is currently on
+            if stop_duplicate: raise SystemExit('Cannot use --v and -l at the same time')
+            stop_duplicate = True
 
-def get_if_set_or_default(array, item, default):
-    try: return array[item]
-    except IndexError: return default
+            show_head = False
+            version_id = meta['have_revision']
+            args = [args[0]] + args[2:]
 
-def draw_changeset(changes):
-    binned_changes = defaultdict(list)
+        else:
+            break
 
-    for file_info in changes.values():
-        binned_changes[file_info['status']].append(file_info)
+    # ===============================
+    req_result, headers = get_changes_in_version(session_token, show_head, version_id)
 
-    for status, group in binned_changes.items():
-        for item in group:
-            if status == 'deleted':
-                color = 'red'
-            elif status == 'changed':
-                color = 'yellow'
-            else:
-                color = 'green'
+    if headers['status'] == 'ok':
+        changes = json.loads(req_result)['changes']
+        changes = {item['path'] : item for item in changes}
 
-            print(colored(status + ' : ' +  item['path'], color))
+        print()
+        draw_changeset(changes)
+        print()
+
+
 
 #===============================================================================
 def run():
@@ -890,7 +1033,6 @@ def run():
     elif args [0] == 'checkout':
         checkout(args)
 
-
     #----------------------------
     elif args [0] == 'update':
         # Should we do a full comparison, including unchanged files?
@@ -919,28 +1061,17 @@ def run():
 
     #----------------------------
     elif args [0] == 'revert':
-        # Revert file or files to a prior version
+        init()
+        session_token: str = authenticate()
+        update_manifest(session_token)
 
-        # -v version number, or head if omitted
-
-        # list of one or more files to revert
-        pass # TODO
+        revert_files(session_token, args)
 
     #----------------------------
     elif args [0] == 'status':
         init()
 
-        client_changes = find_local_changes()
-
-        print()
-
-        if len(client_changes) != 0:
-            draw_changeset(client_changes)
-
-        else:
-            print('Nothing changed')
-
-        print()
+        display_status()
 
     #----------------------------
     elif args [0] == 'pull-ignore':
@@ -964,60 +1095,29 @@ def run():
         session_token: str = authenticate()
         update_manifest(session_token)
 
-        req_result, headers = get_versions(session_token)
+        list_versions(session_token)
 
-        if headers['status'] == 'ok':
-            versions = list(reversed(json.loads(req_result)['versions']))
-
-            print()
-
-            if len(versions) != 0:
-                for vers in versions:
-                    print(colored('Commit:  ' + vers['id'], 'yellow'))
-                    print('Date:    ' + vers['utc_date_time'] + ' (UTC) ')
-                    print('By user: ' + vers['commit_by'])
-                    print('\n'        + vers['commit_message'])
-                    print()
-            else:
-                print ('There are no commits')
 
     #----------------------------
     elif args [0] == 'list-ignored-files':
-        pass # TODO
+        init()
+
+        list_ignored_files()
+
 
     #----------------------------
-    elif args [0] == 'list-pull-ignored-files':
-        pass # TODO
-
-    #----------------------------
-    elif args [0] == 'list-files':
+    elif args [0] == 'list-remote-files':
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
 
-        version_id = get_if_set_or_quit(args, 1, 'Please specify a version id')
-        req_result, headers = get_files_in_version(session_token, version_id)
-
-        if headers['status'] == 'ok':
-            print()
-            for fle in json.loads(req_result)['files']:
-                print(fle)
-            print()
+        list_remote_files(session_token, args)
 
 
     #----------------------------
-    elif args [0] == 'list-changes':
+    elif args [0] == 'list-revision-changes':
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
 
-        version_id = get_if_set_or_quit(args, 1, 'Please specify a version id')
-        req_result, headers = get_changes_in_version(session_token, version_id)
-
-        if headers['status'] == 'ok':
-            changes = json.loads(req_result)['changes']
-            changes = {item['path'] : item for item in changes}
-
-            print()
-            draw_changeset(changes)
-            print()
+        list_changes_in_revision(session_token, args)

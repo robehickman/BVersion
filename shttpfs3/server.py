@@ -382,7 +382,16 @@ def list_changes(request: Request) -> Responce:
 
     #===
     data_store = versioned_storage(config['repositories'][repository]['path'])
-    return success({}, {'changes' : data_store.get_commit_changes(request.headers['version_id'])})
+
+    show_head = request.headers['show_head']
+
+    if show_head:
+        version_id = data_store.get_head()
+    else:
+        version_id = request.headers['version_id']
+
+    #===
+    return success({}, {'changes' : data_store.get_commit_changes(version_id)})
 
 
 #===============================================================================
@@ -397,7 +406,15 @@ def list_files(request: Request) -> Responce:
 
     #===
     data_store = versioned_storage(config['repositories'][repository]['path'])
-    return success({}, {'files' : data_store.get_commit_files(request.headers['version_id'])})
+
+    show_head = request.headers['show_head']
+
+    if show_head:
+        version_id = data_store.get_head()
+    else:
+        version_id = request.headers['version_id']
+
+    return success({}, {'files' : data_store.get_commit_files(version_id)})
 
 
 #===============================================================================
