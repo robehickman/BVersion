@@ -23,13 +23,14 @@ from shttpfs3 import version_numbers
 
 #===============================================================================
 class clientConfiguration(TypedDict, total=False):
-    server_domain:       str
-    user:                str
-    repository:          str
-    private_key:         str # base64 encoded private key
-    ignore_filters:      List[str]
-    pull_ignore_filters: List[str]
-    data_dir:            str
+    server_domain:            str
+    user:                     str
+    repository:               str
+    private_key:              str # base64 encoded private key
+    ignore_filters:           List[str]
+    pull_ignore_filters:      List[str]
+    data_dir:                 str
+    conflict_resolution_file: str
 
 #===============================================================================
 config:            clientConfiguration         = None
@@ -316,7 +317,7 @@ def checkout(args):
 
 
 #===============================================================================
-def resolve_update_conflicts(session_token: str, changes: list, testing: bool, test_overrides: dict):
+def resolve_update_conflicts(session_token: str, changes: list, version_id: str, testing: bool, test_overrides: dict):
 
     # The unit test code needs to be able to override some of the function
     # of this code, and cause partial checkout failiures. This var allows
@@ -491,7 +492,10 @@ def resolve_update_conflicts(session_token: str, changes: list, testing: bool, t
                     result, headers = server_connection.request("pull_file", {
                         'session_token' : session_token,
                         'repository'    : config['repository'],
-                        'path'          : fle['path']}, gen = True)
+                        'path'          : fle['path'],
+                        'use_head'      : str(int(False)),
+                        'version_id'    : version_id
+                        }, gen = True)
 
                     if headers['status'] != 'ok':
                         errors.append(fle['path'])
@@ -557,7 +561,7 @@ def update(session_token: str, test_overrides = None, include_unchanged = False)
 
     # Files which are in conflict
     if changes['conflict_files'] != []:
-        changes = resolve_update_conflicts(session_token, changes, testing, test_overrides)
+        changes = resolve_update_conflicts(session_token, changes, result['head'], testing, test_overrides)
 
     # Pull and delete from remote to local
     affected_files = {
@@ -581,7 +585,10 @@ def update(session_token: str, test_overrides = None, include_unchanged = False)
             req_result, headers = server_connection.request("pull_file", {
                 'session_token' : session_token,
                 'repository'    : config['repository'],
-                'path'          : fle['path']}, gen = True)
+                'path'          : fle['path'],
+                'use_head'      : str(int(False)),
+                'version_id'    : result['head']
+                }, gen = True)
 
             if headers['status'] != 'ok':
                 raise SystemExit('Failed to pull file')
@@ -755,6 +762,8 @@ def commit(session_token: str, commit_message = ''):
 
 #===============================================================================
 def revert_files(session_token, args):
+    # TODO needs testing
+
     meta = cdb.get_system_meta()
 
     # Parse arguments
@@ -800,7 +809,7 @@ def revert_files(session_token, args):
     files_to_revert = []
 
     if revert_all:
-        for path, fle in files_in_revision.items():
+        for fle in files_in_revision.values():
             files_to_revert.append(fle['path'])
 
     else:
@@ -812,41 +821,54 @@ def revert_files(session_token, args):
         filters = normalise_filters(filters)
 
         # Work out which files are impacted by the filters
-        affected_local_files = []
-        for path, fle in files_in_revision.items():
+        for fle in files_in_revision.values():
             matches_file = next((True for flter in filters if fnmatch.fnmatch(fle['path'], flter)), False)
             if matches_file:
                 files_to_revert.append(fle['path'])
 
+    if files_to_revert == []:
+        raise SystemExit('Could not find files in the specified revision')
+
+
+    print()
     for fle in files_to_revert:
         print(colored(fle, 'red'))
 
-    answer = question_user('You are about to revert all of the above files and local changes will be lost. is that OK?', ['Yes', 'No'])
+    print()
 
-    if not answer:
+    answer = question_user('You are about to revert all of the above files and local changes ' +
+                           'will be lost. is that OK? (yes / no)',
+                           valid_choices = ['yes', 'no'])
+
+    if answer == 'no':
         raise SystemExit('Opperation Abort')
 
-    quit()
-
     # ===============================
-    for fle in server_versions:
-        print('Pulling file: ' + fle['path'])
+    for file_path in files_to_revert:
+        print('Reverting file: ' + file_path)
 
         result, headers = server_connection.request("pull_file", {
             'session_token' : session_token,
             'repository'    : config['repository'],
-            'path'          : fle['path']}, gen = True)
+            'path'          : file_path,
+            'use_head'      : str(int(use_head)),
+            'version_id'    : '' if version_id is None else version_id
+            }, gen = True)
 
-        # TODO if we are using the local revision, we need to add the file to the manifest,
-        # otherwise just download it.
 
-        if headers['status'] != 'ok':
-            errors.append(fle['path'])
+        if headers['status'] == 'ok':
+            # If we are using the local revision, we need to add the file to the manifest,
+            # otherwise just download it so it will appear as a changed file, and can be committed.
+            if version_id == meta['have_revision']:
+                file_hash = json.loads(headers['file_info_json'])['hash']
+                data_store.fs_put(file_path, req_result, additional_manifest_data = {'server_file_hash' : file_hash})
 
+            else:
+                tmp_path = cpjoin(working_copy_base_path, '.shttpfs', 'download_tmp')
+                result(tmp_path)
+                os.rename(tmp_path, cpjoin(working_copy_base_path, file_path))
         else:
-            result(cpjoin(config['conflict_comparison_file_root'], fle['path']))
-
-    print(errors)
+            print('error with downloading ' + file_path)
 
 
 #===============================================================================
@@ -913,7 +935,7 @@ def pull_ignore(filters):
                 split_path = affected_path.split('/')
 
                 while True:
-                    walking_path = '/' + '/'.join(split_path)
+                    walking_path = '/' + cpjoin(*split_path)
                     contents = os.listdir(walking_path)
 
                     if len(contents) == 0:
@@ -983,27 +1005,26 @@ def list_remote_files(session_token, args):
     meta = cdb.get_system_meta()
 
     # Parse arguments
-    show_head: bool           = True
-    version_id: Optional[str] = None
+    show_head: bool           = False
+    version_id: Optional[str] = meta['have_revision']
     only_show_ignored: bool   = False
     stop_duplicate : bool     = False
 
     while True:
         if len(args) > 2 and args [1] == '--v': # Provide a version id to display
-            if stop_duplicate: raise SystemExit('Cannot use --v and -l at the same time')
+            if stop_duplicate: raise SystemExit('Cannot use --v and -h at the same time')
             stop_duplicate = True
 
-            show_head = False
             version_id = get_if_set_or_quit(args, 2, 'Please specify a version id')
             args = [args[0]] + args[3:]
 
 
-        elif len(args) > 1 and args [1] == '-l': # Show files relitive to the revision the client is currently on
-            if stop_duplicate: raise SystemExit('Cannot use --v and -l at the same time')
+        elif len(args) > 1 and args [1] == '-h': # Show files relitive to the head revision
+            if stop_duplicate: raise SystemExit('Cannot use --v and -h at the same time')
             stop_duplicate = True
 
-            show_head = False
-            version_id = meta['have_revision']
+            show_head = True
+            version_id = None
             args = [args[0]] + args[2:]
 
 
@@ -1041,26 +1062,25 @@ def list_changes_in_revision(session_token, args):
     meta = cdb.get_system_meta()
 
     # Parse arguments
-    show_head: bool           = True
-    version_id: Optional[str] = None
+    show_head: bool           = False
+    version_id: Optional[str] = meta['have_revision']
     stop_duplicate: bool      = False
 
     while True:
         if len(args) > 2 and args [1] == '--v': # Provide a version id to display
-            if stop_duplicate: raise SystemExit('Cannot use --v and -l at the same time')
+            if stop_duplicate: raise SystemExit('Cannot use --v and -h at the same time')
             stop_duplicate = True
 
-            show_head = False
             version_id = get_if_set_or_quit(args, 2, 'Please specify a version id')
             args = [args[0]] + args[3:]
 
 
-        elif len(args) > 1 and args [1] == '-l': # Show files relitive to the revision the client is currently on
-            if stop_duplicate: raise SystemExit('Cannot use --v and -l at the same time')
+        elif len(args) > 1 and args [1] == '-h': # Show files relitive to the head revision
+            if stop_duplicate: raise SystemExit('Cannot use --v and -h at the same time')
             stop_duplicate = True
 
-            show_head = False
-            version_id = meta['have_revision']
+            show_head = True
+            version_id = None
             args = [args[0]] + args[2:]
 
         else:
@@ -1131,11 +1151,12 @@ def run():
 
     list-versions                : Lists all revisions on the server.
 
-    list-revision-files          : Lists all files in the specified revision.
+    list-revision-files          : Lists all files in the specified revision. When no arguments are provided,
+                                   shows files in the revision the client has checked out.
 
            --v [Version ID]      - Specify a version id (default head).
 
-           -l                    - Show changes in the revision the client currently has checked out.
+           -h                    - Show changes in the head revision
 
            -i                    - Show only items which have not beed pulled due to your pull ignore file.
     
@@ -1144,7 +1165,7 @@ def run():
 
            --v [Version ID]      - Specify a version id (default head).
 
-           -l                    - Show changes in the revision the client currently has checked out.
+           -h                    - Show changes in the head revision
     """)
 
     #----------------------------

@@ -1,16 +1,16 @@
 import os.path, hashlib, errno, copy
-from typing import List, Dict, Any, cast
+from typing import List, Dict, Any, cast, Tuple
 from typing_extensions import TypedDict
 from termcolor import colored
 
 #===============================================================================
-def find_shttpfs_dir() -> str:
+def find_shttpfs_dir() -> Tuple[str, str]:
     """ Looks up the directory tree from the pwd to find a directory containing
     a .shttpfs directory, and returns that path """
 
-    cwd:        str = os.getcwd() + '/'
-    split_path: str = cwd.split('/')
-    relative_cwd = []
+    cwd:        str         = os.getcwd() + '/'
+    split_path: List[str]   = cwd.split('/')
+    relative_cwd: List[str] = []
 
     while True:
         joined_path = '/' + cpjoin(*split_path) + '/'
@@ -114,7 +114,7 @@ def cpjoin(*args: str) -> str:
 
     if rooted: joined = '/' + joined
     if ended:  joined = joined + '/'
-    
+
     return joined
 
 ############################################################################################

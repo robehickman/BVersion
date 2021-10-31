@@ -338,10 +338,14 @@ class versioned_storage:
 
 
 #===============================================================================
-    def get_file_info_from_path(self, file_path: str):
-        head = self.get_head()
-        if head == 'root': raise IOError('There are no commits!')
-        tree_root = self.read_commit_index_object(head)['tree_root']
+    def get_file_info_from_path(self, file_path: str, version_id = None):
+
+        if version_id is None:
+            version_id = self.get_head()
+            if version_id == 'root': raise IOError('There are no commits!')
+
+        # ========================
+        tree_root = self.read_commit_index_object(version_id)['tree_root']
 
         def helper(tree_root, path):
             tree_contents = self.read_tree_index_object(tree_root)
@@ -367,7 +371,7 @@ class versioned_storage:
         return sfs.cpjoin(self.base_path, 'files', file_hash[:2])
 
 #===============================================================================
-    def verify_fs() -> str:
+    def verify_fs(self) -> str:
         """
         Read and rehash the entire filesystem and ensure than hashes have not changed
         """
@@ -382,7 +386,7 @@ class versioned_storage:
             commit = self.read_commit_index_object(pointer)
 
 
-            commit_tree = read_dir_tree(self, commit['tree_root'])
+            commit_tree = self.read_dir_tree(commit['tree_root'])
 
             pointer = commit['parent']
             if pointer == 'root': break
@@ -390,7 +394,7 @@ class versioned_storage:
 
         return commits
 
-        head = get_head()
+        head = self.get_head()
 
         # walk up the commit change to the first version
 

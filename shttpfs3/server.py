@@ -349,7 +349,17 @@ def pull_file(request: Request) -> Responce:
 
     #===
     data_store = versioned_storage(config['repositories'][repository]['path'])
-    file_info = data_store.get_file_info_from_path(request.headers['path'])
+
+    use_head = bool(int(request.headers['use_head']))
+
+    if use_head:
+        version_id = data_store.get_head()
+    else:
+        version_id = request.headers['version_id']
+
+
+    # =============
+    file_info = data_store.get_file_info_from_path(request.headers['path'], version_id = version_id)
 
     full_file_path: str = cpjoin(data_store.get_file_directory_path(file_info['hash']), file_info['hash'][2:])
     return success({'file_info_json' : json.dumps(file_info)}, ServeFile(full_file_path))
