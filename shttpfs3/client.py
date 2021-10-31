@@ -177,9 +177,6 @@ def normalise_filters(filters):
         else:
             normalised_filters.append(flter)
 
-    print(normalised_filters)
-    quit()
-
     return normalised_filters
 
 #===============================================================================
