@@ -938,6 +938,7 @@ def list_changes_in_revision(session_token, args):
     # Parse arguments
     show_head: bool           = True
     version_id: Optional[str] = None
+    stop_duplicate: bool      = False
 
     while True:
         if len(args) > 2 and args [1] == '--v': # Provide a version id to display

@@ -383,7 +383,7 @@ def list_changes(request: Request) -> Responce:
     #===
     data_store = versioned_storage(config['repositories'][repository]['path'])
 
-    show_head = request.headers['show_head']
+    show_head = bool(int(request.headers['show_head']))
 
     if show_head:
         version_id = data_store.get_head()
@@ -407,7 +407,7 @@ def list_files(request: Request) -> Responce:
     #===
     data_store = versioned_storage(config['repositories'][repository]['path'])
 
-    show_head = request.headers['show_head']
+    show_head = bool(int(request.headers['show_head']))
 
     if show_head:
         version_id = data_store.get_head()
