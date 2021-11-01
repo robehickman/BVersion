@@ -662,9 +662,9 @@ def update(session_token: str, test_overrides = None, include_unchanged = False)
         print(item)
 
     # ==================
-    print('\n-------------------------------')
-    print(colored('At revision: ' + result['version_id']), 'yellow')
-    print('By ' + result['commit_by'] + ' on ' + result['commit_time']), 'yellow')
+    print('\n-------------------------------\n')
+    print(colored('At revision: ' + result['head'], 'yellow'))
+    print('By ' + result['commit_by'] + ' on ' + result['commit_time'] + ' (UTC)')
     print('\n' + result['commit_msg'])
 
     # ==================
@@ -832,6 +832,16 @@ def revert(session_token, args):
     files_to_revert = []
 
     if revert_all:
+        # TODO when we do a revert all, we should diff files in the manifest vs ones in the
+        # FS, and delete any that don't exist in the revision we are reverting to
+
+        # Get files in manifest
+
+        # For any files that exist in the remote but not locally, create them
+
+        # For any files that do not exist in the remote, but do locally, delete them
+
+
         for fle in files_in_revision.values():
             files_to_revert.append(fle['path'])
 
@@ -1258,7 +1268,7 @@ def run():
 
 
     #----------------------------
-    elif args [0] == 'pull-ignore': # TODO need to test
+    elif args [0] == 'pull-ignore':
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
