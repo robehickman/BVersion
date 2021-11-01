@@ -662,10 +662,16 @@ def update(session_token: str, test_overrides = None, include_unchanged = False)
         print(item)
 
     # ==================
+    print('\n-------------------------------')
+    print(colored('At revision: ' + result['version_id']), 'yellow')
+    print('By ' + result['commit_by'] + ' on ' + result['commit_time']), 'yellow')
+    print('\n' + result['commit_msg'])
+
+    # ==================
     if changes['to_delete_on_server'] != [] or changes['client_push_files'] != []:
-        print('There are local changes to commit')
+        print('\nThere are local changes to commit')
     else:
-        print('Update OK')
+        print('\nUpdate OK')
 
     return affected_files
 
@@ -754,7 +760,7 @@ def commit(session_token: str, commit_message = ''):
         return None
 
     elif headers['status'] == 'ok':
-        print('Commit ok')
+        print('\nCommit ok')
 
         # Update the manifest
         manifest_meta = cdb.get_system_meta()
@@ -786,7 +792,7 @@ def revert(session_token, args):
     stop_duplicate: bool      = False
 
     while True:
-        if len(args) > 2 and args [1] == '--v': # Provide a version id to display
+        if len(args) > 1 and args [1] == '--v': # Provide a version id to display
             if stop_duplicate: raise SystemExit('Cannot use --v and -h at the same time')
             stop_duplicate = True
 
@@ -1028,7 +1034,7 @@ def list_remote_files(session_token, args):
     stop_duplicate : bool     = False
 
     while True:
-        if len(args) > 2 and args [1] == '--v': # Provide a version id to display
+        if len(args) > 1 and args [1] == '--v': # Provide a version id to display
             if stop_duplicate: raise SystemExit('Cannot use --v and -h at the same time')
             stop_duplicate = True
 
@@ -1088,7 +1094,7 @@ def list_changes_in_revision(session_token, args):
     stop_duplicate: bool      = False
 
     while True:
-        if len(args) > 2 and args [1] == '--v': # Provide a version id to display
+        if len(args) > 1 and args [1] == '--v': # Provide a version id to display
             if stop_duplicate: raise SystemExit('Cannot use --v and -h at the same time')
             stop_duplicate = True
 
@@ -1264,6 +1270,7 @@ def run():
             raise SystemExit('No ignore filters provided')
 
         # ===============
+        print()
         pull_ignore(filters)
 
 
@@ -1284,7 +1291,7 @@ def run():
 
 
     #----------------------------
-    elif args [0] == 'list-files': # TODO need to test
+    elif args [0] == 'list-files':
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
@@ -1293,7 +1300,7 @@ def run():
 
 
     #----------------------------
-    elif args [0] == 'list-changes': # TODO need to test
+    elif args [0] == 'list-changes':
         init()
         session_token: str = authenticate()
         update_manifest(session_token)

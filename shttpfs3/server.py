@@ -331,7 +331,15 @@ def find_changed(request: Request) -> Responce:
     # ==================
     sorted_changes = merge_client_and_server_changes(server_changes, client_changes)
 
-    return success({}, {'head' : head, 'sorted_changes': sorted_changes})
+    commit_details = data_store.read_commit_index_object(head)
+
+    return success({}, {
+        'head'           : head,
+        'commit_by'      : commit_details['commit_by'],
+        'commit_time'    : commit_details['utc_date_time'],
+        'commit_msg'     : commit_details['commit_message'],
+        'sorted_changes' : sorted_changes
+    })
 
 
 #===============================================================================
