@@ -60,6 +60,11 @@ class versioned_storage:
 
 #===============================================================================
     def read_index_object(self, object_hash: str, expected_object_type: str) -> indexObject:
+        # Hashes must only contain hex digits
+        if not set(object_hash) <= set('0123456789abcdef'):
+            raise IOError('Invalid object hash')
+
+        # ==============
         index_object: indexObject = json.loads(sfs.file_get_contents(sfs.cpjoin(self.base_path, 'index', object_hash[:2], object_hash[2:])))
         if index_object['type'] != expected_object_type: raise IOError('Type of object does not match expected type')
         return index_object

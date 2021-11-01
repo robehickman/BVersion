@@ -555,7 +555,7 @@ def update(session_token: str, test_overrides = None, include_unchanged = False)
 
     result = json.loads(req_result)
     changes = result['sorted_changes']
-    
+
     # Are there any changes?
     if all(v == [] for k,v in changes.items()):
         print('Nothing to update')
@@ -773,8 +773,6 @@ def commit(session_token: str, commit_message = ''):
 
 #===============================================================================
 def revert_files(session_token, args):
-    # TODO needs testing
-
     meta = cdb.get_system_meta()
 
     # Parse arguments
@@ -796,7 +794,8 @@ def revert_files(session_token, args):
             if stop_duplicate: raise SystemExit('Cannot use --v and -h at the same time')
             stop_duplicate = True
 
-            use_head = True
+            use_head   = True
+            version_id = None
             args = [args[0]] + args[2:]
 
         elif len(args) > 1 and args [1] == '--all': # Revert all files
@@ -814,6 +813,9 @@ def revert_files(session_token, args):
         raise SystemExit('Could not get a list of files from the server.')
 
     files_in_revision = json.loads(req_result)['files']
+
+    print(files_in_revision)
+    quit()
 
 
     # Apply filters if needed
