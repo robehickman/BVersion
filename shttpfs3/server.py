@@ -368,6 +368,7 @@ def pull_file(request: Request) -> Responce:
 #===============================================================================
 @route('list_versions')
 def list_versions(request: Request) -> Responce:
+    try:
         session_token = request.headers['session_token'].encode('utf8')
         repository    = request.headers['repository']
 
