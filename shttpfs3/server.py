@@ -406,7 +406,7 @@ def list_changes(request: Request) -> Responce:
             version_id = request.headers['version_id']
 
         #===
-        return success({}, {'changes' : data_store.get_commit_changes(version_id)})
+        return success({'version_id' : version_id}, {'changes' : data_store.get_commit_changes(version_id)})
 
     except IOError:
         return fail('Invalid object hash')
@@ -433,7 +433,7 @@ def list_files(request: Request) -> Responce:
         else:
             version_id = request.headers['version_id']
 
-        return success({}, {'files' : data_store.get_commit_files(version_id)})
+        return success({'version_id' : version_id}, {'files' : data_store.get_commit_files(version_id)})
 
     except IOError:
         return fail('Invalid object hash')

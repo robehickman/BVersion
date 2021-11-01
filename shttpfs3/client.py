@@ -174,7 +174,11 @@ def normalise_filters(filters):
     normalised_filters = []
     for flter in filters:
         if flter[0] != '*' and flter[0] != '/':
-            normalised_filters.append(cpjoin(relative_cwd, flter))
+            normalised = cpjoin(relative_cwd, flter)
+            if normalised[0] != '/':
+                normalised = '/' + normalised
+
+            normalised_filters.append(normalised)
         else:
             normalised_filters.append(flter)
 
@@ -772,7 +776,7 @@ def commit(session_token: str, commit_message = ''):
 
 
 #===============================================================================
-def revert_files(session_token, args):
+def revert(session_token, args):
     meta = cdb.get_system_meta()
 
     # Parse arguments
@@ -807,15 +811,15 @@ def revert_files(session_token, args):
 
 
     # Get a list of all files in the specified version from the server
-    req_result, headers = get_files_in_version(session_token, use_head, version_id)
+    result, headers = get_files_in_version(session_token, use_head, version_id)
 
     if headers['status'] != 'ok':
         raise SystemExit(headers['msg'])
 
-    files_in_revision = json.loads(req_result)['files']
+    # Update version id now we know it for definate
+    version_id = headers['version_id'].decode('utf8')
 
-    print(files_in_revision)
-    quit()
+    files_in_revision = json.loads(result)['files']
 
 
     # Apply filters if needed
@@ -860,7 +864,7 @@ def revert_files(session_token, args):
     for file_path in files_to_revert:
         print('Reverting file: ' + file_path)
 
-        result, headers = server_connection.request("pull_file", {
+        req_result, headers = server_connection.request("pull_file", {
             'session_token' : session_token,
             'repository'    : config['repository'],
             'path'          : file_path,
@@ -1240,7 +1244,7 @@ def run():
         session_token: str = authenticate()
         update_manifest(session_token)
 
-        revert_files(session_token, args)
+        revert(session_token, args)
 
 
     #----------------------------
