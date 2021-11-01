@@ -79,4 +79,5 @@ class client_filesystem_interface:
 
             self.jfs.commit()
         except:
-            self.jfs.rollback(); raise
+            self.jfs.rollback()
+            raise

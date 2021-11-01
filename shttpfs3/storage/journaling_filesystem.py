@@ -53,20 +53,20 @@ class journaling_filesystem:
     def begin(self):
         """ Begin a transaction """
 
-        if self.active_transaction is True:
-            raise Exception('Multiple Begin not allowed')
-
         # under normal operation journal is deleted at end of transaction
         # if it does exist we need to roll back
         if self.client_db.get_fs_journal() != []: 
             self.rollback()
+
+        # ===================================
+        if self.active_transaction is True:
+            raise Exception('Multiple Begin not allowed')
 
         self.active_transaction = True
 
 ############################################################################################
     def do_action(self, command: dict, write_journal: bool = True):
         """ Implementation for declarative file operations. """
-
 
         cmd = 0; src = 1; path = 1; data = 2; dst = 2
 
@@ -100,6 +100,8 @@ class journaling_filesystem:
         # Rollback is complete, ensure that the journal is now empty.
         if self.client_db.get_fs_journal() != []:
             raise Exception('Filesystem rollback is complete but the journal is not empty')
+
+        self.active_transaction = False
 
 
 ############################################################################################

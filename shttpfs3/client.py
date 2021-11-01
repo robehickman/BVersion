@@ -402,10 +402,10 @@ def resolve_update_conflicts(session_token: str, changes: list, version_id: str,
                 # Download the changed files from the server
 
                 if fle['server_status'] == 'Changed':
-                    changes['client_pull_files'].append({'path' : fle['file_info']['path']})
+                    changes['client_pull_files'].append(fle['file_info'])
 
                 elif fle['server_status'] == 'Deleted':
-                    changes['to_delete_on_client'].append({'path' : fle['file_info']['path']})
+                    changes['to_delete_on_client'].append(fle['file_info'])
 
                 else:
                     raise Exception('Unknown server change state')
@@ -444,10 +444,12 @@ def resolve_update_conflicts(session_token: str, changes: list, version_id: str,
         if choice == 'server':
             for fle in changes['conflict_files']:
                 if fle['server_status'] == 'Changed':
-                    changes['client_pull_files'].append({'path' : fle['file_info']['path']})
+
+
+                    changes['client_pull_files'].append(fle['file_info'])
 
                 elif fle['server_status'] == 'Deleted':
-                    changes['to_delete_on_client'].append({'path' : fle['file_info']['path']})
+                    changes['to_delete_on_client'].append(fle['file_info'])
 
                 else:
                     raise Exception('Unknown server change state')
@@ -553,7 +555,7 @@ def update(session_token: str, test_overrides = None, include_unchanged = False)
 
     result = json.loads(req_result)
     changes = result['sorted_changes']
-
+    
     # Are there any changes?
     if all(v == [] for k,v in changes.items()):
         print('Nothing to update')
@@ -566,7 +568,8 @@ def update(session_token: str, test_overrides = None, include_unchanged = False)
     # Pull and delete from remote to local
     affected_files = {
         'pulled_files'  : [],
-        'deleted_files' : []
+        'deleted_files' : [],
+        'errors'        : []
     }
 
     if changes['client_pull_files'] != []:
@@ -582,29 +585,31 @@ def update(session_token: str, test_overrides = None, include_unchanged = False)
         #----------
         pulled_items = 0
         for fle in filtered_pull_files:
-            req_result, headers = server_connection.request("pull_file", {
-                'session_token' : session_token,
-                'repository'    : config['repository'],
-                'path'          : fle['path'],
-                'use_head'      : str(int(False)),
-                'version_id'    : result['head']
-                }, gen = True)
+            # ==============
+            file_in_manifest = cdb.get_single_file_from_manifest(fle['path'])
+            file_hash = fle['hash']
 
-            if headers['status'] != 'ok':
-                raise SystemExit('Failed to pull file')
-            else:
-                make_dirs_if_dont_exist(data_store.jfs.get_full_file_path(cpjoin(*fle['path'].split('/')[:-1]) + '/'))
-                file_hash = json.loads(headers['file_info_json'])['hash']
+            # Chech we don't already have the file due to a previous run that failed mid-process
+            have_file = False
+            if file_in_manifest is not None and file_in_manifest['server_file_hash'] == file_hash:
+                have_file = True
 
-                # ==============
-                file_in_manifest = cdb.get_single_file_from_manifest(fle['path'])
+            # ===================
+            if not have_file:
+                req_result, headers = server_connection.request("pull_file", {
+                    'session_token' : session_token,
+                    'repository'    : config['repository'],
+                    'path'          : fle['path'],
+                    'use_head'      : str(int(False)),
+                    'version_id'    : result['head']
+                    }, gen = True)
 
-                # Chech we don't already have the file due to a previous run that failed mid-process
-                have_file = False
-                if file_in_manifest is not None and file_in_manifest['server_file_hash'] == file_hash:
-                    have_file = True
+                if headers['status'] != 'ok':
+                    affected_files['errors'].append('Failed to pull file ' + fle['path'])
 
-                if not have_file:
+                else:
+                    make_dirs_if_dont_exist(data_store.jfs.get_full_file_path(cpjoin(*fle['path'].split('/')[:-1]) + '/'))
+
                     print(colored('Pulling file: ' + fle['path'], 'green'))
                     data_store.fs_put(fle['path'], req_result, additional_manifest_data = {'server_file_hash' : file_hash})
                     affected_files['pulled_files'].append(fle['path'])
@@ -623,8 +628,12 @@ def update(session_token: str, test_overrides = None, include_unchanged = False)
         for fle in changes['to_delete_on_client']:
             print(colored('Deleting file: ' + fle['path'], 'red'))
 
-            try: data_store.fs_delete(fle['path'])
-            except OSError: print('Warning: remote deleted file does not exist locally.')
+            try:
+                data_store.fs_delete(fle['path'])
+            except OSError:
+                # If this happens, a file was deleted on the server which
+                # never existed on this client, thus do nothing.
+                pass
 
             affected_files['deleted_files'].append(fle['path'])
 
@@ -640,11 +649,13 @@ def update(session_token: str, test_overrides = None, include_unchanged = False)
     cdb.update_system_meta(manifest_meta)
     cdb.commit()
 
-
     # Delete the conflicts resolution file and recursively delete any conflict files downloaded for comparison
     ignore(os.remove, config['conflict_resolution_file'])
     ignore(shutil.rmtree, config['conflict_comparison_file_root'])
 
+    # ============================================
+    for item in affected_files['errors']:
+        print(item)
 
     # ==================
     if changes['to_delete_on_server'] != [] or changes['client_push_files'] != []:
