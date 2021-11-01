@@ -817,7 +817,7 @@ def revert(session_token, args):
         raise SystemExit(headers['msg'])
 
     # Update version id now we know it for definate
-    version_id = headers['version_id'].decode('utf8')
+    version_id = headers['version_id']
 
     files_in_revision = json.loads(result)['files']
 
@@ -882,7 +882,7 @@ def revert(session_token, args):
 
             else:
                 tmp_path = cpjoin(working_copy_base_path, '.shttpfs', 'download_tmp')
-                result(tmp_path)
+                req_result(tmp_path)
                 os.rename(tmp_path, cpjoin(working_copy_base_path, file_path))
         else:
             print('error with downloading ' + file_path)
@@ -1072,6 +1072,8 @@ def list_remote_files(session_token, args):
         print(fle)
     print()
 
+    print(colored('All files in version: ' + headers['version_id'], 'yellow') + '\n')
+
     if only_show_ignored:
         print("Showing remote files ommited from this working copy due to your pull ignore filters\n")
 
@@ -1112,13 +1114,14 @@ def list_changes_in_revision(session_token, args):
         raise SystemExit(headers['msg'])
 
     # ===============================
-    if headers['status'] == 'ok':
-        changes = json.loads(req_result)['changes']
-        changes = {item['path'] : item for item in changes}
+    changes = json.loads(req_result)['changes']
+    changes = {item['path'] : item for item in changes}
 
-        print()
-        draw_changeset(changes)
-        print()
+    print()
+    draw_changeset(changes)
+    print()
+
+    print(colored('Changes made in version: ' + headers['version_id'], 'yellow') + '\n')
 
 
 
@@ -1174,7 +1177,7 @@ def run():
 
     list-versions                : Lists all revisions on the server.
 
-    list-revision-files          : Lists all files in the specified revision. When no arguments are provided,
+    list-files                   : Lists all files in the specified revision. When no arguments are provided,
                                    shows files in the revision the client has checked out.
 
            --v [Version ID]      - Specify a version id (default head).
@@ -1184,7 +1187,8 @@ def run():
            -i                    - Show only items which have not beed pulled due to your pull ignore file.
     
 
-    list-revision-changes        : Lists all changes in the specified revision.
+    list-changes                 : Lists all changes in the specified revision. When no arguments are provided,
+                                   shows files in the revision the client has checked out.
 
            --v [Version ID]      - Specify a version id (default head).
 
@@ -1239,7 +1243,7 @@ def run():
 
 
     #----------------------------
-    elif args [0] == 'revert': # TODO need to test
+    elif args [0] == 'revert':
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
@@ -1264,7 +1268,7 @@ def run():
 
 
     #----------------------------
-    elif args [0] == 'list-ignored-files': # TODO need to test
+    elif args [0] == 'list-ignored-files':
         init()
 
         list_ignored_files()
@@ -1280,7 +1284,7 @@ def run():
 
 
     #----------------------------
-    elif args [0] == 'list-revision-files': # TODO need to test
+    elif args [0] == 'list-files': # TODO need to test
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
@@ -1289,9 +1293,12 @@ def run():
 
 
     #----------------------------
-    elif args [0] == 'list-revision-changes': # TODO need to test
+    elif args [0] == 'list-changes': # TODO need to test
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
 
         list_changes_in_revision(session_token, args)
+
+    else:
+        print('Unknowm command. Run shttpfs -h to list commands.')
