@@ -36,11 +36,16 @@ class client_db:
         # ----------
         self.cur.execute( """
             create table if not exists files (
-                path     Text unique,
+                path     Text,
                 last_mod Text,
                 created  Text,
                 server_file_hash Text
             )
+            """)
+
+        self.cur.execute( """
+            create unique index if not exists idx_path
+            on files (path asc);
             """)
 
         # ----------

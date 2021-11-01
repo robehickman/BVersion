@@ -50,21 +50,33 @@ class server_db:
         self.con.execute("""
             create table if not exists tokens (
                 expires int,
-                token text unique,
+                token text,
                 ip text
             )
             """)
 
+        self.cur.execute( """
+            create unique index if not exists idx_token
+            on tokens (token asc);
+            """)
+
+        # ======================
         self.con.execute("""
             create table if not exists session_tokens (
                 expires int,
-                token text unique,
+                token text,
                 ip text,
                 username text
             )
             """)
 
+        self.cur.execute( """
+            create unique index if not exists idx_session_token
+            on session_tokens (token asc);
+            """)
 
+
+        # ======================
         # Stores a list of all files in the current commit
         self.con.execute("""
             create table if not exists gc_log (
@@ -73,6 +85,7 @@ class server_db:
             )
             """)
 
+        # ======================
         # Stores a list of all files in the current commit
         self.con.execute("""
             create table if not exists active_commit_files (
@@ -82,6 +95,12 @@ class server_db:
             )
             """)
 
+        self.cur.execute( """
+            create unique index if not exists idx_commit_files_path
+            on active_commit_files (path asc);
+            """)
+
+        # ======================
         # Active commit changes stores a log of files which have been added, changed
         # or deleted in this revision
         self.con.execute("""
@@ -92,6 +111,12 @@ class server_db:
             )
             """)
 
+        self.cur.execute( """
+            create unique index if not exists idx_commit_changes_path
+            on active_commit_changes (path asc);
+            """)
+
+        # ======================
         # Table to store if there is an active commit
         self.con.execute("""
             create table if not exists active_commit_exists (

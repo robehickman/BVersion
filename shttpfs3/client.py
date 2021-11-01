@@ -1216,7 +1216,7 @@ def run():
 
 
     #----------------------------
-    elif args [0] == 'revert':
+    elif args [0] == 'revert': # TODO need to test
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
@@ -1225,7 +1225,7 @@ def run():
 
 
     #----------------------------
-    elif args [0] == 'pull-ignore':
+    elif args [0] == 'pull-ignore': # TODO need to test
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
@@ -1241,7 +1241,7 @@ def run():
 
 
     #----------------------------
-    elif args [0] == 'list-ignored-files':
+    elif args [0] == 'list-ignored-files': # TODO need to test
         init()
 
         list_ignored_files()
@@ -1257,7 +1257,7 @@ def run():
 
 
     #----------------------------
-    elif args [0] == 'list-revision-files':
+    elif args [0] == 'list-revision-files': # TODO need to test
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
@@ -1266,7 +1266,7 @@ def run():
 
 
     #----------------------------
-    elif args [0] == 'list-revision-changes':
+    elif args [0] == 'list-revision-changes': # TODO need to test
         init()
         session_token: str = authenticate()
         update_manifest(session_token)
