@@ -368,63 +368,74 @@ def pull_file(request: Request) -> Responce:
 #===============================================================================
 @route('list_versions')
 def list_versions(request: Request) -> Responce:
-    session_token = request.headers['session_token'].encode('utf8')
-    repository    = request.headers['repository']
+        session_token = request.headers['session_token'].encode('utf8')
+        repository    = request.headers['repository']
 
-    #===
-    current_user = have_authenticated_user(request.remote_addr, repository, session_token)
-    if current_user is False: return fail(user_auth_fail_msg)
+        #===
+        current_user = have_authenticated_user(request.remote_addr, repository, session_token)
+        if current_user is False: return fail(user_auth_fail_msg)
 
-    #===
-    data_store = versioned_storage(config['repositories'][repository]['path'])
-    return success({}, {'versions' : data_store.get_commit_chain()})
+        #===
+        data_store = versioned_storage(config['repositories'][repository]['path'])
+        return success({}, {'versions' : data_store.get_commit_chain()})
+
+    except IOError:
+        return fail('Invalid object hash')
 
 
 #===============================================================================
 @route('list_changes')
 def list_changes(request: Request) -> Responce:
-    session_token = request.headers['session_token'].encode('utf8')
-    repository    = request.headers['repository']
+    try:
+        session_token = request.headers['session_token'].encode('utf8')
+        repository    = request.headers['repository']
 
-    #===
-    current_user = have_authenticated_user(request.remote_addr, repository, session_token)
-    if current_user is False: return fail(user_auth_fail_msg)
+        #===
+        current_user = have_authenticated_user(request.remote_addr, repository, session_token)
+        if current_user is False: return fail(user_auth_fail_msg)
 
-    #===
-    data_store = versioned_storage(config['repositories'][repository]['path'])
+        #===
+        data_store = versioned_storage(config['repositories'][repository]['path'])
 
-    show_head = bool(int(request.headers['show_head']))
+        show_head = bool(int(request.headers['show_head']))
 
-    if show_head:
-        version_id = data_store.get_head()
-    else:
-        version_id = request.headers['version_id']
+        if show_head:
+            version_id = data_store.get_head()
+        else:
+            version_id = request.headers['version_id']
 
-    #===
-    return success({}, {'changes' : data_store.get_commit_changes(version_id)})
+        #===
+        return success({}, {'changes' : data_store.get_commit_changes(version_id)})
+
+    except IOError:
+        return fail('Invalid object hash')
 
 
 #===============================================================================
 @route('list_files')
 def list_files(request: Request) -> Responce:
-    session_token = request.headers['session_token'].encode('utf8')
-    repository    = request.headers['repository']
+    try:
+        session_token = request.headers['session_token'].encode('utf8')
+        repository    = request.headers['repository']
 
-    #===
-    current_user = have_authenticated_user(request.remote_addr, repository, session_token)
-    if current_user is False: return fail(user_auth_fail_msg)
+        #===
+        current_user = have_authenticated_user(request.remote_addr, repository, session_token)
+        if current_user is False: return fail(user_auth_fail_msg)
 
-    #===
-    data_store = versioned_storage(config['repositories'][repository]['path'])
+        #===
+        data_store = versioned_storage(config['repositories'][repository]['path'])
 
-    show_head = bool(int(request.headers['show_head']))
+        show_head = bool(int(request.headers['show_head']))
 
-    if show_head:
-        version_id = data_store.get_head()
-    else:
-        version_id = request.headers['version_id']
+        if show_head:
+            version_id = data_store.get_head()
+        else:
+            version_id = request.headers['version_id']
 
-    return success({}, {'files' : data_store.get_commit_files(version_id)})
+        return success({}, {'files' : data_store.get_commit_files(version_id)})
+
+    except IOError:
+        return fail('Invalid object hash')
 
 
 #===============================================================================

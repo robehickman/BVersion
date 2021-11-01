@@ -98,7 +98,7 @@ def update_manifest(session_token):
                                                    version_id = old_manifest['have_revision'])
 
         if headers['status'] != 'ok':
-            raise Exception('server error')
+            raise SystemExit(headers['msg'])
 
         # Get file hashes from the server
         server_file_info_for_version = json.loads(req_result)['files']
@@ -810,7 +810,7 @@ def revert_files(session_token, args):
     req_result, headers = get_files_in_version(session_token, use_head, version_id)
 
     if headers['status'] != 'ok':
-        raise SystemExit('Could not get a list of files from the server.')
+        raise SystemExit(headers['msg'])
 
     files_in_revision = json.loads(req_result)['files']
 
@@ -1051,23 +1051,25 @@ def list_remote_files(session_token, args):
     # -----------
     req_result, headers = get_files_in_version(session_token, show_head, version_id)
 
-    if headers['status'] == 'ok':
+    if headers['status'] != 'ok':
+        raise SystemExit(headers['msg'])
 
-        files_in_revision = json.loads(req_result)['files']
+    # ========================
+    files_in_revision = json.loads(req_result)['files']
 
-        if only_show_ignored:
-            filtered_files_in_revision = {}
-            for path, fle in files_in_revision.items():
-                if next((True for flter in config['pull_ignore_filters'] if fnmatch.fnmatch(fle['path'], flter)), False):
-                    filtered_files_in_revision[path] = fle
-            files_in_revision = filtered_files_in_revision
+    if only_show_ignored:
+        filtered_files_in_revision = {}
+        for path, fle in files_in_revision.items():
+            if next((True for flter in config['pull_ignore_filters'] if fnmatch.fnmatch(fle['path'], flter)), False):
+                filtered_files_in_revision[path] = fle
+        files_in_revision = filtered_files_in_revision
 
-        for fle in files_in_revision:
-            print(fle)
-        print()
+    for fle in files_in_revision:
+        print(fle)
+    print()
 
-        if only_show_ignored:
-            print("Showing remote files ommited from this working copy due to your pull ignore filters\n")
+    if only_show_ignored:
+        print("Showing remote files ommited from this working copy due to your pull ignore filters\n")
 
 
 #===============================================================================
@@ -1102,6 +1104,10 @@ def list_changes_in_revision(session_token, args):
     # ===============================
     req_result, headers = get_changes_in_version(session_token, show_head, version_id)
 
+    if headers['status'] != 'ok':
+        raise SystemExit(headers['msg'])
+
+    # ===============================
     if headers['status'] == 'ok':
         changes = json.loads(req_result)['changes']
         changes = {item['path'] : item for item in changes}
