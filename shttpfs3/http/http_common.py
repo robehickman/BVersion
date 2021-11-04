@@ -77,7 +77,9 @@ class read_body:
             self.body_partial = self.body_partial[length:]
 
         else:
-            retbuffer = self.reader(length)
+            data = self.reader(length)
+            if data == b'': raise Exception('Socket closed')
+            retbuffer = data
 
         self.have_read += len(retbuffer)
         return retbuffer

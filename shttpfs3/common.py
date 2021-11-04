@@ -5,28 +5,27 @@ from termcolor import colored
 
 #===============================================================================
 def find_shttpfs_dir() -> Tuple[str, str]:
-    """ Looks up the directory tree from the pwd to find a directory containing
+    """ Looks up the directory tree from the PWD to find a directory containing
     a .shttpfs directory, and returns that path """
 
-    cwd:        str         = os.getcwd() + '/'
-    split_path: List[str]   = cwd.split('/')
+    cwd:          str       = os.getcwd()
+    split_path:   List[str] = cwd.split('/')
     relative_cwd: List[str] = []
 
     while True:
-        joined_path = '/' + cpjoin(*split_path) + '/'
+        joined_path = '/' + cpjoin(*split_path)
+
+        if joined_path != '/':
+            joined_path += '/'
 
         if os.path.isdir(joined_path + '.shttpfs'):
-            if relative_cwd != []:
-                joined_cwd = '/' + cpjoin(*reversed(relative_cwd)) + '/'
-            else:
-                joined_cwd = ''
-
+            joined_cwd = '/' + cpjoin(*relative_cwd) + '/' if relative_cwd != [] else ''
             return joined_path, joined_cwd
 
-        if joined_path == []:
+        if joined_path == '/':
             raise SystemExit('Not a shttpfs checkout, could not find a .shttpfs directory in parent dirs')
 
-        relative_cwd.append(split_path.pop())
+        relative_cwd = [split_path.pop()] + relative_cwd
 
 #===============================================================================
 def question_user(prompt_text: str, valid_choices) -> str:
@@ -63,8 +62,8 @@ def display_file_path_list(prefix: str, l : List[Dict], color : str) -> None:
 ############################################################################################
 def pfx_path(path : str) -> str:
     """ Prefix a path with the OS path separator if it is not already """
-    if path[0] != os.path.sep: return os.path.sep + path
-    else:                      return path
+    if path[0] != '/': return '/' + path
+    else:              return path
 
 
 ############################################################################################
@@ -100,8 +99,12 @@ def make_dirs_if_dont_exist(path: str) -> None:
 ############################################################################################
 def cpjoin(*args: str) -> str:
     """ custom path join """
+
+    if len(args) == 0:
+        return ''
+
     rooted = bool(args[0].strip().startswith('/'))
-    ended = bool(args[-1].strip().endswith('/'))
+    ended  = bool(args[-1].strip().endswith('/'))
 
     split_items = []
 

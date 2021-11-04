@@ -42,6 +42,7 @@ working_copy_base_path: str
 relative_cwd: str
 working_copy_base_path, relative_cwd = find_shttpfs_dir()
 
+
 #===============================================================================
 def init(unlocked = False):
     global cdb, data_store, server_connection, config
@@ -920,13 +921,13 @@ def display_status():
 
 
 #===============================================================================
-def pull_ignore(filters):
+def pull_ignore(filters, require_commit_changes):
 
     # Pull ignoring a file that has been changed, and using the delete
     # option would result in data loss. We force a commit in this
     # case so that cannot happen.
     client_changes = find_local_changes()
-    if len(client_changes) != 0:
+    if require_commit_changes and len(client_changes) != 0:
         raise SystemExit("Please commit your local changes first.")
 
     filters = normalise_filters(filters)
@@ -1189,6 +1190,8 @@ def run():
                                    optionally delete them from the working copy, and add the provided
                                    filters to the pull ignore file. Useful for saving disk space.
 
+            -f                    - Force, bypass requirement to commit any changes first.
+
     list-ignored-files           : Lists files in the working copy that are being ignored due to .shttpfs_ignore
 
     list-versions                : Lists all revisions on the server.
@@ -1273,6 +1276,13 @@ def run():
         session_token: str = authenticate()
         update_manifest(session_token)
 
+        # Force option, allow bypassing requirement to commit changes first
+        require_commit_changes = True
+        if len(args) > 1 and args[1] == '-f':
+            require_commit_changes = False
+            args = [args[0]] + args[2:]
+
+
         # ===============
         filters = args [1:]
 
@@ -1281,7 +1291,7 @@ def run():
 
         # ===============
         print()
-        pull_ignore(filters)
+        pull_ignore(filters, require_commit_changes)
 
 
     #----------------------------
