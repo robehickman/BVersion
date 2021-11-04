@@ -100,6 +100,7 @@ def HTTPServer(host, port, connection_handler):
     #============
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind((host, port))
+    s.settimeout(300)
     print("socket bound to port", port)
 
     # put the socket into listening mode
