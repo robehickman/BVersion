@@ -54,6 +54,7 @@ class versioned_storage:
 
         #----
         sfs.make_dirs_if_dont_exist(target_base)
+        # TODO make write and move
         sfs.file_put_contents(sfs.cpjoin(target_base, object_hash[2:]), bytes(serialised, encoding='utf8'))
         return object_hash
 
@@ -169,6 +170,12 @@ class versioned_storage:
 #===============================================================================
     def begin(self) -> None:
         if self.have_active_commit(): raise Exception()
+
+        # Possable optimisations
+
+        # Don't store GC log in DB
+        # Don't flush GC log
+        # Don't store active files in DB, don't update active files dynamically, but do it in one go during commit
 
         active_files = {}
         head = self.get_head()
@@ -390,14 +397,12 @@ class versioned_storage:
             # store the id of this commit, not it's parent
             commit = self.read_commit_index_object(pointer)
 
-
             commit_tree = self.read_dir_tree(commit['tree_root'])
 
             pointer = commit['parent']
             if pointer == 'root': break
 
 
-        return commits
 
         head = self.get_head()
 

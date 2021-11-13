@@ -26,7 +26,8 @@ setup(
     packages=[
         'shttpfs3',
         'shttpfs3.http',
-        'shttpfs3.storage'
+        'shttpfs3.storage',
+        'shttpfs3.backup'
     ],
 
     test_suite='nose.collector',
@@ -40,7 +41,8 @@ setup(
 
     scripts=[
         'cli_tools/shttpfs',
-        'cli_tools/shttpfs_server'
+        'cli_tools/shttpfs_server',
+        'cli_tools/shttpfs_repo'
     ],
 
     zip_safe=False
