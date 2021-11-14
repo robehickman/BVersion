@@ -359,6 +359,7 @@ def run():
 
     #----------------------------
     elif args[0] == 'verify':
+        results = []
         print()
         for repository_name, details in config['repositories'].items():
             print('Verifying repository: ' + repository_name)
@@ -369,13 +370,22 @@ def run():
 
             valid, issues = data_store.verify_fs()
 
+            results.append({
+                'name'   : repository_name,
+                'valid'  : valid,
+                'issues' : issues
+            })
+
+        for result in results:
             print()
-            if valid:
+            print('Results for: ' + result['name'])
+            print()
+            if result['valid']:
                 print('No issues')
             else:
                 print('Repo has the following issues:')
 
-                for it in issues:
+                for it in result['issues']:
                     print(it)
 
             print()
