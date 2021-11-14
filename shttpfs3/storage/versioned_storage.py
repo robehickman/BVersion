@@ -8,6 +8,8 @@ from typing_extensions import TypedDict
 import shttpfs3.common as sfs
 from shttpfs3.storage.server_db import get_server_db_instance_for_thread
 
+import pprint
+
 #+++++++++++++++++++++++++++++++++
 class indexObject(TypedDict):
     type: str
@@ -382,37 +384,141 @@ class versioned_storage:
     def get_file_directory_path(self, file_hash: str) -> str:
         return sfs.cpjoin(self.base_path, 'files', file_hash[:2])
 
+
+#===============================================================================
+    def get_reachable_objects(self):
+        """ Gets all objects in the filesystem which can be reached by traversing the index """
+
+        reachable_objects = {
+            'commits' : {},
+            'trees'   : {},
+            'files'   : {}
+        }
+
+        head = self.get_head()
+        if head == 'root':
+            return head, reachable_objects
+
+        # walk up the commit change to the first version
+        pointer = head
+        while True:
+            commit = self.read_commit_index_object(pointer)
+            reachable_objects['commits'][pointer] = commit
+            pointer = commit['parent']
+            if pointer == 'root': break
+
+        # Read tree objects
+        def recursive_helper(tree_object_hash):
+            nonlocal reachable_objects
+
+            it = self.read_tree_index_object(tree_object_hash)
+            reachable_objects['trees'][tree_object_hash] = it
+
+            for dir_name, dir_hash in it['dirs'].items():
+                recursive_helper(dir_hash)
+
+        for commit_info in reachable_objects['commits'].values():
+            recursive_helper(commit_info['tree_root'])
+
+        # Get file object referances
+        for tree_object_info in reachable_objects['trees'].values():
+            for fle in tree_object_info['files'].values():
+                reachable_objects['files'][fle['hash']] = fle
+
+        return head, reachable_objects
+
+
+#===============================================================================
+    def get_all_object_hashes(self):
+        objects = {
+            'index' : {},
+            'files' : {}
+        }
+
+        # Enumerate index objects
+        for it in os.listdir(sfs.cpjoin(self.base_path, 'index')):
+            for it2 in os.listdir(sfs.cpjoin(self.base_path, 'index', it)):
+                objects['index'][it + it2] = sfs.cpjoin(self.base_path, 'index', it, it2)
+
+        # Enumerate file objects
+        for it in os.listdir(sfs.cpjoin(self.base_path, 'files')):
+            for it2 in os.listdir(sfs.cpjoin(self.base_path, 'files', it)):
+                objects['files'][it + it2] = sfs.cpjoin(self.base_path, 'files', it, it2)
+
+        return objects
+
 #===============================================================================
     def verify_fs(self) -> str:
         """
         Read and rehash the entire filesystem and ensure than hashes have not changed
         """
 
-        index_objects = {}
+        head, reachable_objects = self.get_reachable_objects()
+        all_objects             = self.get_all_object_hashes()
 
-        pointer = self.get_head()
-        if pointer == 'root': return True
+        issues = []
 
-        while True:
-            # store the id of this commit, not it's parent
-            commit = self.read_commit_index_object(pointer)
+        #================================================================
+        # if head is root, but commits exists, this is suspisious 
+        #================================================================
+        number_of_commits = 0
+        for object_hash in all_objects['index']:
+            file_contents = json.loads(sfs.file_get_contents(sfs.cpjoin(self.base_path, 'index', object_hash[:2], object_hash[2:])))
+            if file_contents['type'] == 'commit':
+                number_of_commits += 1
 
-            commit_tree = self.read_dir_tree(commit['tree_root'])
+        if head == 'root' and number_of_commits != 0:
+            msg = 'Commits exist, but head is root.'
+            print(msg)
+            issues.append(msg)
+            return False, issues
 
-            pointer = commit['parent']
-            if pointer == 'root': break
+        #================================================================
+        # Subtract the two, to find if there are unreachable objects
+        #================================================================
+        # index objects
+        index_objects_that_should_exist =   set(reachable_objects['commits'].keys()) \
+                                          | set(reachable_objects['trees'])
 
+        index_objects_that_do_exist     =   set(all_objects['index'].keys())
 
+        # file objects
+        file_objects_that_should_exist =   set(reachable_objects['files'].keys())
+        file_objects_that_do_exist     =   set(all_objects['files'].keys())
 
-        head = self.get_head()
+        # ===============
+        garbage_index_objects = index_objects_that_should_exist - index_objects_that_do_exist 
+        garbage_file_objects = file_objects_that_should_exist - file_objects_that_do_exist 
 
-        # walk up the commit change to the first version
+        # ===============
+        for it in garbage_index_objects:
+            msg = 'Garbage index object: ' + it
+            print(msg)
+            issues.append(msg)
 
-        # Read tree objects
+        for it in garbage_file_objects:
+            msg = 'Garbage file object: ' + it
+            print(msg)
+            issues.append(msg)
 
-        # While reading tree objects rehash the files too
+        #================================================================
+        # Re hash all objects to check that the hashes have not changed
+        #================================================================
+        for object_hash, object_path in all_objects['index'].items():
+            print('Rehashing: ' + object_path)
+            current_hash = sfs.hash_file(object_path)
+            if object_hash != current_hash:
+                msg = 'Index opject hash has changed: ' + object_hash
+                print(msg)
+                issues.append(msg)
 
-        # all file hashes should match the name of the file, if not, something is wrong.
+        for object_hash, object_path in all_objects['files'].items():
+            print('Rehashing: ' + object_path)
+            current_hash = sfs.hash_file(object_path)
+            if object_hash != current_hash:
+                msg = 'File object hash has changed: ' + object_hash
+                print(msg)
+                issues.append(msg)
 
-        pass
-
+        # ================================
+        return len(issues) == 0, issues
