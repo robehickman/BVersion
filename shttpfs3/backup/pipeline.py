@@ -4,8 +4,8 @@ may be applied to the data in transit including encryption. This file
 assembles pipelines to apply these transformations depending on configuration.
 """
 import functools, json, re
-import rrbackup.crypto as crypto
-import rrbackup.compress as compress
+import shttpfs3.backup.crypto as crypto
+import shttpfs3.backup.compress as compress
 
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
 def preprocess_config(interface, conn, config: dict):

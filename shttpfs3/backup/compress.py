@@ -1,5 +1,5 @@
 import bz2
-from rrbackup import pipeline
+from shttpfs3.backup import pipeline
 
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
 # One-shot compression and decompression

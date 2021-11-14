@@ -1,6 +1,6 @@
 import binascii, base64
 import pysodium
-import rrbackup.pipeline
+import shttpfs3.backup.pipeline
 
 def add_default_config(config: dict):
     """ The default configuration structure. """

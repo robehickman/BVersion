@@ -1,6 +1,6 @@
 import struct
 import boto3
-import rrbackup.pipeline as pipeline
+import shttpfs3.backup.pipeline as pipeline
 
 def add_default_config(config):
     config["s3"] = { "access_key": "",
