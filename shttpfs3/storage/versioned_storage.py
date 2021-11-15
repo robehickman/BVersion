@@ -395,6 +395,10 @@ class versioned_storage:
             'files'   : {}
         }
 
+        # TODO rename the program 'BVersion' 'bvn', 'bvn_server'
+
+        # TODO this needs to be able to handle missing objects and log them as errors
+
         head = self.get_head()
         if head == 'root':
             return head, reachable_objects

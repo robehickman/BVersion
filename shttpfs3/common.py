@@ -1,7 +1,18 @@
 import os.path, hashlib, errno, copy
+import collections
 from typing import List, Dict, Any, cast, Tuple
 from typing_extensions import TypedDict
 from termcolor import colored
+
+#===============================================================================
+def merge_config(config, parsed_config):
+    def dict_merge(dct, merge_dct): # recursive dict merge from https://gist.github.com/angstwad/bf22d1822c38a92ec0a9
+        for k in merge_dct.keys():
+            if (k in dct and isinstance(dct[k], dict) and isinstance(merge_dct[k], collections.Mapping)):
+                dict_merge(dct[k], merge_dct[k])
+            else: dct[k] = merge_dct[k]
+    dict_merge(config, parsed_config)
+    return config
 
 #===============================================================================
 def find_shttpfs_dir() -> Tuple[str, str]:

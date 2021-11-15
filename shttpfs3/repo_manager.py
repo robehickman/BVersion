@@ -1,110 +1,91 @@
-import sys
-from shttpfs3.common import cpjoin, file_get_contents
+import sys, os
+from io import BytesIO
+from shttpfs3.common import cpjoin, merge_config, make_dirs_if_dont_exist
 
-from shttpfs3.backup import s3_interface, pipeline
+from shttpfs3.backup import s3_interface, pipeline, crypto
 from shttpfs3.storage.versioned_storage import versioned_storage
-
-import pprint
 
 # ---------------
 config = {}
 empty_file_identifier = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
 
-###################################################################################
-def streaming_file_upload(s3_conn, config, remote_file_path, local_file_path):
-    pipeline_configuration = pipeline.get_default_pipeline_format()
-
-    #-----
-    upload = s3_interface.streaming_upload()
-    pl     = pipeline.build_pipeline_streaming(upload, 'out')
-    pl.pass_config(config, pipeline.serialise_pipeline_format(pipeline_configuration))
-
-    upload.begin(s3_conn, remote_file_path)
-
-    try:
-        with open(local_file_path, 'rb') as fle:
-            while True:
-                print('.', end =" ")
-
-                chunk = fle.read(1048576 * 5)
-                if chunk == b'': break
-                pl.next_chunk(chunk)
-            print()
-        upload.finish()
-
-    # If file no longer exists at this stage assume it has been deleted and ignore it
-    except IOError:
-        upload.abort()
-        raise
-
-###################################################################################
-def streaming_file_download(s3_conn, config, remote_file_path, version_id, local_file_path):
-    download_stream  = s3_interface.streaming_download()
-    header = download_stream.begin(s3_conn, remote_file_path, version_id)[0]
-    pl                = pipeline.build_pipeline_streaming(download_stream, 'in')
-    pl.pass_config(config, header)
-
-    sfs.make_dirs_if_dont_exist(local_file_path)
-    with open(local_file_path, 'wb') as fle:
-        while True:
-            res = pl.next_chunk()
-            if res is None: break
-            fle.write(res)
 
 #===============================================================================
 def init(new_config):
     global config
 
-    """
-    args = []
+    base_conf = {
+        'local_lock_file'                : 'repo_manager_lock',  # name of the local lock file
+        'chunk_size'                     : 1048576 * 5,          # minimum chunk size is 5MB on s3, 1mb = 1048576
+    }
+
+    base_conf = crypto.add_default_config(base_conf)
 
 
-    conf = { 'local_lock_file'                : 'backup_lock',  # Path and name of the local lock file
-             'chunk_size'                     : 1048576 * 5,    # minimum chunk size is 5MB on s3, 1mb = 1048576
-             'meta_pipeline'                  : [],             # pipeline applied to meta files like manifest diffs
-             'file_pipeline'                  : [[ '*', []]],   # pipeline applied to backed up files, list as sort order is important
-             'split_chunk_size'               : 0}
+    config = merge_config(base_conf, new_config)
 
-    # Read and merge configuration file
-    conf_file = 'configuration.json'
-    if len(args) > 0 and args[0] == '--c':
-        if len(args) < 2: raise SystemExit('Expected argument following --c to be a path to configuration file, nothing found.')
-        args.pop(0); conf_file = args.pop(0)
 
-    try:    parsed_config = json.loads(sfs.file_get_contents(conf_file))
-    except FileNotFoundError: raise SystemExit(f"Configuration file {conf_file} not found.")
+#===============================================================================
+def init_backup():
+    global config
 
-    core.validate_config(parsed_config)
+    s3_conn = s3_interface.connect(config)
+    s3_interface.delete_failed_uploads(s3_conn)
+    config = pipeline.preprocess_config(s3_interface, s3_conn, config)
 
-    config = core.merge_config(config, parsed_config)
+    return s3_conn
 
-    # Setup the interface and core
-    conn = interface.connect(config)
-    config = pipeline.preprocess_config(interface, conn, config)
-    core.init(interface, conn, config)
 
-    # Set up format of the pipeline used for storing meta-data like manifest diffs
-    global meta_pl_format, pl_in, pl_out
-    meta_pl_format = pipeline.get_default_pipeline_format()
-    meta_pl_format['format'].update({i : None for i in config['meta_pipeline']})
-    if 'encrypt' in meta_pl_format['format']: meta_pl_format['format']['encrypt'] = config['crypto']['encrypt_opts']
+#===============================================================================
+def streaming_upload(s3_conn, lconfig, remote_file_path, file_handle):
+    pipeline_format = ["encrypt"]
 
-    # ----
-    pl_in  = pipeline.build_pipeline(functools.partial(interface.read_file, conn), 'in')
-    pl_out = pipeline.build_pipeline(functools.partial(interface.write_file, conn), 'out')
+    #----
+    pipeline_configuration = pipeline.get_default_pipeline_format()
+    pipeline_configuration['chunk_size'] = lconfig['chunk_size']
+    pipeline_configuration['format'] = {i : None for i in pipeline_format}
+    if 'encrypt' in pipeline_configuration['format']:
+        pipeline_configuration['format']['encrypt'] = lconfig['crypto']['encrypt_opts']
 
-    # Check for previous failed uploads and delete them
-    if 'read_only' in config and not config['read_only']:
-        interface.delete_failed_uploads(conn)
-        garbage_collect(interface, conn, config, 'simple')
-    """
+    #-----
+    upload = s3_interface.streaming_upload()
+    pl     = pipeline.build_pipeline_streaming(upload, 'out')
+    pl.pass_config(lconfig, pipeline.serialise_pipeline_format(pipeline_configuration))
 
-    config = new_config
+    upload.begin(s3_conn, remote_file_path)
+
+    try:
+        while True:
+            print('.', end =" ")
+
+            chunk = file_handle.read(lconfig['chunk_size'])
+            if chunk == b'': break
+            pl.next_chunk(chunk)
+        print()
+        upload.finish()
+
+    except IOError:
+        upload.abort()
+        raise
+
+
+#===============================================================================
+def streaming_download(s3_conn, lconfig, remote_file_path, version_id, file_handle):
+    download_stream  = s3_interface.streaming_download()
+    header = download_stream.begin(s3_conn, remote_file_path, version_id)[0]
+    pl                = pipeline.build_pipeline_streaming(download_stream, 'in')
+    pl.pass_config(lconfig, header)
+
+    while True:
+        res = pl.next_chunk()
+        if res is None: break
+        file_handle.write(res)
+
 
 #===============================================================================
 def backup():
     # Connect to the remote
-    s3_conn = s3_interface.connect(config)
+    s3_conn = init_backup()
 
     for repository_name, details in config['repositories'].items():
         if 'backup' in details and details['backup'] is True:
@@ -186,16 +167,16 @@ def backup():
                 # Store file index objects for this commit
                 # ========================================================================
                 tree_objects = {}
-                def recursive_helper(tree_object_hash):
+                def recursive_helper(data_store, tree_object_hash):
                     nonlocal tree_objects
 
                     it = data_store.read_tree_index_object(tree_object_hash)
-                    tree_objects[tree_object_hash] = it
+                    tree_objects[tree_object_hash] = it # pylint: disable=W0640
 
-                    for dir_name, dir_hash in it['dirs'].items():
-                        recursive_helper(dir_hash)
+                    for dir_hash in it['dirs'].values():
+                        recursive_helper(data_store, dir_hash) # pylint: disable=W0640
 
-                recursive_helper(commit['tree_root'])
+                recursive_helper(data_store, commit['tree_root'])
 
                 # ===============================================
                 for tree_object_hash in tree_objects:
@@ -249,7 +230,11 @@ def backup():
                 for it in objects_to_upload:
                     if it['type'] == 'literal':
                         print('Uploading: ' + repository_name + '/' + it['path'])
-                        s3_interface.put_object(s3_conn, repository_name + '/' + it['path'], it['value'])
+
+                        fle = BytesIO(it['value'].encode('utf8'))
+                        streaming_upload(s3_conn, config,
+                                         remote_file_path = repository_name + '/' + it['path'],
+                                         file_handle = fle)
 
                     else:
                         file_hash = ''.join(it['dest'].split('/')[-2:])
@@ -262,21 +247,27 @@ def backup():
                         #-----
                         print('Uploading: ' + repository_name + '/' + it['dest'])
 
-                        streaming_file_upload(s3_conn, config,
-                                              remote_file_path = repository_name + '/' + it['dest'],
-                                              local_file_path  = it['source'])
+                        with open(it['source'], 'rb') as fle:
+                            streaming_upload(s3_conn, config,
+                                             remote_file_path = repository_name + '/' + it['dest'],
+                                             file_handle = fle)
 
                 # ========================================================================
                 # Finally, create a 'commit' object to mark that everything in this
                 # commit has been uploaded.
                 # ========================================================================
-                s3_interface.put_object(s3_conn, repository_name + '/commits/' + commit_hash, 'exists')
+                fle = BytesIO(b'exists')
+                streaming_upload(s3_conn, config,
+                                 remote_file_path = repository_name + '/commits/' + commit_hash,
+                                 file_handle = fle)
+
                 print('Backed up commit: ' + commit_hash)
+
 
 #===============================================================================
 def restore():
     # Connect to the remote
-    s3_conn = s3_interface.connect(config)
+    s3_conn = init_backup()
 
     for repository_name, details in config['repositories'].items():
         repository_path = details['path']
@@ -284,23 +275,27 @@ def restore():
 
         data_store = versioned_storage(repository_path)
 
-        # Download head
+        # Download head pointer
+        fle = BytesIO()
+        streaming_download(s3_conn, config, repository_name + '/head',
+                           version_id = None,
+                           file_handle = fle)
 
-        print(repository_name + '/head')
-        commit_pointer = s3_interface.get_object(s3_conn, repository_name + '/head')['body'].read().decode('utf8')
+        fle.seek(0)
+        commit_pointer = fle.read().decode('utf8')
 
-        print(commit_pointer)
 
         while True:
-            pass
-
             # Download commit
             object_path = commit_pointer[:2] + '/' + commit_pointer[2:]
             print('Downloading commit: ' + object_path)
-            streaming_file_download(s3_conn, config,
-                                    remote_file_path = repository_name + '/index/' + object_path,
-                                    version_id       = None,
-                                    local_file_path  = repository_path + '/index/' + object_path)
+
+            make_dirs_if_dont_exist(os.path.dirname(repository_path + '/index/' + object_path))
+            with open(repository_path + '/index/' + object_path, 'wb') as fle:
+                streaming_download(s3_conn, config,
+                                   remote_file_path = repository_name + '/index/' + object_path,
+                                   version_id       = None,
+                                   file_handle      = fle)
 
             commit = data_store.read_commit_index_object(commit_pointer)
 
@@ -311,16 +306,19 @@ def restore():
 
                 object_path = tree_object_hash[:2] + '/' + tree_object_hash[2:]
                 print('Downloading tree: ' + object_path)
-                streaming_file_download(s3_conn, config,
-                                        remote_file_path = repository_name + '/index/' + object_path,
-                                        version_id       = None,
-                                        local_file_path  = repository_path + '/index/' + object_path)
 
-                it = data_store.read_tree_index_object(tree_object_hash)
-                tree_objects[tree_object_hash] = it
+                make_dirs_if_dont_exist(os.path.dirname(repository_path + '/index/' + object_path)) # pylint: disable=W0640
+                with open(repository_path + '/index/' + object_path, 'wb') as fle: # pylint: disable=W0640
+                    streaming_download(s3_conn, config,
+                                       remote_file_path = repository_name + '/index/' + object_path, # pylint: disable=W0640
+                                       version_id       = None,
+                                       file_handle      = fle)
 
-                for dir_name, dir_hash in it['dirs'].items():
-                    recursive_helper(dir_hash)
+                it = data_store.read_tree_index_object(tree_object_hash) # pylint: disable=W0640
+                tree_objects[tree_object_hash] = it # pylint: disable=W0640
+
+                for dir_hash in it['dirs'].values():
+                    recursive_helper(dir_hash) # pylint: disable=W0640
 
             recursive_helper(commit['tree_root'])
 
@@ -329,10 +327,15 @@ def restore():
                 for fle in tree['files']:
                     object_path = fle['hash'][:2] + '/' + fle['hash'][2:]
                     print('Downloading file: ' + object_path)
-                    streaming_file_download(s3_conn, config,
-                                            remote_file_path = repository_name + '/files/' + object_path,
-                                            version_id       = None,
-                                            local_file_path  = repository_path + '/files/' + object_path)
+
+                    # TODO need to recreate empty files as they don't get stored
+
+                    make_dirs_if_dont_exist(os.path.dirname(repository_path + '/index/' + object_path))
+                    with open(repository_path + '/files/' + object_path, 'wb') as fle:
+                        streaming_download(s3_conn, config,
+                                           remote_file_path = repository_name + '/files/' + object_path,
+                                           version_id       = None,
+                                           file_handle      = fle)
 
             # update commit pointer if not 'root'
             commit_pointer = commit['parent']
@@ -390,6 +393,15 @@ def run():
 
             print()
 
+    #----------------------------
+    elif args[0] == 'gc':
+        pass
+        # TODO
+        # run garbage collection
+        # for all repos
+            # lock repo
+            # run gc
+            # unlock repo
 
     #----------------------------
     elif args[0] == 'backup':

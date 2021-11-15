@@ -1,19 +1,14 @@
 import struct
 import boto3
-import shttpfs3.backup.pipeline as pipeline
 
-def add_default_config(config):
-    config["s3"] = { "access_key": "",
-                     "secret_key": "",
-                     "bucket":     "" }
-    return config
-
+from shttpfs3.backup import pipeline
 
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
 def connect(config):
     """ Connect to S3 and ensure that versioning is enabled """
 
-    access_key = config['s3']['access_key']; secret_key = config['s3']['secret_key']
+    access_key = config['s3']['access_key']
+    secret_key = config['s3']['secret_key']
 
     if 'endpoint' in config['s3']:
         client = boto3.client( 's3',
@@ -97,44 +92,6 @@ def delete_object(conn, key, version_id=None):
     if version_id is None: return conn['client'].delete_object(Bucket=conn['bucket'], Key=key)
     else:                  return conn['client'].delete_object(Bucket=conn['bucket'], Key=key, VersionId=version_id)
 
-#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
-def list_versions(conn, fle = None):
-    if fle is None: version_list = conn['client'].list_object_versions(Bucket=conn['bucket'])
-    else: version_list = conn['client'].list_object_versions(Bucket=conn['bucket'], Prefix=fle)
-
-    if version_list['IsTruncated']: raise Exception('truncated result')
-    if 'Versions' not in version_list: return []
-
-    version_list = version_list['Versions']
-
-    version_list = sorted(version_list, key=lambda v: v['LastModified'])
-
-    return version_list
-
-#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
-def write_file(conn, data, meta, config): # pylint: disable=unused-argument
-    """ Pipeline format and other metadata is stored in the header to allow decryption should
-    the manifest be lost. This is not used during normal operation. This is included as
-    additional data during encryption to stop tampering. """
-
-    header = struct.pack('!I', len(meta['header'])) + meta['header']
-    res = put_object(conn, meta['path'], header + data, {})
-    meta['version_id'] = res['version_id']
-    return meta
-
-def read_file(conn, meta, config): # pylint: disable=unused-argument
-    # boto3 read obtains a chunk from the remote and caches it,
-    # don't have to worry about repeated calls.
-    version_id = meta['version_id'] if 'version_id' in meta else None
-
-    res = get_object(conn, meta['path'], version_id = version_id)
-
-    header_length = struct.unpack('!I', res['body'].read(4))[0]
-    header = res['body'].read(header_length)
-    meta['header'] = header
-    meta['last_modified'] = res['last_modified']
-    data = res['body'].read()
-    return data, meta
 
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
 class streaming_upload:

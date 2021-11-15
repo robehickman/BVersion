@@ -5,7 +5,6 @@ assembles pipelines to apply these transformations depending on configuration.
 """
 import functools, json, re
 import shttpfs3.backup.crypto as crypto
-import shttpfs3.backup.compress as compress
 
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
 def preprocess_config(interface, conn, config: dict):
@@ -14,17 +13,15 @@ def preprocess_config(interface, conn, config: dict):
 
     return crypto.preprocess_config(interface, conn, config)
 
-#================================================================
-#================================================================
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
 def get_default_pipeline_format() -> dict:
     return {'version' : 1,
             'format'  : {}}
 
 #------------------
-serialise_mapper = {'encrypt'    : 'E',
-                    'compress'   : 'C',
-                    'hash_names' : 'H'}
+serialise_mapper = {'encrypt'    : 'E'}
 
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
 def serialise_pipeline_format(pl_format: dict) -> bytes:
     """ For a given version the output of this MUST NOT CHANGE as it
     is used as additional data for validation"""
@@ -47,6 +44,7 @@ def serialise_pipeline_format(pl_format: dict) -> bytes:
 
     return json.dumps(to_json, separators=(',',':')).encode('utf-8')
 
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
 def parse_pipeline_format(serialised_pl_format: bytes) -> dict:
     raw = json.loads(serialised_pl_format)
 
@@ -66,32 +64,8 @@ def parse_pipeline_format(serialised_pl_format: bytes) -> dict:
 
     return pl_format
 
-#================================================================
-#================================================================
-def build_pipeline(interface, direction):
-    """ Build a flat pipeline of transformers,
 
-        Direction specifies whether processing data heading to storage or returning,
-        it has two valid options: out or in.
-     """
-
-    pipeline = interface
-
-    if direction == 'out':
-        # Remember that these are executed in the reverse order than they are listed
-        pipeline = functools.partial(crypto.encrypt, pipeline)
-        pipeline = functools.partial(compress.compress, pipeline)
-
-    elif direction == 'in':
-        pipeline = functools.partial(crypto.decrypt, pipeline)
-        pipeline = functools.partial(compress.decompress, pipeline)
-
-    else:
-        raise ValueError('Unknown pipeline direction')
-
-    return pipeline
-
-# -----------------
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
 def build_pipeline_streaming(interface, direction):
     """ Build a chunked (streaming) pipeline of transformers """
 
