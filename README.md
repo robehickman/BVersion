@@ -28,22 +28,14 @@ All commits are atomic, it is imposable to have a cancelled commit leave the ser
 A nice side effect of the data structure used on the server is that it inherently performs whole file de-duplication.
 
 
-### Atomic client side file system operations through journaling. 
-
-The client needs to store both the files in the working copy, and also a manifest of there modification times in order to detect changes. When files are downloaded from the server, if a file was added to the manifest before adding it to the file system, should the system crash in-between these two operations BVersion would detect the file as deleted, as it is missing from the file system and would subsequently delete it from the server erroneously. In order to avoid this kind of problem client side file operations are first written to a journal.
-
-Note that this system does nothing to help you if the file system is being modified by another program simultaneously. There is no sensible way to resolve this issues at the current time because common file systems do not support snapshotting. It is assumed that you will not edit the files while doing a commit.
-
-
 ### Conflict detection.
 
-As it is impossible to merge binary files in a general case, BVersion detects conflicts on a whole file basis. If two clients edit the same file, or if a file is deleted and edited you will be notified. Conflict resolution is then performed in the client by choosing which file to keep, and you can download changed versions for comparison or manual merging.
+As it is impossible to merge binary files in a general case, BVersion detects conflicts on a whole file basis. If two clients edit the same file, or if a file is deleted and edited you will be notified while running an update. Conflict resolution is then performed in the client by choosing which file to keep, and you can download server versions for comparison or manual merging.
 
 
 ### Public key based authentication using ed25519 via libsodium
 
-Client server authentication is done using public key cryptography. The server generates a cryptographically strong random sequence and sends this to the client. The client signs it with it's public key and sends this signature back to the server, which checks the signature and that the token matches the one it sent out. For encryption of the stream itself this data can be tunneled over https by proxying the BVersion server process.
-
+Client server authentication is implemented using public key cryptography.
 
 
 # Server Setup
