@@ -1,7 +1,7 @@
-BVersion is a version control system designed for managing binary files like images, audio, and video. It follows a centralised design and has a strong emphasis on code simplicity. BVersion is configured with text files, intentionally has no graphical interface, and does not use the system tray at all.
-
+BVersion is a centralised version control system for managing binary files like images, audio, and video.
 
 BVersion offers the following benefits:
+
 
 ### Very low working copy overhead:
 
