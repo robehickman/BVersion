@@ -1,7 +1,7 @@
-Simple HTTP File Sync (SHTTPFS) is a version control system designed for managing binary files like images, audio, and video. It follows a centralised design and has a strong emphasis on code simplicity. Shttpfs is configured with text files, intentionally has no graphical interface, and does not use the system tray at all.
+BVersion is a version control system designed for managing binary files like images, audio, and video. It follows a centralised design and has a strong emphasis on code simplicity. BVersion is configured with text files, intentionally has no graphical interface, and does not use the system tray at all.
 
 
-SHTTPFS offers the following benefits:
+BVersion offers the following benefits:
 
 ### Very low working copy overhead:
 
@@ -30,19 +30,19 @@ A nice side effect of the data structure used on the server is that it inherentl
 
 ### Atomic client side file system operations through journaling. 
 
-The client needs to store both the files in the working copy, and also a manifest of there modification times in order to detect changes. When files are downloaded from the server, if a file was added to the manifest before adding it to the file system, should the system crash in-between these two operations shttpfs would detect the file as deleted, as it is missing from the file system and would subsequently delete it from the server erroneously. In order to avoid this kind of problem client side file operations are first written to a journal.
+The client needs to store both the files in the working copy, and also a manifest of there modification times in order to detect changes. When files are downloaded from the server, if a file was added to the manifest before adding it to the file system, should the system crash in-between these two operations BVersion would detect the file as deleted, as it is missing from the file system and would subsequently delete it from the server erroneously. In order to avoid this kind of problem client side file operations are first written to a journal.
 
 Note that this system does nothing to help you if the file system is being modified by another program simultaneously. There is no sensible way to resolve this issues at the current time because common file systems do not support snapshotting. It is assumed that you will not edit the files while doing a commit.
 
 
 ### Conflict detection.
 
-As it is impossible to merge binary files in a general case, SHTTPFS detects conflicts on a whole file basis. If two clients edit the same file, or if a file is deleted and edited you will be notified. Conflict resolution is then performed in the client by choosing which file to keep, and you can download changed versions for comparison or manual merging.
+As it is impossible to merge binary files in a general case, BVersion detects conflicts on a whole file basis. If two clients edit the same file, or if a file is deleted and edited you will be notified. Conflict resolution is then performed in the client by choosing which file to keep, and you can download changed versions for comparison or manual merging.
 
 
 ### Public key based authentication using ed25519 via libsodium
 
-Client server authentication is done using public key cryptography. The server generates a cryptographically strong random sequence and sends this to the client. The client signs it with it's public key and sends this signature back to the server, which checks the signature and that the token matches the one it sent out. For encryption of the stream itself this data can be tunneled over https by proxying the SHTTPFS server process.
+Client server authentication is done using public key cryptography. The server generates a cryptographically strong random sequence and sends this to the client. The client signs it with it's public key and sends this signature back to the server, which checks the signature and that the token matches the one it sent out. For encryption of the stream itself this data can be tunneled over https by proxying the BVersion server process.
 
 
 
@@ -50,10 +50,10 @@ Client server authentication is done using public key cryptography. The server g
 
 First install using setup.py.
 
-SHTTPFS uses public key authentication, thus the first thing you need to do is generate a new keypair. First run 'shttpfs keygen', you will be asked if you wish to encrypt the private key under a password, if you do so this will be required every time you use the client.
+BVersion uses public key authentication, thus the first thing you need to do is generate a new keypair. First run 'bvn keygen', you will be asked if you wish to encrypt the private key under a password, if you do so this will be required every time you use the client.
 
 ```
-shttpfs keygen
+bvn keygen
 ...
 
 Private key:
@@ -64,13 +64,13 @@ RBbEyFmoKcbQzhMyHy2r5a/MZ1JdX4ITWOBUcd3EYO0=
 _-------------
 ```
 
-Once you have a new key pair you can set up the server. First you must create a configuration file, by default this is located in '/etc/shttpfs/server.json', if you wish to change the path of this file, you can edit 'cli_tools/shttpfs_server', the path is defined at the top of this file. The most basic configuration looks like this:
+Once you have a new key pair you can set up the server. First you must create a configuration file, by default this is located in '/etc/bversion/server.json'. The most basic configuration looks like this:
 
 ```json
 {
     "repositories" : {
         "example" : {
-            "path" : "/srv/file_sync/example"
+            "path" : "/srv/bversion/example"
         }
     },
     "users" : {
@@ -92,7 +92,7 @@ The file has two chunks, 'repositories', which specifies the repositories tracke
 }
 ```
 
-Now you just create the directory and run the command 'shttpfs_server' to start the server.
+Now you just create the repositiory directory and run the command 'bvn_server' to start the server.
 
 
 
@@ -102,10 +102,10 @@ To checkout an initial working copy from the server, just do the following comma
 
 
 ```
-shttpfs checkout http(s)://localhost:8090:/<your repository name>
+bvn checkout http(s)://localhost:8090:/<your repository name>
 ```
 
-To add files to the repository, just add them to this directory and run 'shttpfs commit'. To automatically track changes run 'shttpfs autosync'. The commands available are:
+To add files to the repository, just add them to this directory and run 'bvn commit'. The commands available are:
 
 
 *keygen
@@ -133,11 +133,6 @@ Commit the current additions and deletions to the server
 Run an update followed by a commit
 
 
-*autosync
-
-Periodically run an update followed by a commit. Doing this periodically means that changes affecting a group of files will be handled as a group instead of one at a time, which reduces the number of commits on the server.
-
-
 *list_versions
 
 Lists recent commits
@@ -158,7 +153,7 @@ lists all of the files in a commit
 
 ## Ignore filters
 
-SHTTPFS can ignore files that you wish to have in a working copy but do not wish to synchronise. Create a file .shttpfs_ignore in the root of your working copy. Within this file add ignore filters, one per line and UNIX wildcards are supported. Notice that paths match exactly, if a filter does not start with a wildcard it must begin with a slash.
+BVersion can ignore files that you wish to have in a working copy but do not wish to synchronise. Create a file .bvn_ignore in the root of your working copy. Within this file add ignore filters, one per line and UNIX wildcards are supported. Notice that paths match exactly, if a filter does not start with a wildcard it must begin with a slash.
 
 
 ```
@@ -167,13 +162,13 @@ SHTTPFS can ignore files that you wish to have in a working copy but do not wish
 ```
 
 
-Note that these are evaluated top to bottom so be careful with wildcards.  If a file is added to the ignore list after it has been committed previously, the next time shttpfs is run the file will be deleted on the server. Also note that the ignore file and pull ignore file (next section) will be tracked by the system. If you do not wish to track them add '/.shttpfs_ignore' and '/.shttpfs_pull_ignore' to the ignore file.
+Note that these are evaluated top to bottom so be careful with wildcards.  If a file is added to the ignore list after it has been committed previously, the next time BVersion is run the file will be deleted on the server. Also note that the ignore file and pull ignore file (next section) will be tracked by the system. If you do not wish to track them add '/.bvn_ignore' and '/.bvn_pull_ignore' to the ignore file.
 
 
 
 ## Pull ignore filters
 
-In addition to adding files that you do not wish to push, you can add files that you do not wish to pull from the server as well. This file is called .shttpfs_pull_ignore' and is also created in the root of a working copy. It's internal format is the same as above.
+In addition to adding files that you do not wish to push, you can add files that you do not wish to pull from the server as well. This file is called .bvn_pull_ignore' and is also created in the root of a working copy. It's internal format is the same as above.
 
 Note, if you wish to download files from the server that were previously in pull ignore, and have been removed, you need to run update -f. Normally update compares only the files which have been changed. Adding this flag performs a full comparison including unchanged files.
 
@@ -181,7 +176,7 @@ Note, if you wish to download files from the server that were previously in pull
 
 ## Conflict resolution
 
-When the same file in two working copies is changed simultaneously, or a change and deletion happen simultaneously to the same file the system detects this as a conflict. As shttpfs was designed to manage images and other binary files and automatic merging of these is usually impossible, conflict resolution is done on a whole file basis.
+When the same file in two working copies is changed simultaneously, or a change and deletion happen simultaneously to the same file the system detects this as a conflict. As BVersion was designed to manage images and other binary files and automatic merging of these is usually impossible, conflict resolution is done on a whole file basis.
 
-When a conflict is detected, you will be notified of this. If the conflict involves a file changed on the server you will be given the opportunity to download the changed files to compare them with the files in the working copy. Weather or not you opt to do so a conflict resolution file will be written to the .shttpfs directory.  To resolve a conflict you specify weather to resolve to the servers version of the file or the one in your working copy by deleting the opposite one from the list. Once you have done so for all items, thus all of the lists contain only one item, re-run the shttpfs client and the conflict will be resolved as described in the file.
+When a conflict is detected, you will be notified of this. If the conflict involves a file changed on the server you will be given the opportunity to download the changed files to compare them with the files in the working copy. Weather or not you opt to do so a conflict resolution file will be written to the .bvn directory.  To resolve a conflict you specify weather to resolve to the servers version of the file or the one in your working copy by deleting the opposite one from the list. Once you have done so for all items, thus all of the lists contain only one item, re-run BVersion update, and the conflict will be resolved as described in the file.
 
