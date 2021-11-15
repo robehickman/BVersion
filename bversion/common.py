@@ -29,7 +29,7 @@ def find_bvn_dir() -> Tuple[str, str]:
         if joined_path != '/':
             joined_path += '/'
 
-        if os.path.isdir(joined_path + '.bvn'):
+        if os.path.isdir(joined_path + '.bvn') or os.path.isdir(joined_path + '.shttpfs'):
             joined_cwd = '/' + cpjoin(*relative_cwd) + '/' if relative_cwd != [] else ''
             return joined_path, joined_cwd
 
