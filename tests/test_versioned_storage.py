@@ -2,14 +2,12 @@ import os
 from unittest import TestCase
 
 from tests.helpers import DATA_DIR, make_data_dir, delete_data_dir
-from shttpfs3.common import cpjoin, file_put_contents
-from shttpfs3.storage.versioned_storage import versioned_storage
-from shttpfs3.storage.server_db import get_server_db_instance_for_thread
+from bversion.common import cpjoin, file_put_contents
+from bversion.storage.versioned_storage import versioned_storage
+from bversion.storage.server_db import get_server_db_instance_for_thread
 
-CONF_DIR   = 'shttpfs'
+CONF_DIR   = 'bvn'
 BACKUP_DIR = 'back'
-
-MANIFEST_FILE      = 'manifest_xzf.json'
 
 class TestVersionedStorage(TestCase):
 ############################################################################################

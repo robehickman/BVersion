@@ -5,10 +5,10 @@ from unittest import TestCase
 from io import BytesIO
 from tests.helpers import DATA_DIR, delete_data_dir
 
-from shttpfs3.common import file_get_contents, file_put_contents, make_dirs_if_dont_exist
-import shttpfs3.client as client
-import shttpfs3.server as server
-from shttpfs3.server import Request, Responce
+from bversion.common import file_get_contents, file_put_contents, make_dirs_if_dont_exist
+import bversion.client as client
+import bversion.server as server
+from bversion.server import Request, Responce
 
 private_key = "bkUg07WLoxKcsWaupuVIyyMrVyWMdX8q8Zvta+wwKi6kmF7pCyklcIoNAOkfo1YR7O/Fb/Z0bJJ1j/lATtkKQ6c="
 public_key  = "mF7pCyklcIoNAOkfo1YR7O/Fb/Z0bJJ1j/lATtkKQ6c="
@@ -18,8 +18,8 @@ repo_name   = 'test_repo'
 def setup():
     """ create test dirs with two clients and a server """
     def make_client_dirs(name):
-        make_dirs_if_dont_exist(DATA_DIR + name + '/.shttpfs')
-        file_put_contents(DATA_DIR +  name + '/.shttpfs/client_configuration.json', bytes(json.dumps({
+        make_dirs_if_dont_exist(DATA_DIR + name + '/.bvn')
+        file_put_contents(DATA_DIR +  name + '/.bvn/client_configuration.json', bytes(json.dumps({
             "server_domain"  : "none",
             "user"           : "test",
             "repository"     : repo_name,
@@ -31,7 +31,7 @@ def setup():
 
 ############################################################################################
 def setup_client(name):
-    client.working_copy_base_path = DATA_DIR + name
+    os.chdir(DATA_DIR + name)
 
     server.init_server({
         "repositories" : {
@@ -215,7 +215,7 @@ class TestSystem(TestCase):
         # Test push ignore
         #==================================================
         file_put_contents(DATA_DIR +  'client1/push_ignored', test_content_4)
-        file_put_contents(DATA_DIR +  'client1/.shttpfs_ignore', b'/push_ignored\n/.shttpfs_ignore')
+        file_put_contents(DATA_DIR +  'client1/.bvn_ignore', b'/push_ignored\n/.bvn_ignore')
 
         setup_client('client1')
         session_token = client.authenticate()
@@ -224,7 +224,7 @@ class TestSystem(TestCase):
         self.assertEqual(version_id, None)
 
         os.remove(DATA_DIR +  'client1/push_ignored')
-        os.remove(DATA_DIR +  'client1/.shttpfs_ignore')
+        os.remove(DATA_DIR +  'client1/.bvn_ignore')
 
         time.sleep(0.5) # See above
 
@@ -238,7 +238,7 @@ class TestSystem(TestCase):
         version_id = client.commit(session_token, 'add a file that will be ignored in the second client')
 
         # ----------
-        file_put_contents(DATA_DIR +  'client2/.shttpfs_pull_ignore', b'/pull_ignored')
+        file_put_contents(DATA_DIR +  'client2/.bvn_pull_ignore', b'/pull_ignored')
 
         setup_client('client2')
         session_token = client.authenticate()
@@ -253,7 +253,7 @@ class TestSystem(TestCase):
         # test that a file removed from pull ignore
         # is downloaded on next update
         #==================================================
-        os.remove(DATA_DIR +  'client2/.shttpfs_pull_ignore')
+        os.remove(DATA_DIR +  'client2/.bvn_pull_ignore')
 
         setup_client('client2')
         session_token = client.authenticate()
@@ -307,7 +307,7 @@ class TestSystem(TestCase):
             # Clean out client1
             res = os.listdir(DATA_DIR +  'client1')
             for it in res:
-                if it not in ['.shttpfs']:
+                if it not in ['.bvn']:
                     os.remove(DATA_DIR + 'client1/' + it)
 
             # client1 init
@@ -382,7 +382,7 @@ class TestSystem(TestCase):
 
         #------------------------------------------------------
         def perform_selective_conflict_resolve(mode = 'full'):
-            resolution_file = file_get_contents(DATA_DIR + 'client2/.shttpfs/conflict_resolution').decode('utf-8')
+            resolution_file = file_get_contents(DATA_DIR + 'client2/.bvn/conflict_resolution').decode('utf-8')
 
             resolutions = ['server', 'client', 'server', 'client']
 
@@ -403,7 +403,7 @@ class TestSystem(TestCase):
                 new_file += line + '\n'
             resolution_file = new_file
 
-            file_put_contents(DATA_DIR + 'client2/.shttpfs/conflict_resolution', resolution_file.encode('utf-8'))
+            file_put_contents(DATA_DIR + 'client2/.bvn/conflict_resolution', resolution_file.encode('utf-8'))
 
         #------------------------------------------------------
         def test_selective_conflict_resolve(self, base_path):
@@ -514,7 +514,7 @@ class TestSystem(TestCase):
         except SystemExit: pass
 
         # Test incomplete resolution file causes an error
-        shutil.copyfile(DATA_DIR + 'client2/.shttpfs/conflict_resolution', DATA_DIR + 'client2/.shttpfs/conflict_resolution.back')
+        shutil.copyfile(DATA_DIR + 'client2/.bvn/conflict_resolution', DATA_DIR + 'client2/.bvn/conflict_resolution.back')
         perform_selective_conflict_resolve('partial')
 
         try:
@@ -524,7 +524,7 @@ class TestSystem(TestCase):
             pass
 
         # Modify the conflict resolution file to resolve the conflicts
-        shutil.copyfile(DATA_DIR + 'client2/.shttpfs/conflict_resolution.back', DATA_DIR + 'client2/.shttpfs/conflict_resolution')
+        shutil.copyfile(DATA_DIR + 'client2/.bvn/conflict_resolution.back', DATA_DIR + 'client2/.bvn/conflict_resolution')
         perform_selective_conflict_resolve()
         client.update(session_token)
 

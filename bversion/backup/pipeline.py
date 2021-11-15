@@ -4,7 +4,7 @@ may be applied to the data in transit including encryption. This file
 assembles pipelines to apply these transformations depending on configuration.
 """
 import functools, json, re
-import shttpfs3.backup.crypto as crypto
+import bversion.backup.crypto as crypto
 
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
 def preprocess_config(interface, conn, config: dict):

@@ -1,9 +1,9 @@
 import sys, os
 from io import BytesIO
-from shttpfs3.common import cpjoin, merge_config, make_dirs_if_dont_exist
+from bversion.common import cpjoin, merge_config, make_dirs_if_dont_exist
 
-from shttpfs3.backup import s3_interface, pipeline, crypto
-from shttpfs3.storage.versioned_storage import versioned_storage
+from bversion.backup import s3_interface, pipeline, crypto
+from bversion.storage.versioned_storage import versioned_storage
 
 # ---------------
 config = {}
@@ -350,9 +350,9 @@ def run():
     #----------------------------
     if len(args) == 0 or args[0] == '-h': print("""
 
-    Usage: shttpfs_repo [command]
+    Usage: bvn_repo [command]
 
-    verify                       : Verify repository contents has not been courrupted
+    verify                       : Verify repository contents has not been corrupted
 
     backup                       : Backup repositories
 
@@ -412,4 +412,4 @@ def run():
         restore()
 
     else:
-        print('Unknowm command. Run shttpfs_repo -h to list commands.')
+        print('Unknowm command. Run bvn_repo -h to list commands.')

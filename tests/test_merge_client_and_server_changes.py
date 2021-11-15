@@ -1,5 +1,5 @@
 from unittest import TestCase
-from shttpfs3.merge_client_and_server_changes import merge_client_and_server_changes
+from bversion.merge_client_and_server_changes import merge_client_and_server_changes
 
 class TestMerge(TestCase):
 ############################################################################################

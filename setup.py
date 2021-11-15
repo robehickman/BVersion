@@ -5,29 +5,30 @@ def readme():
         return f.read()
 
 setup(
-    name='shttpfs',
-    version='0.5',
-    description='Client/server Http File Sync Utility',
+    name='BVersion',
+    version='0.9',
+    description='Centralised version control system for binary files',
     long_description=readme(),
 
     classifiers=[
-        'Development Status :: 4 - Beta',
+        'Development Status :: 5 - Production/Stable',
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python :: 3.6',
         'Topic :: File Management :: File Synchronisation',
+        'Topic :: Software Development :: Version Control'
     ],
 
-    keywords='file synchronisation synchroniser',
-    url='https://github.com/robehickman/simple-http-file-sync',
+    keywords='binary file version control',
+    url='https://github.com/robehickman/BVersion',
     author='Robert Hickman',
     author_email='robehickman@gmail.com',
     license='MIT',
 
     packages=[
-        'shttpfs3',
-        'shttpfs3.http',
-        'shttpfs3.storage',
-        'shttpfs3.backup'
+        'bversion',
+        'bversion.http',
+        'bversion.storage',
+        'bversion.backup'
     ],
 
     test_suite='nose.collector',
@@ -40,9 +41,9 @@ setup(
     ],
 
     scripts=[
-        'cli_tools/shttpfs',
-        'cli_tools/shttpfs_server',
-        'cli_tools/shttpfs_repo'
+        'cli_tools/bvn',
+        'cli_tools/bvn_server',
+        'cli_tools/bvn_repo'
     ],
 
     zip_safe=False

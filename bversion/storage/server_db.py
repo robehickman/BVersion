@@ -1,7 +1,7 @@
 import sqlite3, base64, pysodium, threading, time
 from threading import current_thread
 
-from shttpfs3.common import cpjoin, file_get_contents
+from bversion.common import cpjoin, file_get_contents
 
 #=====================================================
 threadLocal = threading.local()

@@ -15,9 +15,9 @@ def merge_config(config, parsed_config):
     return config
 
 #===============================================================================
-def find_shttpfs_dir() -> Tuple[str, str]:
+def find_bvn_dir() -> Tuple[str, str]:
     """ Looks up the directory tree from the PWD to find a directory containing
-    a .shttpfs directory, and returns that path """
+    a .bvn directory, and returns that path """
 
     cwd:          str       = os.getcwd()
     split_path:   List[str] = cwd.split('/')
@@ -29,12 +29,12 @@ def find_shttpfs_dir() -> Tuple[str, str]:
         if joined_path != '/':
             joined_path += '/'
 
-        if os.path.isdir(joined_path + '.shttpfs'):
+        if os.path.isdir(joined_path + '.bvn'):
             joined_cwd = '/' + cpjoin(*relative_cwd) + '/' if relative_cwd != [] else ''
             return joined_path, joined_cwd
 
         if joined_path == '/':
-            raise SystemExit('Not a shttpfs checkout, could not find a .shttpfs directory in parent dirs')
+            raise Exception('Not a BVersion checkout, could not find a .bvn directory in any parent dirs')
 
         relative_cwd = [split_path.pop()] + relative_cwd
 

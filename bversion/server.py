@@ -3,13 +3,13 @@ import fcntl, os, json, time, base64, re, errno
 import pysodium # type: ignore
 
 #====
-from shttpfs3.http.http_server import Request, Responce, ServeFile
-from shttpfs3.common import cpjoin, file_get_contents
-from shttpfs3.storage.versioned_storage import versioned_storage
-from shttpfs3.merge_client_and_server_changes import merge_client_and_server_changes
-from shttpfs3.storage.server_db import get_server_db_instance_for_thread
+from bversion.http.http_server import Request, Responce, ServeFile
+from bversion.common import cpjoin, file_get_contents
+from bversion.storage.versioned_storage import versioned_storage
+from bversion.merge_client_and_server_changes import merge_client_and_server_changes
+from bversion.storage.server_db import get_server_db_instance_for_thread
 
-from shttpfs3 import version_numbers
+from bversion import version_numbers
 
 # TODO server can become stuck in an infinite loop, needs to be fixed
 
@@ -23,7 +23,7 @@ user_auth_fail_msg    = "Could not authenticate user"
 conflict_msg          = 'Please resolve conflicts'
 need_to_update_msg    = "Please update to latest revision"
 no_active_commit_msg  = "A commit must be started before attempting this operation."
-unsuported_client_msg = "Please update your shttpfs client."
+unsuported_client_msg = "Please update your BVersion client."
 
 extend_session_duration = (60 * 60) * 2 # 2 hours
 

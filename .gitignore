@@ -5,9 +5,9 @@
 *.swn
 server.ini
 lint.txt
-shttpfs.egg-info
+bversion.egg-info
 build
 dist
-shttpfs/tests/vers_test
+bversion/tests/vers_test
 tests/filesystem_tests
 .mypy_cache

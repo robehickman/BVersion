@@ -1,6 +1,6 @@
 import os, json, urllib.parse
 from typing import Dict
-from shttpfs3.http.http_client import HTTPClient
+from bversion.http.http_client import HTTPClient
 
 class client_http_request:
 ############################################################################################
@@ -29,7 +29,7 @@ class client_http_request:
             'Host'           : self.server_base_url,
             'Content-Type'   : content_type,
             'Content-length' : str(body_length),
-            'User-Agent'     : 'SHTTPFS' }
+            'User-Agent'     : 'BVersion' }
 
         for k, v in add_headers.items(): headers[k] = v
 

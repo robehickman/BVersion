@@ -2,7 +2,7 @@ import subprocess
 from unittest import TestCase
 
 from tests.helpers import DATA_DIR, make_data_dir, delete_data_dir
-from shttpfs3.common import cpjoin, file_put_contents, hash_file, find_manifest_changes
+from bversion.common import cpjoin, file_put_contents, hash_file, find_manifest_changes
 
 def get_state(path, last_mod):
     return {'path'     : path, 'last_mod' : last_mod}

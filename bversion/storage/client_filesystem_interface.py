@@ -1,5 +1,5 @@
 import json
-from shttpfs3.common import cpjoin, get_single_file_info, file_or_default
+from bversion.common import cpjoin, get_single_file_info, file_or_default
 
 class client_filesystem_interface:
 
@@ -9,7 +9,6 @@ class client_filesystem_interface:
 
         self.client_db     = client_db
         self.jfs           = journaling_filesystem
-        self.manifest_file = '.shttpfs/manifest.json'
 
 #===============================================================================
     def get_single_file_info(self, rel_path):
@@ -29,7 +28,7 @@ class client_filesystem_interface:
             self.jfs.begin()
 
             # Add the file to the fs
-            tmppath = cpjoin('.shttpfs', 'downloading')
+            tmppath = cpjoin('.bvn', 'downloading')
             self.jfs.file_put_contents(tmppath, data)
             self.jfs.move_file(tmppath, rpath)
 

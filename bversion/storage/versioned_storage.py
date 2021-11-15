@@ -5,8 +5,8 @@ from datetime import datetime
 from typing import List, Dict, Any, cast
 from typing_extensions import TypedDict
 
-import shttpfs3.common as sfs
-from shttpfs3.storage.server_db import get_server_db_instance_for_thread
+import bversion.common as sfs
+from bversion.storage.server_db import get_server_db_instance_for_thread
 
 import pprint
 

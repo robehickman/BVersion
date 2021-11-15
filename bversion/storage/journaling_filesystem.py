@@ -1,7 +1,7 @@
 import os.path as p
 import os, shutil, errno
 
-from shttpfs3.common import cpjoin, ignore, file_or_default, file_put_contents
+from bversion.common import cpjoin, ignore, file_or_default, file_put_contents
 
 
 ############################################################################################

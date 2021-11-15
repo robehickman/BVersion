@@ -1,15 +1,14 @@
 import os
 from unittest import TestCase
 from tests.helpers import DATA_DIR, make_data_dir, delete_data_dir
-from shttpfs3.common import cpjoin
+from bversion.common import cpjoin
 
-from shttpfs3.storage.client_db import client_db
-from shttpfs3.storage.journaling_filesystem import journaling_filesystem
+from bversion.storage.client_db import client_db
+from bversion.storage.journaling_filesystem import journaling_filesystem
 
-CONF_DIR   = 'shttpfs'
+CONF_DIR   = 'bvn'
 BACKUP_DIR = 'back'
 
-MANIFEST_FILE      = 'manifest_xzf.json'
 
 class TestJournalingFilesystem(TestCase):
 ############################################################################################

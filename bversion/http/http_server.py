@@ -4,7 +4,7 @@ import socket
 from typing import Union
 import _thread
 
-from shttpfs3.http.http_common import read_body, parse_http_request_preamble
+from bversion.http.http_common import read_body, parse_http_request_preamble
 
 #=====================
 class Request:

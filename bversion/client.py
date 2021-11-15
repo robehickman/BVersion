@@ -10,16 +10,16 @@ from termcolor import colored
 import pysodium #type: ignore
 
 #=================================================
-from shttpfs3.common import (cpjoin, get_file_list, find_manifest_changes, make_dirs_if_dont_exist,
+from bversion.common import (cpjoin, get_file_list, find_manifest_changes, make_dirs_if_dont_exist,
                              manifestFileDetails, get_single_file_info, file_or_default, question_user,
-                             file_put_contents, file_get_contents, ignore, find_shttpfs_dir)
+                             file_put_contents, file_get_contents, ignore, find_bvn_dir)
 
-from shttpfs3.http.client_http_request import client_http_request
-from shttpfs3.storage.client_db   import client_db
-from shttpfs3.storage.journaling_filesystem       import journaling_filesystem
-from shttpfs3.storage.client_filesystem_interface import client_filesystem_interface
-from shttpfs3 import crypto
-from shttpfs3 import version_numbers
+from bversion.http.client_http_request import client_http_request
+from bversion.storage.client_db   import client_db
+from bversion.storage.journaling_filesystem       import journaling_filesystem
+from bversion.storage.client_filesystem_interface import client_filesystem_interface
+from bversion import crypto
+from bversion import version_numbers
 
 #===============================================================================
 class clientConfiguration(TypedDict, total=False):
@@ -38,30 +38,44 @@ cdb:               client_db                   = None
 data_store:        client_filesystem_interface = None
 server_connection: client_http_request         = None
 
-working_copy_base_path: str
-relative_cwd: str
-working_copy_base_path, relative_cwd = find_shttpfs_dir()
+working_copy_base_path: str                    = ''
+relative_cwd: str                              = ''
 
 
 #===============================================================================
 def init(unlocked = False):
-    global cdb, data_store, server_connection, config
-    try: config = json.loads(file_get_contents(cpjoin(working_copy_base_path, '.shttpfs', 'client_configuration.json')))
-    except IOError:    raise SystemExit('No shttpfs configuration found')
+    global cdb, data_store, server_connection, config, working_copy_base_path, relative_cwd
+
+    working_copy_base_path, relative_cwd = find_bvn_dir()
+
+    # As the system was renamed from shttpfs to BVersion, we need to rename assosiated dirs and files if needed
+    try: os.rename(cpjoin(working_copy_base_path, '.shttpfs'), cpjoin(working_copy_base_path, '.bvn'))
+    except FileNotFoundError: pass
+
+    try: os.rename(cpjoin(working_copy_base_path, '.shttpfs_ignore'), cpjoin(working_copy_base_path, '.bvn_ignore'))
+    except FileNotFoundError: pass
+
+    try:os.rename(cpjoin(working_copy_base_path, '.shttpfs_pull_ignore'), cpjoin(working_copy_base_path, '.bvn_pull_ignore'))
+    except FileNotFoundError: pass
+
+
+    # ======================================
+    try: config = json.loads(file_get_contents(cpjoin(working_copy_base_path, '.bvn', 'client_configuration.json')))
+    except IOError:    raise SystemExit('No BVersion configuration found')
     except ValueError: raise SystemExit('Configuration file syntax error')
 
     # Lock for sanity check, only one client can use the working copy at any time
     try:
-        lockfile = open(cpjoin(working_copy_base_path, '.shttpfs', 'lock_file'), 'w')
+        lockfile = open(cpjoin(working_copy_base_path, '.bvn', 'lock_file'), 'w')
         fcntl.flock(lockfile, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except IOError: raise SystemExit('Could not lock working copy')
 
     #-----------
-    ignore_filters:      str = file_or_default(cpjoin(working_copy_base_path, '.shttpfs_ignore'), b'').decode('utf8')
-    pull_ignore_filters: str = file_or_default(cpjoin(working_copy_base_path, '.shttpfs_pull_ignore'), b'').decode('utf8')
+    ignore_filters:      str = file_or_default(cpjoin(working_copy_base_path, '.bvn_ignore'), b'').decode('utf8')
+    pull_ignore_filters: str = file_or_default(cpjoin(working_copy_base_path, '.bvn_pull_ignore'), b'').decode('utf8')
 
     #-----------
-    config['ignore_filters']:      List[str] = ['/.shttpfs/*', '/.shttpfs_pull_ignore'] + ignore_filters.splitlines()
+    config['ignore_filters']:      List[str] = ['/.bvn/*', '/.bvn_pull_ignore'] + ignore_filters.splitlines()
     config['pull_ignore_filters']: List[str] = pull_ignore_filters.splitlines()
 
     # We append the pull ignore filters to the ignore filters in order to stop the client
@@ -70,15 +84,15 @@ def init(unlocked = False):
 
     config['data_dir']:            str       = working_copy_base_path
 
-    config['conflict_comparison_file_root']  = cpjoin(config['data_dir'], '.shttpfs', 'conflict_files')
-    config['conflict_resolution_file']       = cpjoin(config['data_dir'], '.shttpfs', 'conflict_resolution')
+    config['conflict_comparison_file_root']  = cpjoin(config['data_dir'], '.bvn', 'conflict_files')
+    config['conflict_resolution_file']       = cpjoin(config['data_dir'], '.bvn', 'conflict_resolution')
 
 
 
     if not unlocked: config["private_key"] = crypto.unlock_private_key(config["private_key"])
 
-    cdb = client_db(cpjoin(config['data_dir'], '.shttpfs', 'manifest.db'))
-    journaling_fs = journaling_filesystem(cdb, config['data_dir'], '.shttpfs')
+    cdb = client_db(cpjoin(config['data_dir'], '.bvn', 'manifest.db'))
+    journaling_fs = journaling_filesystem(cdb, config['data_dir'], '.bvn')
     data_store = client_filesystem_interface(cdb, journaling_fs)
 
     if server_connection is None:
@@ -88,7 +102,7 @@ def init(unlocked = False):
 #===============================================================================
 def update_manifest(session_token):
 
-    old_manifest_path = cpjoin(config['data_dir'], '.shttpfs', 'manifest.json')
+    old_manifest_path = cpjoin(config['data_dir'], '.bvn', 'manifest.json')
 
     if os.path.isfile(old_manifest_path):
         old_manifest = json.loads(file_get_contents(old_manifest_path))
@@ -112,7 +126,7 @@ def update_manifest(session_token):
         server_file_info_for_version = new_server_file_info_for_version
 
         # The number of items in the local manifest may be more than the
-        # remote in case the client did a partial update, then shttpfs version
+        # remote in case the client did a partial update, then Bversion version
         # was updated, but should never be less
         if len(old_manifest['files']) < len(server_file_info_for_version):
             raise Exception('local manifest error')
@@ -226,7 +240,7 @@ def authenticate(previous_token: str = None) -> str:
 
         if headers['status'] == 'ok':
             if int(headers['server_version']) < version_numbers.minimum_server_version:
-                raise SystemExit("Please update your SHTTPFS client")
+                raise SystemExit("Please update your BVersion client")
 
             return previous_token
 
@@ -247,7 +261,7 @@ def authenticate(previous_token: str = None) -> str:
 
         if headers['status'] == 'ok':
             if int(headers['server_version']) < version_numbers.minimum_server_version:
-                raise SystemExit("Please update your SHTTPFS client")
+                raise SystemExit("Please update your BVersion client")
 
             else:
                 return headers['session_token']
@@ -313,8 +327,8 @@ def checkout(args):
     # create repo dir
     try: os.makedirs(repository_name)
     except: raise SystemExit('Directory already exists')
-    os.makedirs(cpjoin(repository_name, '.shttpfs'))
-    file_put_contents(cpjoin(repository_name, '.shttpfs', 'client_configuration.json'), json.dumps(config, indent=4))
+    os.makedirs(cpjoin(repository_name, '.bvn'))
+    file_put_contents(cpjoin(repository_name, '.bvn', 'client_configuration.json'), json.dumps(config, indent=4))
 
     config["private_key"] = unlocked_key
     os.chdir(repository_name); init(True)
@@ -511,13 +525,13 @@ def resolve_update_conflicts(session_token: str, changes: list, version_id: str,
                         make_dirs_if_dont_exist(cpjoin(config['conflict_comparison_file_root'], *fle['path'].split('/')[:-1]) + '/')
                         result(cpjoin(config['conflict_comparison_file_root'], fle['path']))
 
-                print('Server versions of conflicting files written to .shttpfs/conflict_files\n')
+                print('Server versions of conflicting files written to .bvn/conflict_files\n')
 
             # ====================
             file_put_contents(config['conflict_resolution_file'], resolution_file.encode('utf-8'))
-            raise SystemExit("Conflict resolution file written to .shttpfs/conflict_resolution\n" +
+            raise SystemExit("Conflict resolution file written to .bvn/conflict_resolution\n" +
                             "Please edit this file removing 'client', or 'server' to choose which\n" +
-                            "version to retain, and then re-run shttpfs update.")
+                            "version to retain, and then re-run bvn update.")
 
     if changes['conflict_files'] != []:
         raise Exception('Not all conflicting files have been resolved')
@@ -898,7 +912,7 @@ def revert(session_token, args):
                 data_store.fs_put(file_path, req_result, additional_manifest_data = {'server_file_hash' : file_hash})
 
             else:
-                tmp_path = cpjoin(working_copy_base_path, '.shttpfs', 'download_tmp')
+                tmp_path = cpjoin(working_copy_base_path, '.bvn', 'download_tmp')
                 req_result(tmp_path)
                 os.rename(tmp_path, cpjoin(working_copy_base_path, file_path))
         else:
@@ -989,7 +1003,7 @@ def pull_ignore(filters, require_commit_changes):
         cdb.commit()
 
     # Add the filters to the pull ignore file
-    pull_ignore_file_path = cpjoin(working_copy_base_path, '.shttpfs_pull_ignore')
+    pull_ignore_file_path = cpjoin(working_copy_base_path, '.bvn_pull_ignore')
     pull_ignore_filters: str = file_or_default(pull_ignore_file_path, b'').decode('utf8')
     pull_ignore_filters += "\n"
 
@@ -1149,10 +1163,10 @@ def run():
     #----------------------------
     if len(args) == 0 or args[0] == '-h': print("""
 
-    Usage: shttpfs [command] [optional paramiters] [various (see below)]
+    Usage: bvn [command] [optional parameters] [various (see below)]
 
-    Optional paramiters are shown after the command they can be used with.
-    They MUST be placed before other paramiter data.
+    Optional parameters are shown after the command they can be used with.
+    They MUST be placed before other parameter data.
 
 
     Setup commands:
@@ -1170,7 +1184,7 @@ def run():
                                    ignored files. 
 
     status                       : Display a list of files that have been changed locally since
-                                   the most recient commit.
+                                   the most resent commit.
 
     commit                       : Commit any changes to the working copy to the server
 
@@ -1178,12 +1192,12 @@ def run():
 
 
     revert [path] ...            : Revert the specified files to the version stored on the server.
-                                   When no optional paramiers are provided, gets files from the
+                                   When no optional paramours are provided, gets files from the
                                    revision the client has checked out.
 
            --v [Version ID]      - Specify a version id. 
 
-           -h                    - Use the current head commit (most recient commit on the server)
+           -h                    - Use the current head commit (most resent commit on the server)
 
 
     pull-ignore [filter] ...     : Remove the files specified by the provided filters from the manifest,
@@ -1192,7 +1206,7 @@ def run():
 
             -f                    - Force, bypass requirement to commit any changes first.
 
-    list-ignored-files           : Lists files in the working copy that are being ignored due to .shttpfs_ignore
+    list-ignored-files           : Lists files in the working copy that are being ignored due to .bvn_ignore
 
     list-versions                : Lists all revisions on the server.
 
@@ -1203,7 +1217,7 @@ def run():
 
            -h                    - Show changes in the head revision
 
-           -i                    - Show only items which have not beed pulled due to your pull ignore file.
+           -i                    - Show only items which have not been pulled due to your pull ignore file.
     
 
     list-changes                 : Lists all changes in the specified revision. When no arguments are provided,
@@ -1328,4 +1342,4 @@ def run():
         list_changes_in_revision(session_token, args)
 
     else:
-        print('Unknowm command. Run shttpfs -h to list commands.')
+        print('Unknowm command. Run bvn -h to list commands.')
