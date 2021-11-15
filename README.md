@@ -5,17 +5,17 @@ BVersion offers the following benefits:
 
 ### Very low working copy overhead:
 
-All version history is stored on the server and working copies (checkouts) store only the minimum data required to detect changed files, with an overhead of only a few megabytes on a repository of thousands of files. It uses less disk space than Subversion (which stores two copies of everything), and vastly less than git (which stores the whole change history).
+All version history is stored on the server and working copies (checkouts) store only the minimum data required to detect changed files, with an overhead of only a few megabytes on a repository of thousands of files.
 
 
 ### Partial checkouts
 
-You can specify arbitrary rules for omitting files from a working copy, while leaving them alone on the server.
+You can specify arbitary rules for omitting files from a working copy, while leaving them alone on the server.
 
 
 ### Effortless system upgrades and migration:
 
-Server updates and migrations are effortless as all server data is stored under a single directory, with no dependency on an external SQL database.
+Server updates and migrations are effortless as all server data is stored under a single directory.
 
 
 ### Atomic commits
@@ -25,12 +25,12 @@ All commits are atomic, it is imposable to have a cancelled commit leave the ser
 
 ### Server side whole file deduplication:
 
-A nice side effect of the data structure used on the server is that it inherently performs whole file de-duplication.
+If the same  file is uploaded multiple times, only one copy will be stored on the server to reduce storage requirements.
 
 
 ### Conflict detection.
 
-As it is impossible to merge binary files in a general case, BVersion detects conflicts on a whole file basis. If two clients edit the same file, or if a file is deleted and edited you will be notified while running an update. Conflict resolution is then performed in the client by choosing which file to keep, and you can download server versions for comparison or manual merging.
+BVersion detects conflicts on a whole file basis. If two clients edit the same file you will be notified while running an update. Conflict resolution is then performed in the client on a whole file basis. You can download server versions for comparison or manual merging.
 
 
 ### Public key based authentication using ed25519 via libsodium
