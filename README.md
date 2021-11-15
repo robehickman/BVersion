@@ -38,11 +38,17 @@ BVersion detects conflicts on a whole file basis. If two clients edit the same f
 Client server authentication is implemented using public key cryptography.
 
 
+# Installing
+
+```
+git clone https://github.com/robehickman/BVersion.git
+cd BVersion
+sudo pip3 install .
+```
+
 # Server Setup
 
-First install using setup.py.
-
-BVersion uses public key authentication, thus the first thing you need to do is generate a new keypair. First run 'bvn keygen', you will be asked if you wish to encrypt the private key under a password, if you do so this will be required every time you use the client.
+BVersion uses public key authentication. the first thing you need to do is generate a new keypair. First run 'bvn keygen', you will be asked if you wish to encrypt the private key under a password, if you do so this will be required every time you use the client.
 
 ```
 bvn keygen
@@ -84,7 +90,14 @@ The file has two chunks, 'repositories', which specifies the repositories tracke
 }
 ```
 
-Now you just create the repositiory directory and run the command 'bvn_server' to start the server.
+Finally:
+
+```
+mkdir /srv/bversion
+bvn_server
+```
+
+Now you just create the repositiory directory. To st and run the command 'bvn_server' to start the server.
 
 
 
