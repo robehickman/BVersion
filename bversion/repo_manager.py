@@ -1,7 +1,7 @@
 import sys, os
 from io import BytesIO
-from bversion.common import cpjoin, merge_config, make_dirs_if_dont_exist
 
+from bversion.common import cpjoin, merge_config, make_dirs_if_dont_exist
 from bversion.backup import s3_interface, pipeline, crypto
 from bversion.storage.versioned_storage import versioned_storage
 
@@ -20,7 +20,6 @@ def init(new_config):
     }
 
     base_conf = crypto.add_default_config(base_conf)
-
 
     config = merge_config(base_conf, new_config)
 
@@ -284,14 +283,18 @@ def restore():
         fle.seek(0)
         commit_pointer = fle.read().decode('utf8')
 
+        with open(cpjoin(repository_path, 'head'), 'w') as fle:
+            fle.write(commit_pointer)
 
         while True:
             # Download commit
             object_path = commit_pointer[:2] + '/' + commit_pointer[2:]
+            fs_path = cpjoin(repository_path, 'index', object_path)
+
             print('Downloading commit: ' + object_path)
 
-            make_dirs_if_dont_exist(os.path.dirname(repository_path + '/index/' + object_path))
-            with open(repository_path + '/index/' + object_path, 'wb') as fle:
+            make_dirs_if_dont_exist(os.path.dirname(fs_path))
+            with open(fs_path, 'wb') as fle:
                 streaming_download(s3_conn, config,
                                    remote_file_path = repository_name + '/index/' + object_path,
                                    version_id       = None,
@@ -305,10 +308,12 @@ def restore():
                 nonlocal tree_objects
 
                 object_path = tree_object_hash[:2] + '/' + tree_object_hash[2:]
+                fs_path = cpjoin(repository_path, 'index', object_path)
+
                 print('Downloading tree: ' + object_path)
 
-                make_dirs_if_dont_exist(os.path.dirname(repository_path + '/index/' + object_path)) # pylint: disable=W0640
-                with open(repository_path + '/index/' + object_path, 'wb') as fle: # pylint: disable=W0640
+                make_dirs_if_dont_exist(os.path.dirname(fs_path)) # pylint: disable=W0640
+                with open(fs_path, 'wb') as fle: # pylint: disable=W0640
                     streaming_download(s3_conn, config,
                                        remote_file_path = repository_name + '/index/' + object_path, # pylint: disable=W0640
                                        version_id       = None,
@@ -324,18 +329,27 @@ def restore():
 
             # download files in commit
             for tree in tree_objects.values():
-                for fle in tree['files']:
+                for fle in tree['files'].values():
+
                     object_path = fle['hash'][:2] + '/' + fle['hash'][2:]
+                    fs_path = cpjoin(repository_path, 'files', object_path)
+
                     print('Downloading file: ' + object_path)
 
-                    # TODO need to recreate empty files as they don't get stored
+                    make_dirs_if_dont_exist(os.path.dirname(fs_path))
 
-                    make_dirs_if_dont_exist(os.path.dirname(repository_path + '/index/' + object_path))
-                    with open(repository_path + '/files/' + object_path, 'wb') as fle:
-                        streaming_download(s3_conn, config,
-                                           remote_file_path = repository_name + '/files/' + object_path,
-                                           version_id       = None,
-                                           file_handle      = fle)
+                    # Recreate empty files as they don't get stored
+                    if fle['hash'] == empty_file_identifier:
+                        print('empty')
+                        with open(fs_path, 'w'):
+                            pass
+
+                    else:
+                        with open(fs_path, 'wb') as fle:
+                            streaming_download(s3_conn, config,
+                                            remote_file_path = repository_name + '/files/' + object_path,
+                                            version_id       = None,
+                                            file_handle      = fle)
 
             # update commit pointer if not 'root'
             commit_pointer = commit['parent']
@@ -395,13 +409,17 @@ def run():
 
     #----------------------------
     elif args[0] == 'gc':
-        pass
-        # TODO
-        # run garbage collection
-        # for all repos
-            # lock repo
-            # run gc
-            # unlock repo
+
+        print()
+
+        for repository_name, details in config['repositories'].items():
+            print('Running GC on repository: ' + repository_name)
+            print()
+
+            repository_path = details['path']
+            data_store = versioned_storage(repository_path)
+
+            data_store.garbage_collect()
 
     #----------------------------
     elif args[0] == 'backup':

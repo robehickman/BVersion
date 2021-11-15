@@ -11,7 +11,6 @@ from bversion.storage.server_db import get_server_db_instance_for_thread
 
 from bversion import version_numbers
 
-# TODO server can become stuck in an infinite loop, needs to be fixed
 
 #===============================================================================
 config = {} # type: ignore
@@ -451,6 +450,8 @@ def list_files(request: Request) -> Responce:
 @route('begin_commit')
 def begin_commit(request: Request) -> Responce:
     """ Allow a client to begin a commit and acquire the write lock """
+
+    # TODO implement commit resume if no other user has touched the repo
 
     session_token = request.headers['session_token'].encode('utf8')
     repository    = request.headers['repository']

@@ -395,8 +395,6 @@ class versioned_storage:
             'files'   : {}
         }
 
-        # TODO rename the program 'BVersion' 'bvn', 'bvn_server'
-
         # TODO this needs to be able to handle missing objects and log them as errors
 
         head = self.get_head()
@@ -454,7 +452,8 @@ class versioned_storage:
 #===============================================================================
     def verify_fs(self) -> str:
         """
-        Read and rehash the entire filesystem and ensure than hashes have not changed
+        Checks index structure is intact, and reads and rehashes the entire
+        filesystem to ensure than hashes have not changed.
         """
 
         head, reachable_objects = self.get_reachable_objects()
@@ -467,7 +466,8 @@ class versioned_storage:
         #================================================================
         number_of_commits = 0
         for object_hash in all_objects['index']:
-            file_contents = json.loads(sfs.file_get_contents(sfs.cpjoin(self.base_path, 'index', object_hash[:2], object_hash[2:])))
+            object_path = sfs.cpjoin(self.base_path, 'index', object_hash[:2], object_hash[2:])
+            file_contents = json.loads(sfs.file_get_contents(object_path))
             if file_contents['type'] == 'commit':
                 number_of_commits += 1
 
@@ -526,3 +526,58 @@ class versioned_storage:
 
         # ================================
         return len(issues) == 0, issues
+
+#===============================================================================
+    def garbage_collect(self):
+        # TODO this needs to lock the repo for safety
+
+        head, reachable_objects = self.get_reachable_objects()
+        all_objects             = self.get_all_object_hashes()
+
+        issues = []
+
+        #================================================================
+        # if head is root, but commits exists, this is suspisious 
+        #================================================================
+        number_of_commits = 0
+        for object_hash in all_objects['index']:
+            object_path = sfs.cpjoin(self.base_path, 'index', object_hash[:2], object_hash[2:])
+            file_contents = json.loads(sfs.file_get_contents(object_path))
+            if file_contents['type'] == 'commit':
+                number_of_commits += 1
+
+        if head == 'root' and number_of_commits != 0:
+            msg = 'Commits exist, but head is root.'
+            print(msg)
+            issues.append(msg)
+            return False, issues
+
+        #================================================================
+        # Subtract the two, to find if there are unreachable objects
+        #================================================================
+        # index objects
+        index_objects_that_should_exist =   set(reachable_objects['commits'].keys()) \
+                                          | set(reachable_objects['trees'])
+
+        index_objects_that_do_exist     =   set(all_objects['index'].keys())
+
+        # file objects
+        file_objects_that_should_exist =   set(reachable_objects['files'].keys())
+        file_objects_that_do_exist     =   set(all_objects['files'].keys())
+
+        # ===============
+        garbage_index_objects = index_objects_that_should_exist - index_objects_that_do_exist 
+        garbage_file_objects = file_objects_that_should_exist - file_objects_that_do_exist 
+
+        #================================================================
+        # Delete garbage objects
+        #================================================================
+        for object_hash in garbage_index_objects:
+            object_path = sfs.cpjoin(self.base_path, 'index', object_hash[:2], object_hash[2:])
+            os.remove(object_path)
+
+        for object_hash in garbage_file_objects:
+            object_path = sfs.cpjoin(self.base_path, 'index', object_hash[:2], object_hash[2:])
+            os.remove(object_path)
+
+

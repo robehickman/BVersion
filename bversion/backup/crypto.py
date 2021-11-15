@@ -83,6 +83,9 @@ class streaming_decrypt:
         self.pipeline_header = pipeline_header
 
         if 'encrypt' in pipeline.parse_pipeline_format(pipeline_header)['format']:
+
+            # TODO need to be able to rehash password if a different salt was used
+
             self.crypt_key = config['crypto']['stream_crypt_key']
             self.enable = True
 
