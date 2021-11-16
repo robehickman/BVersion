@@ -11,4 +11,3 @@ def make_data_dir():
 def delete_data_dir():
     try: shutil.rmtree(DATA_DIR)
     except OSError: pass
-

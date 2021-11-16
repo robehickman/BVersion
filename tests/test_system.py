@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 #from helpers import *
-import os, json, struct, hashlib, time, re, shutil
+import os, json, struct, hashlib, time, shutil
 from unittest import TestCase
 from io import BytesIO
 from tests.helpers import DATA_DIR, delete_data_dir
 
 from bversion.common import file_get_contents, file_put_contents, make_dirs_if_dont_exist
-import bversion.client as client
-import bversion.server as server
-from bversion.server import Request, Responce
+from bversion import client
+from bversion import server
+from bversion.server import Request
 
 private_key = "bkUg07WLoxKcsWaupuVIyyMrVyWMdX8q8Zvta+wwKi6kmF7pCyklcIoNAOkfo1YR7O/Fb/Z0bJJ1j/lATtkKQ6c="
 public_key  = "mF7pCyklcIoNAOkfo1YR7O/Fb/Z0bJJ1j/lATtkKQ6c="
@@ -52,7 +52,6 @@ def setup_client(name):
     class mock_reader:
         def __init__(self, reader_data):
             self.reader = BytesIO(reader_data)
-            pass
 
         def read(self, length = None):
             if length is None:
@@ -72,7 +71,7 @@ def setup_client(name):
 
     # Override the server connection with a mock implementation that passes
     # requests directly to server code
-    class mock_connection(object):
+    class mock_connection:
         def request_helper(self, url, headers, reader):
             headers_new = {}
             for k,v in headers.items():
@@ -324,7 +323,7 @@ class TestSystem(TestCase):
             client.update(client.authenticate())
 
             time.sleep(0.5) # See above
- 
+
 
         #===============================================================
         # Diliberately set up changes in both working copies that are
@@ -362,7 +361,7 @@ class TestSystem(TestCase):
 
             # File test3 should contain the text 'dd'
             self.assertEqual(file_get_contents(base_path + 'test3'), test_content_5 + b'dd')
-            
+
             # File test4 should contain the text 'ff'
             self.assertEqual(file_get_contents(base_path + 'test4'), test_content_5 + b'ff')
 
@@ -551,4 +550,3 @@ class TestSystem(TestCase):
 
         #==================================================
         delete_data_dir()
-

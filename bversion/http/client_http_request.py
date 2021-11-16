@@ -72,4 +72,3 @@ class client_http_request:
 
         parsed_preamble, body = conn.read_responce()
         return body.read_all(), parsed_preamble['headers']
-        

@@ -1,4 +1,3 @@
-import subprocess
 from unittest import TestCase
 
 from tests.helpers import DATA_DIR, make_data_dir, delete_data_dir
@@ -17,7 +16,7 @@ class TestCommon(TestCase):
         file_path = cpjoin(DATA_DIR, 'test')
         file_put_contents(file_path, b'some file contents')
 
-        expected_result = 'cf57fcf9d6d7fb8fd7d8c30527c8f51026aa1d99ad77cc769dd0c757d4fe8667' 
+        expected_result = 'cf57fcf9d6d7fb8fd7d8c30527c8f51026aa1d99ad77cc769dd0c757d4fe8667'
         result = hash_file(file_path)
 
         self.assertEqual(expected_result, result, msg = 'Hashes are not the same')
@@ -44,4 +43,3 @@ class TestCommon(TestCase):
         self.assertEqual(diff_4, {'/file_2': {'status': 'new', 'path': '/file_2', 'last_mod': 10}})
         self.assertEqual(diff_5, {'/file_2': {'status': 'changed', 'path': '/file_2', 'last_mod': 20},
                                   '/file_1': {'status': 'deleted', 'path': '/file_1', 'last_mod': 20}})
-

@@ -1,5 +1,4 @@
-import json
-from bversion.common import cpjoin, get_single_file_info, file_or_default
+from bversion.common import cpjoin, get_single_file_info
 
 class client_filesystem_interface:
 
@@ -45,7 +44,7 @@ class client_filesystem_interface:
     def fs_get(self, rpath):
         """ Get a files contents from the FS """
 
-        return self.file_get_contents(rpath)
+        return self.jfs.file_get_contents(rpath)
 
 #===============================================================================
     def fs_move(self, r_src, r_dst):
@@ -56,7 +55,7 @@ class client_filesystem_interface:
             self.jfs.move_file(r_src, r_dst)
 
             # Rename the file in the manifest
-            file_info = client_db.get_single_file_from_manifest(r_src)
+            file_info = self.client_db.get_single_file_from_manifest(r_src)
             self.client_db.remove_file_from_manifest(r_src)
             file_info.update(self.get_single_file_info(r_dst))
             self.client_db.add_file_to_manifest(file_info)

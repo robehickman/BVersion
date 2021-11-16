@@ -8,8 +8,6 @@ from typing_extensions import TypedDict
 import bversion.common as sfs
 from bversion.storage.server_db import get_server_db_instance_for_thread
 
-import pprint
-
 #+++++++++++++++++++++++++++++++++
 class indexObject(TypedDict):
     type: str
@@ -277,7 +275,7 @@ class versioned_storage:
 
         sdb = get_server_db_instance_for_thread(self.base_path)
         gc_log_items = sdb.get_gc_log()
-        
+
         if gc_log_items != []:
             # If a commit exists and it's hash matches the current head we do not need to do anything
             # The commit succeeded but we failed before deleting the active commit file for some reason
@@ -334,7 +332,7 @@ class versioned_storage:
             #--
             pointer = commit['parent']
             if pointer == 'root': break
-            if limiter > 50: break
+            if commit_limit is not None and limiter > commit_limit: break
             limiter += 1
         return commits
 
@@ -416,7 +414,7 @@ class versioned_storage:
             it = self.read_tree_index_object(tree_object_hash)
             reachable_objects['trees'][tree_object_hash] = it
 
-            for dir_name, dir_hash in it['dirs'].items():
+            for dir_hash in it['dirs'].values():
                 recursive_helper(dir_hash)
 
         for commit_info in reachable_objects['commits'].values():
@@ -462,7 +460,7 @@ class versioned_storage:
         issues = []
 
         #================================================================
-        # if head is root, but commits exists, this is suspisious 
+        # if head is root, but commits exists, this is suspisious
         #================================================================
         number_of_commits = 0
         for object_hash in all_objects['index']:
@@ -491,8 +489,8 @@ class versioned_storage:
         file_objects_that_do_exist     =   set(all_objects['files'].keys())
 
         # ===============
-        garbage_index_objects = index_objects_that_should_exist - index_objects_that_do_exist 
-        garbage_file_objects = file_objects_that_should_exist - file_objects_that_do_exist 
+        garbage_index_objects = index_objects_that_should_exist - index_objects_that_do_exist
+        garbage_file_objects = file_objects_that_should_exist - file_objects_that_do_exist
 
         # ===============
         for it in garbage_index_objects:
@@ -537,7 +535,7 @@ class versioned_storage:
         issues = []
 
         #================================================================
-        # if head is root, but commits exists, this is suspisious 
+        # if head is root, but commits exists, this is suspisious
         #================================================================
         number_of_commits = 0
         for object_hash in all_objects['index']:
@@ -566,8 +564,8 @@ class versioned_storage:
         file_objects_that_do_exist     =   set(all_objects['files'].keys())
 
         # ===============
-        garbage_index_objects = index_objects_that_should_exist - index_objects_that_do_exist 
-        garbage_file_objects = file_objects_that_should_exist - file_objects_that_do_exist 
+        garbage_index_objects = index_objects_that_should_exist - index_objects_that_do_exist
+        garbage_file_objects = file_objects_that_should_exist - file_objects_that_do_exist
 
         #================================================================
         # Delete garbage objects
@@ -579,5 +577,3 @@ class versioned_storage:
         for object_hash in garbage_file_objects:
             object_path = sfs.cpjoin(self.base_path, 'index', object_hash[:2], object_hash[2:])
             os.remove(object_path)
-
-

@@ -70,7 +70,7 @@ class client_db:
 # ===================================================
     def init_system_meta(self):
         if self.get_system_meta() is None:
-            res = self.cur.execute("""
+            self.cur.execute("""
                 insert into meta (
                     format_version,
                     have_revision
@@ -89,7 +89,7 @@ class client_db:
         self.cur.execute("update meta set have_revision = ?, format_version = ? where rowid = 1",
                             (data['have_revision'], data['format_version']))
 
-        
+
 # ===================================================
 # Handling of journal for jornaling filesystem
 # ===================================================
@@ -160,4 +160,3 @@ class client_db:
     # --------------
     def remove_file_from_manifest(self, path):
         self.cur.execute("delete from files where path = ?", (path,))
- 

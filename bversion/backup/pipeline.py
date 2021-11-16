@@ -3,8 +3,8 @@ When data is uploaded or downloaded an arbitrary set of transformations
 may be applied to the data in transit including encryption. This file
 assembles pipelines to apply these transformations depending on configuration.
 """
-import functools, json, re
-import bversion.backup.crypto as crypto
+import json, re
+from bversion.backup import crypto
 
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
 def preprocess_config(interface, conn, config: dict):

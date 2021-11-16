@@ -133,4 +133,3 @@ class TestJournalingFilesystem(TestCase):
 
         self.assertTrue( os.path.isfile(cpjoin(DATA_DIR, CONF_DIR, BACKUP_DIR, '3_hello2')),
                          msg = 'Backup file "3_hello2" does not exist, multiple rollback failed')
-

@@ -308,7 +308,7 @@ def restore():
                 nonlocal tree_objects
 
                 object_path = tree_object_hash[:2] + '/' + tree_object_hash[2:]
-                fs_path = cpjoin(repository_path, 'index', object_path)
+                fs_path = cpjoin(repository_path, 'index', object_path) # pylint: disable=W0640
 
                 print('Downloading tree: ' + object_path)
 

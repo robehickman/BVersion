@@ -19,4 +19,3 @@ class TestCrypto(TestCase):
         crypto.getpass.getpass = lambda : 'test' # type: ignore
         private_key = crypto.make_keypair()[0]
         crypto.unlock_private_key(private_key) # this will throw if there is any problem
-

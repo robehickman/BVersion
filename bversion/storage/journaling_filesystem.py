@@ -55,7 +55,7 @@ class journaling_filesystem:
 
         # under normal operation journal is deleted at end of transaction
         # if it does exist we need to roll back
-        if self.client_db.get_fs_journal() != []: 
+        if self.client_db.get_fs_journal() != []:
             self.rollback()
 
         # ===================================

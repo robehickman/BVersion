@@ -1,7 +1,7 @@
-import sqlite3, base64, pysodium, threading, time
-from threading import current_thread
+import base64, threading, time
+import sqlite3, pysodium
 
-from bversion.common import cpjoin, file_get_contents
+from bversion.common import cpjoin
 
 #=====================================================
 threadLocal = threading.local()
@@ -21,7 +21,7 @@ def get_server_db_instance_for_thread(db_file_path, need_to_recreate = False):
         threadLocal.old_db_path = db_file_path
 
     return threadLocal.db_instance
-    
+
 
 #=====================================================
 class server_db:
@@ -158,7 +158,7 @@ class server_db:
         self.con.execute("delete from tokens where expires < ?", (time.time(),))
         self.con.commit()
 
-        
+
 #===============================================================================
 # Session management
 #===============================================================================
@@ -214,25 +214,25 @@ class server_db:
     #===============================================================================
     def begin_commit(self, active_files):
         # Add the existing files to the commit
-        for path, file_info in active_files.items():
-            res = self.con.execute("insert into active_commit_files (hash, path, status) values (?, ?, ?)",
-                                   (file_info['hash'], file_info['path'], file_info['status']))
+        for file_info in active_files.values():
+            self.con.execute("insert into active_commit_files (hash, path, status) values (?, ?, ?)",
+                             (file_info['hash'], file_info['path'], file_info['status']))
 
         # Ensure commit changes is empty
-        res = self.con.execute("delete from active_commit_changes")
+        self.con.execute("delete from active_commit_changes")
 
         # flag that there is a commit in progress
         self.con.execute("insert into active_commit_exists (state) values (1)")
 
         # ----------
         self.con.commit()
-        
+
 
     #===============================================================================
     def file_exists_in_commit(self, file_path):
         res = self.con.execute("select * from active_commit_files where path = ?", (file_path,))
         return res.fetchall()
-        
+
 
     #===============================================================================
     def add_to_commit(self, file_info):
@@ -240,16 +240,16 @@ class server_db:
         file_info['status'] = 'changed' if self.file_exists_in_commit (file_info['path']) != [] else 'new'
 
         # Update commit changes
-        res = self.con.execute("insert into active_commit_changes (hash, path, status) values (?, ?, ?)",
-                               (file_info['hash'], file_info['path'], file_info['status']))
+        self.con.execute("insert into active_commit_changes (hash, path, status) values (?, ?, ?)",
+                         (file_info['hash'], file_info['path'], file_info['status']))
 
         # Update commit files
         if self.file_exists_in_commit(file_info['path']) == []:
-            res = self.con.execute("insert into active_commit_files (hash, path, status) values (?, ?, ?)",
+            self.con.execute("insert into active_commit_files (hash, path, status) values (?, ?, ?)",
                                    (file_info['hash'], file_info['path'], file_info['status']))
         else:
-            res = self.con.execute("update active_commit_files set hash = ?, status = ? where path = ?",
-                                   (file_info['hash'], file_info['status'], file_info['path']))
+            self.con.execute("update active_commit_files set hash = ?, status = ? where path = ?",
+                             (file_info['hash'], file_info['status'], file_info['path']))
 
         self.con.commit()
 
@@ -266,12 +266,12 @@ class server_db:
 
         # Update commit changes
         file_info['status'] = 'deleted'
-        res = self.con.execute("insert into active_commit_changes (hash, path, status) values (?, ?, ?)",
-                               (file_info['hash'], file_info['path'], file_info['status']))
+        self.con.execute("insert into active_commit_changes (hash, path, status) values (?, ?, ?)",
+                         (file_info['hash'], file_info['path'], file_info['status']))
 
         # Update commit files
-        res = self.con.execute("delete from active_commit_files where path = ?",
-                                (file_info['path'],))
+        self.con.execute("delete from active_commit_files where path = ?",
+                         (file_info['path'],))
 
         self.con.commit()
 
