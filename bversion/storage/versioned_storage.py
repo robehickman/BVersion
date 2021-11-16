@@ -54,8 +54,9 @@ class versioned_storage:
 
         #----
         sfs.make_dirs_if_dont_exist(target_base)
-        # TODO make write and move
-        sfs.file_put_contents(sfs.cpjoin(target_base, object_hash[2:]), bytes(serialised, encoding='utf8'))
+        sfs.file_put_contents(sfs.cpjoin(self.base_path, 'index_tmp'), bytes(serialised, encoding='utf8'))
+        os.rename(sfs.cpjoin(self.base_path, 'index_tmp'), sfs.cpjoin(target_base, object_hash[2:]))
+
         return object_hash
 
 

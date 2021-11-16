@@ -1,7 +1,8 @@
 import base64, threading, time
-import sqlite3, pysodium
+import pysodium
 
 from bversion.common import cpjoin
+from bversion.storage.db_common import init_db
 
 #=====================================================
 threadLocal = threading.local()
@@ -26,21 +27,8 @@ def get_server_db_instance_for_thread(db_file_path, need_to_recreate = False):
 #=====================================================
 class server_db:
     def __init__(self, base_path : str):
+        self.con, self.cur = init_db(cpjoin(base_path, 'server_transient.db'))
 
-        def dict_factory(cursor, row):
-            d = {}
-            for idx, col in enumerate(cursor.description):
-                d[col[0]] = row[idx]
-            return d
-
-        db_file_path = cpjoin(base_path, 'server_transient.db')
-        con = sqlite3.connect(db_file_path)
-        con.row_factory = dict_factory
-
-        cur = con.cursor()
-
-        self.con = con
-        self.cur = cur
 
 #===============================================================================
 # Set up tables if they don't exist already.

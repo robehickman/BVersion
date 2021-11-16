@@ -1,7 +1,16 @@
 import binascii, base64
 import pysodium
-from bversion.backup import pipeline
+from bversion.backup.pipeline_common import parse_pipeline_format
 
+# TODO implement hash password cache
+
+password_cache = {}
+
+def hash_password():
+    global password_cache
+
+
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
 def add_default_config(config: dict):
     """ The default configuration structure. """
     config['crypto'] =  {'remote_password_salt_file'  : 'salt_file',  # Remote file used to store the password salt
@@ -33,6 +42,10 @@ def preprocess_config(interface, conn, config: dict) -> dict:
         'S' : base64.b64encode(salt).decode('utf-8')
     }
 
+    if salt != base64.b64decode(config['crypto']['encrypt_opts']['S'].encode('utf-8')):
+        raise Exception('decoded salt does not match salt')
+
+
     key = pysodium.crypto_pwhash(pysodium.crypto_secretstream_xchacha20poly1305_KEYBYTES,
                                  config['crypto']['crypt_password'], salt,
                                  config['crypto']['encrypt_opts']['O'],
@@ -54,7 +67,7 @@ class streaming_encrypt:
 
     def pass_config(self, config, pipeline_header):
 
-        if 'encrypt' in pipeline.parse_pipeline_format(pipeline_header)['format']:
+        if 'encrypt' in parse_pipeline_format(pipeline_header)['format']:
             self.enable = True; crypt_key = config['crypto']['stream_crypt_key']
             self.state, self.header = pysodium.crypto_secretstream_xchacha20poly1305_init_push(crypt_key)
             self.pipeline_header = pipeline_header
@@ -82,7 +95,7 @@ class streaming_decrypt:
     def pass_config(self, config, pipeline_header):
         self.pipeline_header = pipeline_header
 
-        if 'encrypt' in pipeline.parse_pipeline_format(pipeline_header)['format']:
+        if 'encrypt' in parse_pipeline_format(pipeline_header)['format']:
 
             # TODO need to be able to rehash password if a different salt was used
 

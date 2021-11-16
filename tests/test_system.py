@@ -176,7 +176,7 @@ class TestSystem(TestCase):
 
 
         #==================================================
-        # TODO test mid update failiure works as expected
+        # Test mid update failiure works as expected
         #==================================================
         file_put_contents(DATA_DIR +  'client1/test1',        test_content_2)
         file_put_contents(DATA_DIR +  'client1/test2',        test_content_3)

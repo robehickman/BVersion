@@ -3,6 +3,7 @@ from io import BytesIO
 
 from bversion.common import cpjoin, merge_config, make_dirs_if_dont_exist
 from bversion.backup import s3_interface, pipeline, crypto
+from bversion.backup.pipeline_common import serialise_pipeline_format
 from bversion.storage.versioned_storage import versioned_storage
 
 # ---------------
@@ -49,7 +50,7 @@ def streaming_upload(s3_conn, lconfig, remote_file_path, file_handle):
     #-----
     upload = s3_interface.streaming_upload()
     pl     = pipeline.build_pipeline_streaming(upload, 'out')
-    pl.pass_config(lconfig, pipeline.serialise_pipeline_format(pipeline_configuration))
+    pl.pass_config(lconfig, serialise_pipeline_format(pipeline_configuration))
 
     upload.begin(s3_conn, remote_file_path)
 

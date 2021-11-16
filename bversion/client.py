@@ -842,24 +842,35 @@ def revert(session_token, args):
 
     files_in_revision = json.loads(result)['files']
 
+    # Apply pull ignore filters
+    filtered_files_in_revision = {}
+    for path, fle in files_in_revision.items():
+        if next((True for flter in config['pull_ignore_filters'] if fnmatch.fnmatch(fle['path'], flter)), False):
+            filtered_files_in_revision[path] = fle
+    files_in_revision = filtered_files_in_revision
 
-    # Apply filters if needed
+    # Apply user provided revert filters
     files_to_revert = []
+    files_to_delete = []
 
     if revert_all:
-        # TODO when we do a revert all, we should diff files in the manifest vs ones in the
-        # FS, and delete any that don't exist in the revision we are reverting to
+        # When reverting all, diff files in the remote and local manifests and delete
+        # any that don't exist in the revision we are reverting to.
 
-        # Get files in manifest
+        # TODO needs testing
 
-        # For any files that exist in the remote but not locally, create them
-
-        # For any files that do not exist in the remote, but do locally, delete them
-
+        local_files = cdb.get_manifest()
 
         for fle in files_in_revision.values():
             files_to_revert.append(fle['path'])
 
+            if fle['path'] in local_files:
+                local_files.pop(fle['path'])
+
+        for fle in local_files.values():
+            files_to_delete.append(fle['path'])
+
+    # ----------------
     else:
         filters = args[1:]
 
@@ -879,8 +890,15 @@ def revert(session_token, args):
 
 
     print()
+    print("Files that will be reverted:")
     for fle in files_to_revert:
-        print(colored(fle, 'red'))
+        print(colored(fle, 'yellow'))
+
+    if files_to_delete != []:
+        print()
+        print("Files that will be deleted:")
+        for fle in files_to_delete:
+            print(colored(fle, 'red'))
 
     print()
 
@@ -890,6 +908,11 @@ def revert(session_token, args):
 
     if answer == 'no':
         raise SystemExit('Opperation Abort')
+
+    # ===============================
+    for file_path in files_to_revert:
+        print('Deleting file: ' + file_path)
+        os.remove(cpjoin(working_copy_base_path, file_path))
 
     # ===============================
     for file_path in files_to_revert:

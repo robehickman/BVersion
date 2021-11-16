@@ -1,7 +1,7 @@
 import struct
 import boto3
 
-from bversion.backup import pipeline
+from bversion.backup.pipeline_common import parse_pipeline_format
 
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
 def connect(config):
@@ -166,7 +166,7 @@ class streaming_download:
         header_length = struct.unpack('!I', self.res['body'].read(4))[0]
         header = self.res['body'].read(header_length)
 
-        pl_format = pipeline.parse_pipeline_format(header)
+        pl_format = parse_pipeline_format(header)
         self.chunk_size = pl_format['chunk_size']
         return header, pl_format
 
