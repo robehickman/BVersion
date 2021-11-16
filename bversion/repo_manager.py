@@ -341,7 +341,6 @@ def restore():
 
                     # Recreate empty files as they don't get stored
                     if fle['hash'] == empty_file_identifier:
-                        print('empty')
                         with open(fs_path, 'w'):
                             pass
 
