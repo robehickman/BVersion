@@ -12,7 +12,7 @@ import pysodium #type: ignore
 #=================================================
 from bversion.common import (cpjoin, get_file_list, find_manifest_changes, make_dirs_if_dont_exist,
                              manifestFileDetails, get_single_file_info, file_or_default, question_user,
-                             file_put_contents, file_get_contents, ignore, find_bvn_dir)
+                             file_put_contents, file_get_contents, ignore, find_bvn_dir, hash_file)
 
 from bversion.http.client_http_request import client_http_request
 from bversion.storage.client_db   import client_db
@@ -287,6 +287,8 @@ def find_local_changes(include_unchanged : bool = False) -> Tuple[dict, Dict[str
 
     # ---------
     changed_files = find_manifest_changes(current_state, old_state, include_unchanged = include_unchanged)
+    #pprint(changed_files)
+
     return changed_files
 
 
@@ -692,7 +694,14 @@ def update(session_token: str, test_overrides = None, include_unchanged = False)
 
 
 #===============================================================================
-def commit(session_token: str, commit_message = ''):
+def commit(session_token: str, commit_message = '', test_overrides = None):
+
+    testing = True
+    if test_overrides is None:
+        test_overrides = {}
+        testing = False
+
+    # ============
     client_changes = find_local_changes()
 
     changes = {'to_delete_on_server' : [], 'client_push_files' : []} # type: ignore
@@ -707,13 +716,35 @@ def commit(session_token: str, commit_message = ''):
 
     # Acquire the commit lock and check we still have the latest revision
     manifest_meta = cdb.get_system_meta()
-    headers = server_connection.request("begin_commit", {
+    body, headers = server_connection.request("begin_commit", {
         "session_token"     : session_token,
+        'user'              : config['user'],
         'repository'        : config['repository'],
-        "previous_revision" : manifest_meta['have_revision']})[1] # Only care about headers
+        "previous_revision" : manifest_meta['have_revision']})
 
 
     if headers['status'] != 'ok': raise SystemExit(headers['msg'])
+
+
+    # If we are resuming a partial commit, handle the previously uploaded files
+    # Hash local files to ensure they have not changed and thus need reuploading
+    previous_uploads = json.loads(body)
+    previous_uploads = previous_uploads['partial_commit']
+
+    filtered_previous = {}
+    if len(previous_uploads) != 0:
+        for fle in previous_uploads:
+            print('Checking file from partially complete commit: ' + fle['path'])
+            local_path = cpjoin(config['data_dir'], fle['path'])
+
+            if not os.path.isfile(local_path):
+                changes['to_delete_on_server'].append(fle)
+
+            elif fle['hash'] == hash_file(local_path):
+                filtered_previous[fle['path']] = fle
+
+    previous_uploads = filtered_previous
+
 
     #======================
     errors: List[str] = []
@@ -738,7 +769,19 @@ def commit(session_token: str, commit_message = ''):
 
     # Push files
     if changes['client_push_files'] != [] and errors == []:
+        pushed_items = 0
+
         for fle in changes['client_push_files']:
+            if fle['path'] in previous_uploads:
+
+                changes_made.append({
+                    'status'    : 'new/changed',
+                    'path'      : fle['path'],
+                    'file_info' : previous_uploads[fle['path']]
+                })
+
+                continue
+
             print(colored('Sending: ' + fle['path'], 'green'))
 
             headers = server_connection.send_file("push_file", {
@@ -759,6 +802,18 @@ def commit(session_token: str, commit_message = ''):
                     'error' : headers,
                     'file' : fle['path']})
                 break
+
+
+            # test override to allow testing of checkout being killed part completed
+            if testing:
+                test_overrides['result'].append(fle['path'])
+
+            if 'kill_mid_commit' in test_overrides and test_overrides['kill_mid_commit'] > 0:
+                if pushed_items == test_overrides['kill_mid_commit']:
+                    raise Exception('killed part way through commit for testing')
+
+            pushed_items += 1
+
 
     # commit and release the lock. If errors occurred roll back and release the lock
     mode = 'commit' if errors == [] else 'abort'

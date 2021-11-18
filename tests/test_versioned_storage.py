@@ -30,7 +30,7 @@ class TestVersionedStorage(TestCase):
 
         #==================
         data_store = versioned_storage(DATA_DIR)
-        data_store.begin()
+        data_store.begin('foo', '0.0.0.0', 'foo')
         data_store.fs_put_from_file(cpjoin(DATA_DIR, 'test 1'), {'path' : '/test/path'})
         id1 = data_store.commit('test msg', 'test user')
 
@@ -41,7 +41,7 @@ class TestVersionedStorage(TestCase):
                                                    'status': 'new'}})
 
         #==================
-        data_store.begin()
+        data_store.begin('foo', '0.0.0.0', 'foo')
         data_store.fs_put_from_file(cpjoin(DATA_DIR, 'test 2'), {'path' : '/another/path'})
         data_store.fs_put_from_file(cpjoin(DATA_DIR, 'test 3'), {'path' : '/yet/another/path'})
         data_store.commit('test msg', 'test user')
@@ -64,11 +64,11 @@ class TestVersionedStorage(TestCase):
         #==================
         data_store = versioned_storage(DATA_DIR)
 
-        data_store.begin()
+        data_store.begin('foo', '0.0.0.0', 'foo')
         data_store.fs_put_from_file(cpjoin(DATA_DIR, 'test 1'), {'path' : '/test/path'})
         data_store.commit('test msg', 'test user')
 
-        data_store.begin()
+        data_store.begin('foo', '0.0.0.0', 'foo')
         data_store.fs_put_from_file(cpjoin(DATA_DIR, 'test 2'), {'path' : '/another/path'})
         data_store.fs_put_from_file(cpjoin(DATA_DIR, 'test 3'), {'path' : '/yet/another/path'})
         data_store.rollback()

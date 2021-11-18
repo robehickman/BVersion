@@ -1,4 +1,5 @@
 import base64, threading, time
+from copy import deepcopy
 import pysodium
 
 from bversion.common import cpjoin
@@ -7,7 +8,10 @@ from bversion.storage.db_common import init_db
 #=====================================================
 threadLocal = threading.local()
 
-def get_server_db_instance_for_thread(db_file_path, need_to_recreate = False):
+def get_server_db_instance_for_thread(db_file_path, need_to_recreate = False, path_override = None):
+
+    if path_override is not None:
+        db_file_path = path_override
 
     old_db_path = getattr(threadLocal, 'old_db_path', '')
     if old_db_path != db_file_path:
@@ -18,7 +22,7 @@ def get_server_db_instance_for_thread(db_file_path, need_to_recreate = False):
         need_to_recreate = True
 
     if need_to_recreate:
-        threadLocal.db_instance = server_db(db_file_path)
+        threadLocal.db_instance = server_db(db_file_path, path_override = path_override)
         threadLocal.old_db_path = db_file_path
 
     return threadLocal.db_instance
@@ -26,8 +30,13 @@ def get_server_db_instance_for_thread(db_file_path, need_to_recreate = False):
 
 #=====================================================
 class server_db:
-    def __init__(self, base_path : str):
-        self.con, self.cur = init_db(cpjoin(base_path, 'server_transient.db'))
+    def __init__(self, base_path : str, path_override = None):
+        if path_override is not None:
+            self.con, self.cur = init_db(path_override)
+        else:
+            self.con, self.cur = init_db(cpjoin(base_path, 'server_transient.db'))
+
+        self.active_files = None
 
 
 #===============================================================================
@@ -74,21 +83,6 @@ class server_db:
             """)
 
         # ======================
-        # Stores a list of all files in the current commit
-        self.con.execute("""
-            create table if not exists active_commit_files (
-                hash    Text,
-                path    Text unique,
-                status  Text
-            )
-            """)
-
-        self.cur.execute( """
-            create unique index if not exists idx_commit_files_path
-            on active_commit_files (path asc);
-            """)
-
-        # ======================
         # Active commit changes stores a log of files which have been added, changed
         # or deleted in this revision
         self.con.execute("""
@@ -108,7 +102,9 @@ class server_db:
         # Table to store if there is an active commit
         self.con.execute("""
             create table if not exists active_commit_exists (
-                state  int
+                user          Text,
+                ip            Text,
+                session_token Text
             )
             """)
 
@@ -194,32 +190,48 @@ class server_db:
 #===============================================================================
 # Storage for transient commit data
 #===============================================================================
-    def have_active_commit(self):
+    def get_active_commit(self):
         res = self.con.execute("select * from active_commit_exists").fetchall()
-        return res != []
+
+        if res != []:
+            return res[0]
+        else:
+            return None
 
 
     #===============================================================================
-    def begin_commit(self, active_files):
+    def begin_commit(self, active_files, user, user_ip, session_token):
         # Add the existing files to the commit
-        for file_info in active_files.values():
-            self.con.execute("insert into active_commit_files (hash, path, status) values (?, ?, ?)",
-                             (file_info['hash'], file_info['path'], file_info['status']))
+        self.active_files = active_files
 
         # Ensure commit changes is empty
         self.con.execute("delete from active_commit_changes")
 
         # flag that there is a commit in progress
-        self.con.execute("insert into active_commit_exists (state) values (1)")
+        self.con.execute("insert into active_commit_exists (user, ip, session_token) values (?,?,?)",
+                         (user, user_ip, session_token))
 
         # ----------
         self.con.commit()
 
 
     #===============================================================================
+    def resume_commit(self, active_files, session_token):
+        # Add the existing files to the commit
+        self.active_files = active_files
+
+        self.con.execute("update active_commit_exists set session_token = ?", (session_token,))
+        self.con.commit()
+
+    #===============================================================================
     def file_exists_in_commit(self, file_path):
-        res = self.con.execute("select * from active_commit_files where path = ?", (file_path,))
-        return res.fetchall()
+        if self.active_files is None: raise Exception('active files not initilised')
+
+        result = []
+        if file_path in self.active_files:
+            result.append(self.active_files[file_path])
+
+        return result
 
 
     #===============================================================================
@@ -231,52 +243,59 @@ class server_db:
         self.con.execute("insert into active_commit_changes (hash, path, status) values (?, ?, ?)",
                          (file_info['hash'], file_info['path'], file_info['status']))
 
-        # Update commit files
-        if self.file_exists_in_commit(file_info['path']) == []:
-            self.con.execute("insert into active_commit_files (hash, path, status) values (?, ?, ?)",
-                                   (file_info['hash'], file_info['path'], file_info['status']))
-        else:
-            self.con.execute("update active_commit_files set hash = ?, status = ? where path = ?",
-                             (file_info['hash'], file_info['status'], file_info['path']))
-
         self.con.commit()
 
         return file_info
 
 
     #===============================================================================
-    def remove_from_commit(self, file_path):
+    def remove_from_commit(self, files):
 
-        # We don't need to do anything if the file doesnt exist
-        the_file = self.file_exists_in_commit(file_path)
-        if the_file == []: return
-        file_info = the_file[0]
+        for it in files:
+            file_path = it['path']
 
-        # Update commit changes
-        file_info['status'] = 'deleted'
-        self.con.execute("insert into active_commit_changes (hash, path, status) values (?, ?, ?)",
-                         (file_info['hash'], file_info['path'], file_info['status']))
+            # We don't need to do anything if the file doesnt exist
+            the_file = self.file_exists_in_commit(file_path)
+            if the_file == []: return
+            file_info = the_file[0]
 
-        # Update commit files
-        self.con.execute("delete from active_commit_files where path = ?",
-                         (file_info['path'],))
+            # Update commit changes
+            already_deleted = self.con.execute("select * from active_commit_changes where status='deleted' and path = ?",
+                                            (file_info['path'],)).fetchall()
+
+            if already_deleted == []:
+                file_info['status'] = 'deleted'
+                self.con.execute("insert into active_commit_changes (hash, path, status) values (?, ?, ?)",
+                                (file_info['hash'], file_info['path'], file_info['status']))
 
         self.con.commit()
 
+    #===============================================================================
+    def get_active_commit_changes(self):
+        return self.con.execute("select * from active_commit_changes").fetchall()
 
     #===============================================================================
     def get_commit_state(self):
-        current_changes = self.con.execute("select * from active_commit_changes").fetchall()
-        active_files    = self.con.execute("select * from active_commit_files").fetchall()
-        active_files = {fle['path'] : fle for fle in active_files}
+        if self.active_files is None: raise Exception('active files not initilised')
 
-        return current_changes, active_files
+        current_changes = self.get_active_commit_changes()
+
+        for item in current_changes:
+            if item['status'] in ['new', 'changed']:
+                # we must deep copy this or changes to active files
+                # also affects changes
+                self.active_files[item['path']] = deepcopy(item)
+
+            elif item['status'] == 'deleted':
+                del self.active_files[item['path']]
+
+        return current_changes, self.active_files
 
 
     #===============================================================================
     def clean_commit_state(self):
+        self.active_files = None
         self.con.execute("delete from active_commit_changes")
-        self.con.execute("delete from active_commit_files")
         self.con.execute("delete from gc_log")
         self.con.execute("delete from active_commit_exists")
 

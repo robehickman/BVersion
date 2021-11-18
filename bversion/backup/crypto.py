@@ -22,6 +22,7 @@ def add_default_config(config: dict):
                          'crypt_password'             : None }
     return config
 
+
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
 def preprocess_config(interface, conn, config: dict) -> dict:
     if config['crypto']['crypt_password'] is None or config['crypto']['crypt_password'] == '':
@@ -85,6 +86,7 @@ class streaming_encrypt:
             chunk = res
         self.child.next_chunk(chunk); self.chunk_id += 1
 
+# ===========================
 class streaming_decrypt:
     def __init__(self, child):
         self.child           = child

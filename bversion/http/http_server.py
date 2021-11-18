@@ -7,6 +7,15 @@ import _thread
 from bversion.http.http_common import read_body, parse_http_request_preamble
 
 #=====================
+class ConnectionContext:
+    def __init__ (self):
+        def null_haldler():
+            pass
+
+        self.shutdown_handler = null_haldler
+        self.lock             = False
+
+#=====================
 class Request:
     def __init__ (self, remote_addr: str, remote_port: int, uri: str, headers: dict, body: read_body):
         self.remote_addr = remote_addr
@@ -33,6 +42,9 @@ class Responce:
 #=============================================
 def HTTPServer(host, port, connection_handler):
     def handle_connection(c, addr):
+        # Object locked to the thread
+        context = ConnectionContext()
+
         try:
             while True:
                 data = b""
@@ -61,9 +73,9 @@ def HTTPServer(host, port, connection_handler):
                 body_length = int(request_headers['content-length'])
                 body_reader = read_body(c.recv, body_length, body_partial)
                 rq = Request(addr[0], addr[1], request['path'], request_headers, body_reader)
-                rsp: Responce = connection_handler(rq)
-                body_reader.dump() # as we are using persistant connections, we need to read any
-                                   # body from the socket
+                rsp: Responce = connection_handler(rq, context)
+                body_reader.dump() # as we are using persistant connections, we need to read and discard any
+                                   # remaining body from the socket
 
                 # generate client responce
                 responce_headers =  b"HTTP/1.1 200 OK\r\n"
@@ -92,15 +104,16 @@ def HTTPServer(host, port, connection_handler):
                     c.send(rsp.body)
 
         except:
+            context.shutdown_handler()
             c.close()
             raise
 
+        context.shutdown_handler()
         c.close()
 
     #============
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind((host, port))
-    s.settimeout(300)
     print("socket bound to port", port)
 
     # put the socket into listening mode
@@ -110,6 +123,7 @@ def HTTPServer(host, port, connection_handler):
     try:
         while True:
             c, addr = s.accept()
+            c.settimeout(300)
 
             # Start a new thread and return its identifier
             _thread.start_new_thread(handle_connection, (c, addr))

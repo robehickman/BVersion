@@ -1,4 +1,4 @@
-import sys, os
+import sys, os, time
 from io import BytesIO
 
 from bversion.common import cpjoin, merge_config, make_dirs_if_dont_exist
@@ -91,7 +91,12 @@ def backup():
         if 'backup' in details and details['backup'] is True:
             # Get the commits that we have locally
             repository_path = details['path']
-            data_store = versioned_storage(repository_path)
+
+            path_override = None
+            if 'transient_db_path_override' in details:
+                path_override = details['transient_db_path_override']
+
+            data_store = versioned_storage(repository_path, path_override = path_override)
 
             # -----------
             commits_order = []
@@ -273,7 +278,11 @@ def restore():
         repository_path = details['path']
         repository_path += '_restore'
 
-        data_store = versioned_storage(repository_path)
+        path_override = None
+        if 'transient_db_path_override' in details:
+            path_override = details['transient_db_path_override']
+
+        data_store = versioned_storage(repository_path, path_override = path_override)
 
         # Download head pointer
         fle = BytesIO()
@@ -383,8 +392,15 @@ def run():
             print()
 
             repository_path = details['path']
-            data_store = versioned_storage(repository_path)
 
+            # ----------
+            path_override = None
+            if 'transient_db_path_override' in details:
+                path_override = details['transient_db_path_override']
+
+            data_store = versioned_storage(repository_path, path_override = path_override)
+
+            # ---------
             valid, issues = data_store.verify_fs()
 
             results.append({
@@ -417,9 +433,22 @@ def run():
             print()
 
             repository_path = details['path']
-            data_store = versioned_storage(repository_path)
 
-            data_store.garbage_collect()
+            # --------
+            path_override = None
+            if 'transient_db_path_override' in details:
+                path_override = details['transient_db_path_override']
+
+            data_store = versioned_storage(repository_path, path_override = path_override)
+
+            # --------
+            while True:
+                status, issues = data_store.garbage_collect()
+                if status is False and issues == ['failed to lock']:
+                    print('Could not aquire lock, waiting to retry')
+                    time.sleep(60)
+                else:
+                    break
 
     #----------------------------
     elif args[0] == 'backup':

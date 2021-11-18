@@ -8,7 +8,7 @@ from tests.helpers import DATA_DIR, delete_data_dir
 from bversion.common import file_get_contents, file_put_contents, make_dirs_if_dont_exist
 from bversion import client
 from bversion import server
-from bversion.server import Request
+from bversion.server import Request, ConnectionContext
 
 private_key = "bkUg07WLoxKcsWaupuVIyyMrVyWMdX8q8Zvta+wwKi6kmF7pCyklcIoNAOkfo1YR7O/Fb/Z0bJJ1j/lATtkKQ6c="
 public_key  = "mF7pCyklcIoNAOkfo1YR7O/Fb/Z0bJJ1j/lATtkKQ6c="
@@ -31,6 +31,11 @@ def setup():
 
 ############################################################################################
 def setup_client(name):
+
+    if client.server_connection is not None:
+        client.server_connection.context.shutdown_handler()
+
+    # ========================
     os.chdir(DATA_DIR + name)
 
     server.init_server({
@@ -72,6 +77,9 @@ def setup_client(name):
     # Override the server connection with a mock implementation that passes
     # requests directly to server code
     class mock_connection:
+        def __init__(self):
+            self.context = ConnectionContext()
+
         def request_helper(self, url, headers, reader):
             headers_new = {}
             for k,v in headers.items():
@@ -84,7 +92,7 @@ def setup_client(name):
                               headers     = headers_new,
                               body        = reader)
 
-            return server.endpoint(request)
+            return server.endpoint(request, self.context)
 
         def request(self, url, headers, data = None, gen=False):
             if data is None: data = {}
@@ -107,6 +115,8 @@ def setup_client(name):
             reader = mock_reader(file_get_contents(file_path))
             res = self.request_helper(url, headers, reader)
             return res.body, dict(res.headers)
+
+
 
     client.server_connection = mock_connection()
     client.init()
@@ -187,6 +197,7 @@ class TestSystem(TestCase):
         version_id = client.commit(session_token, 'test partial update')
 
 
+
         # =============================
         setup_client('client2')
         session_token = client.authenticate()
@@ -208,6 +219,42 @@ class TestSystem(TestCase):
 
 
         time.sleep(0.5) # See above
+
+
+        #==================================================
+        # Test commit failiure resumes correctly
+        #==================================================
+        file_put_contents(DATA_DIR +  'client1/test1',        test_content_2)
+        file_put_contents(DATA_DIR +  'client1/test2',        test_content_3)
+        file_put_contents(DATA_DIR +  'client1/test3',        test_content_4)
+
+        setup_client('client1')
+        session_token = client.authenticate()
+
+        test_override = {
+            'kill_mid_commit' : 1,
+            'result'          : []
+        }
+
+        try:
+            version_id = client.commit(session_token, 'test partial commit', test_overrides = test_override)
+            self.fail()
+        except: pass
+
+        self.assertEqual(set(test_override['result']), set(['/test2', '/test1']))
+
+
+        # Manually clear lock, and check it completes as expected
+        client.server_connection.context.shutdown_handler()
+
+        # ============
+        test_override = {
+            'result'          : []
+        }
+
+        version_id = client.commit(session_token, 'test partial commit', test_overrides = test_override)
+
+        self.assertEqual(set(test_override['result']), set(['/test3']))
 
 
         #==================================================
@@ -274,7 +321,6 @@ class TestSystem(TestCase):
         setup_client('client2')
         session_token = client.authenticate()
         version_id = client.commit(session_token, 'create and delete some files')
-
 
         # check change is reflected correctly in the commit log
         req_result = client.get_changes_in_version(session_token, False, version_id)[0]
@@ -439,6 +485,9 @@ class TestSystem(TestCase):
         except SystemExit:
             pass
 
+        # redo client setup to reset lock
+        setup_client('client2')
+
         # Update and resolve conflicting files to the client
         client.update(session_token, test_overrides = {'resolve_to' : 'client'})
         test_resolution_to_client(self, DATA_DIR + 'client2/')
@@ -506,13 +555,16 @@ class TestSystem(TestCase):
             self.fail()
         except SystemExit: pass
 
+
         # Update should begin conflict resolution process
+        setup_client('client2')
         try:
             client.update(session_token, test_overrides = {'resolve_to' : 'manual'})
             self.fail()
         except SystemExit: pass
 
         # Test incomplete resolution file causes an error
+        setup_client('client2')
         shutil.copyfile(DATA_DIR + 'client2/.bvn/conflict_resolution', DATA_DIR + 'client2/.bvn/conflict_resolution.back')
         perform_selective_conflict_resolve('partial')
 
@@ -523,6 +575,7 @@ class TestSystem(TestCase):
             pass
 
         # Modify the conflict resolution file to resolve the conflicts
+        setup_client('client2')
         shutil.copyfile(DATA_DIR + 'client2/.bvn/conflict_resolution.back', DATA_DIR + 'client2/.bvn/conflict_resolution')
         perform_selective_conflict_resolve()
         client.update(session_token)

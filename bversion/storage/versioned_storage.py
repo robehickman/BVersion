@@ -1,4 +1,4 @@
-import json, hashlib, os, os.path, shutil
+import json, hashlib, os, os.path, shutil, fcntl, errno
 from  collections import defaultdict
 from datetime import datetime
 
@@ -30,10 +30,12 @@ class indexObjectCommit(indexObject):
 #+++++++++++++++++++++++++++++++++
 #+++++++++++++++++++++++++++++++++
 class versioned_storage:
-    def __init__(self, base_path: str):
-        self.base_path = base_path
+    def __init__(self, base_path: str, path_override = None):
+        self.base_path     = base_path
+        self.path_override = path_override
         sfs.make_dirs_if_dont_exist(sfs.cpjoin(base_path, 'index') + '/')
         sfs.make_dirs_if_dont_exist(sfs.cpjoin(base_path, 'files') + '/')
+        self.lock_file = None
 
 
 #===============================================================================
@@ -49,7 +51,7 @@ class versioned_storage:
             return object_hash
 
         # log items which do not exist for garbage collection
-        sdb = get_server_db_instance_for_thread(self.base_path)
+        sdb = get_server_db_instance_for_thread(self.base_path, path_override = self.path_override)
         sdb.gc_log_item(object_type, object_hash)
 
         #----
@@ -150,11 +152,11 @@ class versioned_storage:
 
 
 #===============================================================================
-    def have_active_commit(self) -> bool:
+    def get_active_commit(self) -> bool:
         """ Checks if there is an active commit owned by the specified user """
 
-        sdb = get_server_db_instance_for_thread(self.base_path)
-        return sdb.have_active_commit()
+        sdb = get_server_db_instance_for_thread(self.base_path, path_override = self.path_override)
+        return sdb.get_active_commit()
 
 
 #===============================================================================
@@ -166,17 +168,39 @@ class versioned_storage:
 
 
 #===============================================================================
+#  Locking
+#
+# Locking is only required for writing as clients will read the prior version
+# while a commit is in progress and this updates atomically. This uses flock
+# as a convenient way to synchronise across multiple processes.
+#===============================================================================
+    def lock(self):
+        """ Synchronise access to the repo between users and processes. """
+
+        lock_file = open(sfs.cpjoin(self.base_path, 'lock_file'), 'w')
+
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.lock_file = lock_file
+            return True
+        except IOError as e:
+            if e.errno in [errno.EACCES, errno.EAGAIN]:
+                return False
+            else:
+                raise
+
+
+#===============================================================================
+    def unlock(self):
+        fcntl.flock(self.lock_file, fcntl.LOCK_UN)
+
+
+#===============================================================================
 # NOTE Everything below here must not be called concurrently, either from
 # threads in a single process or from multiple processes
 #===============================================================================
-    def begin(self) -> None:
-        if self.have_active_commit(): raise Exception()
-
-        # Possable optimisations
-
-        # Don't store GC log in DB
-        # Don't flush GC log
-        # Don't store active files in DB, don't update active files dynamically, but do it in one go during commit
+    def begin(self, user, user_ip, session_token, resume: bool = False) -> None:
+        if resume is False and self.get_active_commit() is not None: raise Exception()
 
         active_files = {}
         head = self.get_head()
@@ -185,16 +209,25 @@ class versioned_storage:
             commit = self.read_commit_index_object(head)
             active_files = self.flatten_dir_tree(self.read_dir_tree(commit['tree_root']))
 
-        sdb = get_server_db_instance_for_thread(self.base_path)
-        sdb.begin_commit(active_files)
+        sdb = get_server_db_instance_for_thread(self.base_path, path_override = self.path_override)
 
+        if resume:
+            sdb.resume_commit(active_files, session_token)
+        else:
+            sdb.begin_commit(active_files, user, user_ip, session_token)
+
+#===============================================================================
+    def get_active_commit_changes(self):
+        sdb = get_server_db_instance_for_thread(self.base_path, path_override = self.path_override)
+        return sdb.get_active_commit_changes()
 
 #===============================================================================
     def fs_put_from_file(self, source_file: str, file_info) -> None:
-        if not self.have_active_commit(): raise Exception()
+        if self.get_active_commit() is None: raise Exception()
+
         file_info['hash'] = file_hash = sfs.hash_file(source_file)
 
-        sdb = get_server_db_instance_for_thread(self.base_path)
+        sdb = get_server_db_instance_for_thread(self.base_path, path_override = self.path_override)
 
         target_base = sfs.cpjoin(self.base_path, 'files',file_hash[:2])
         target = sfs.cpjoin(target_base, file_hash[2:])
@@ -216,26 +249,27 @@ class versioned_storage:
 
 
 #===============================================================================
-    def fs_delete(self, file_path) -> None:
-        if not self.have_active_commit(): raise Exception()
+    def fs_delete(self, files) -> None:
+        if self.get_active_commit() is None: raise Exception()
 
-        # As we always store all history, simply removing the file from the manifest
+        # As we always store all history, simply removing the files from the manifest
         # of this commit is all we need to do
-        sdb = get_server_db_instance_for_thread(self.base_path)
-        sdb.remove_from_commit(file_path)
+        sdb = get_server_db_instance_for_thread(self.base_path, path_override = self.path_override)
+        sdb.remove_from_commit(files)
 
 
 #===============================================================================
     def commit(self, commit_message, commit_by, commit_datetime = None) -> str:
-        if not self.have_active_commit(): raise Exception()
+        if self.get_active_commit() is None: raise Exception()
 
-        sdb = get_server_db_instance_for_thread(self.base_path)
+        sdb = get_server_db_instance_for_thread(self.base_path, path_override = self.path_override)
         current_changes, active_files = sdb.get_commit_state()
 
-        if current_changes == []: raise Exception('Empty commit')
+        if current_changes == []: return self.get_head()
 
         # Create and store the file tree
         tree_root   = self.write_dir_tree(self.build_dir_tree(active_files))
+
 
         # If no commit message is passed store an indication of what was changed
         if commit_message == '':
@@ -247,9 +281,11 @@ class versioned_storage:
             if deleted_item is not None: commit_message += deleted_item['status'] + '    ' + deleted_item['path'] + '\n'
             if len(current_changes) > 2: commit_message += '...'
 
+
         # Commit timestamp
         commit_datetime = datetime.utcnow() if commit_datetime is None else commit_datetime
         commit_timestamp = commit_datetime.strftime("%d-%m-%Y %H:%M:%S:%f")
+
 
         # Create commit
         commit_object_hash = self.write_index_object('commit', {'parent'         : self.get_head(),
@@ -272,9 +308,9 @@ class versioned_storage:
 
 #===============================================================================
     def rollback(self) -> None:
-        if not self.have_active_commit(): raise Exception()
+        if self.get_active_commit() is None: raise Exception()
 
-        sdb = get_server_db_instance_for_thread(self.base_path)
+        sdb = get_server_db_instance_for_thread(self.base_path, path_override = self.path_override)
         gc_log_items = sdb.get_gc_log()
 
         if gc_log_items != []:
@@ -528,7 +564,9 @@ class versioned_storage:
 
 #===============================================================================
     def garbage_collect(self):
-        # TODO this needs to lock the repo for safety
+        lock_status = self.lock()
+        if lock_status is False:
+            return False, ['failed to lock']
 
         head, reachable_objects = self.get_reachable_objects()
         all_objects             = self.get_all_object_hashes()
@@ -578,3 +616,6 @@ class versioned_storage:
         for object_hash in garbage_file_objects:
             object_path = sfs.cpjoin(self.base_path, 'index', object_hash[:2], object_hash[2:])
             os.remove(object_path)
+
+        self.unlock()
+        return True
