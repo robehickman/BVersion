@@ -1,6 +1,7 @@
 import json
 import os
 import socket
+from io import BytesIO
 from typing import Union
 import _thread
 
@@ -101,7 +102,11 @@ def HTTPServer(host, port, connection_handler):
                 if isinstance(rsp.body, ServeFile):
                     c.sendfile(open(rsp.body.path, 'rb'), 0)
                 else:
-                    c.send(rsp.body)
+                    reader = BytesIO(rsp.body)
+                    while True:
+                        chunk = reader.read(4096)
+                        if chunk == b'': break
+                        c.send(chunk)
 
         except:
             context.shutdown_handler()
