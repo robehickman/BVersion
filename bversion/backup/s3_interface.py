@@ -55,6 +55,40 @@ def wipe_all(conn):
         #if 'NextKeyMarker' in version_list:
         #    Key_marker = version_list['NextKeyMarker']
 
+
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
+def list_remote_objects(s3_conn, prefix):
+    result = s3_conn['client'].list_objects(
+            Bucket  = s3_conn['bucket'],
+            Prefix  = prefix,
+            )
+
+    objects_on_remote = []
+
+    for item in result['Contents']:
+        objects_on_remote.append(item)
+
+    # If the result was truncated, keep reading untill we have got everything
+    if result['IsTruncated']:
+        while True:
+            result = s3_conn['client'].list_objects(
+                    Bucket  = s3_conn['bucket'],
+                    Prefix  = prefix,
+                    Marker  = objects_on_remote[-1]['Key'])
+
+            if 'Contents' not in result:
+                break
+
+            # ==================
+            for item in result['Contents']:
+                objects_on_remote.append(item)
+
+            if not result['IsTruncated']:
+                break
+
+    return objects_on_remote
+
+
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++==
 def get_object(conn, key, error='object not found', version_id=None):
     """ Gets an object from s3 """

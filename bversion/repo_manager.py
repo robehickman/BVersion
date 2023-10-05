@@ -122,13 +122,16 @@ def backup():
             # Get the commits that already exist on the remote
             # Subtract the commits that have already been uploaded
             # ========================================================================
-            commits_on_remote = s3_conn['client'].list_objects(Bucket=s3_conn['bucket'], Prefix=repository_name + '/commits/', Delimiter='')
 
-            if 'Contents' in commits_on_remote:
-                for item in commits_on_remote['Contents']:
-                    commit_hash = item['Key'].split('/')[-1]
-                    commits.pop(commit_hash)
-                    commits_order.remove(commit_hash)
+
+            # ==============================
+            commits_on_remote = s3_interface.list_remote_objects(s3_conn, repository_name + '/commits/')
+
+            for item in commits_on_remote:
+                commit_hash = item['Key'].split('/')[-1]
+                commits.pop(commit_hash)
+                commits_order.remove(commit_hash)
+
 
             # ========================================================================
             # Go through versions from newest to oldest, uploading anything that doesn't already exist on the remote
@@ -137,8 +140,9 @@ def backup():
                 commit = commits[commit_hash]
 
                 # Cache a list of objects that already exist on the remote
-                index_on_remote = s3_conn['client'].list_objects(Bucket=s3_conn['bucket'], Prefix=repository_name + '/index/', Delimiter='')
-                files_on_remote = s3_conn['client'].list_objects(Bucket=s3_conn['bucket'], Prefix=repository_name + '/files/', Delimiter='')
+                index_on_remote = s3_interface.list_remote_objects(s3_conn, repository_name + '/index/')
+                files_on_remote = s3_interface.list_remote_objects(s3_conn, repository_name + '/files/')
+
 
                 # We Upload head first, then the meta info for the revision, and files last,
                 # following this order allows structure to be recovered even if all files
@@ -194,12 +198,11 @@ def backup():
                     index_object_order.append(tree_object_hash)
 
                 # subtract objects that already exist on remote
-                if 'Contents' in index_on_remote:
-                    for item in index_on_remote['Contents']:
-                        file_hash = ''.join(item['Key'].split('/')[-2:])
-                        if file_hash in index_objects:
-                            index_objects.pop(file_hash)
-                            index_object_order.remove(file_hash)
+                for item in index_on_remote:
+                    file_hash = ''.join(item['Key'].split('/')[-2:])
+                    if file_hash in index_objects:
+                        index_objects.pop(file_hash)
+                        index_object_order.remove(file_hash)
 
                 # Add everything remaining to upload
                 for it in index_object_order:
@@ -215,11 +218,10 @@ def backup():
                         file_objects[fle['hash']] = fle
 
                 # subtract files that already exist
-                if 'Contents' in files_on_remote:
-                    for item in files_on_remote['Contents']:
-                        file_hash = ''.join(item['Key'].split('/')[-2:])
-                        if file_hash in file_objects:
-                            file_objects.pop(file_hash)
+                for item in files_on_remote:
+                    file_hash = ''.join(item['Key'].split('/')[-2:])
+                    if file_hash in file_objects:
+                        file_objects.pop(file_hash)
 
                 # -------------------------------
                 for it in file_objects.values():
