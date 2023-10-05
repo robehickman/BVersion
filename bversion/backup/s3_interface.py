@@ -65,6 +65,9 @@ def list_remote_objects(s3_conn, prefix):
 
     objects_on_remote = []
 
+    if 'Contents' not in result:
+        return objects_on_remote
+
     for item in result['Contents']:
         objects_on_remote.append(item)
 
