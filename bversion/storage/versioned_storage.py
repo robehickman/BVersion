@@ -164,7 +164,7 @@ class versioned_storage:
         """ Gets the hash associated with the current head commit """
 
         contents = sfs.file_or_default(sfs.cpjoin(self.base_path, 'head'), b'root')
-        return contents.decode('utf8')
+        return contents.decode('utf8').strip()
 
 
 #===============================================================================
